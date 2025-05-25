@@ -10,11 +10,8 @@
 #include <initializer_list>
 #include <iterator>
 #include <numeric>
-#include <cereal/cereal.hpp>
-#include <cereal/types/array.hpp>
-#include <cereal/types/vector.hpp>
-#include <cereal/archives/binary.hpp>
-#include <cereal/archives/json.hpp>
+#include <boost/serialization/array.hpp>
+#include <boost/serialization/access.hpp>
 
 namespace Blaster::Independent::Math
 {
@@ -565,10 +562,12 @@ namespace Blaster::Independent::Math
 			return result;
 		}
 
-		template <typename Archive>
-		void serialize(Archive& archive)
+		friend class boost::serialization::access;
+
+		template<class Archive>
+		void serialize(Archive& archive, const unsigned)
 		{
-			archive(data);
+			archive & boost::serialization::make_array(data.data(), N);
 		}
 
 		template <ArrayType U>

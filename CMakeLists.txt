@@ -32,20 +32,6 @@ if(NOT TARGET FreeImage::FreeImage)
     add_library(FreeImage::FreeImage ALIAS FreeImage)
 endif()
 
-set(JUST_INSTALL_CEREAL ON CACHE BOOL "Skip building cereal tests/examples" FORCE)
-
-FetchContent_Declare(
-        cereal
-        GIT_REPOSITORY https://github.com/USCiLab/cereal.git
-        GIT_TAG        master
-)
-
-FetchContent_MakeAvailable(cereal)
-
-if(NOT TARGET cereal::cereal)
-    add_library(cereal::cereal ALIAS cereal)
-endif()
-
 set(BUILD_BULLET3           ON  CACHE BOOL "" FORCE)
 set(BUILD_BULLET2_DEMOS     OFF CACHE BOOL "" FORCE)
 set(BUILD_BULLET3_DEMOS     OFF CACHE BOOL "" FORCE)
@@ -543,6 +529,119 @@ if(NOT TARGET Boost::functional)
 endif()
 
 FetchContent_Declare(
+        boost_serialization
+        GIT_REPOSITORY https://github.com/boostorg/serialization.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_serialization)
+
+if(NOT TARGET Boost::serialization)
+    add_library(Boost::serialization ALIAS boost_serialization)
+    target_include_directories(Boost::serialization INTERFACE "${boost_serialization_SOURCE_DIR}/include")
+
+endif()
+
+FetchContent_Declare(
+        boost_spirit
+        GIT_REPOSITORY https://github.com/boostorg/spirit.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_spirit)
+
+if(NOT TARGET Boost::spirit)
+    add_library(Boost::spirit ALIAS boost_spirit)
+endif()
+
+FetchContent_Declare(
+        boost_variant
+        GIT_REPOSITORY https://github.com/boostorg/variant.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_variant)
+
+if(NOT TARGET Boost::variant)
+    add_library(Boost::variant ALIAS boost_variant)
+endif()
+
+FetchContent_Declare(
+        boost_endian
+        GIT_REPOSITORY https://github.com/boostorg/endian.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_endian)
+
+if(NOT TARGET Boost::endian)
+    add_library(Boost::endian ALIAS boost_endian)
+endif()
+
+FetchContent_Declare(
+        boost_phoenix
+        GIT_REPOSITORY https://github.com/boostorg/phoenix.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_phoenix)
+
+if(NOT TARGET Boost::phoenix)
+    add_library(Boost::phoenix ALIAS boost_phoenix)
+endif()
+
+FetchContent_Declare(
+        boost_proto
+        GIT_REPOSITORY https://github.com/boostorg/proto.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_proto)
+
+if(NOT TARGET Boost::proto)
+    add_library(Boost::proto ALIAS boost_proto)
+endif()
+
+FetchContent_Declare(
+        boost_thread
+        GIT_REPOSITORY https://github.com/boostorg/thread.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_thread)
+
+if(NOT TARGET Boost::thread)
+    add_library(Boost::thread ALIAS boost_thread)
+endif()
+
+FetchContent_Declare(
+        boost_type_index
+        GIT_REPOSITORY https://github.com/boostorg/type_index.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_type_index)
+
+if(NOT TARGET Boost::type_index)
+    add_library(Boost::type_index ALIAS boost_type_index)
+endif()
+
+FetchContent_Declare(
+        boost_atomic
+        GIT_REPOSITORY https://github.com/boostorg/atomic.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_atomic)
+
+if(NOT TARGET Boost::atomic)
+    add_library(Boost::atomic ALIAS boost_atomic)
+endif()
+
+FetchContent_Declare(
+        boost_chrono
+        GIT_REPOSITORY https://github.com/boostorg/chrono.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_chrono)
+
+if(NOT TARGET Boost::chrono)
+    add_library(Boost::chrono ALIAS boost_chrono)
+endif()
+
+
+FetchContent_Declare(
+        boost_ratio
+        GIT_REPOSITORY https://github.com/boostorg/ratio.git
+        GIT_TAG        ${BOOST_TAG})
+FetchContent_MakeAvailable(boost_ratio)
+
+if(NOT TARGET Boost::ratio)
+    add_library(Boost::ratio ALIAS boost_ratio)
+endif()
+
+FetchContent_Declare(
         boost_asio
         GIT_REPOSITORY https://github.com/boostorg/asio.git
         GIT_TAG        ${BOOST_TAG})
@@ -592,6 +691,7 @@ function(blaster_add_executable target source_glob)
 
     target_include_directories(${target}
             PRIVATE
+            "${boost_serialization_SOURCE_DIR}/include"
             ${BLASTER_HEADERS_DIR}
             ${LIBRARY_HEADERS_DIR}
     )
@@ -600,7 +700,6 @@ function(blaster_add_executable target source_glob)
             PRIVATE
             glfw
             FreeImage::FreeImage
-            cereal::cereal
             Bullet::BulletDynamics
             Bullet::BulletCollision
             Bullet::LinearMath

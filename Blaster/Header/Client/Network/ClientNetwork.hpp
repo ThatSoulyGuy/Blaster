@@ -32,7 +32,15 @@ namespace Blaster::Client::Network
 
             const auto resolution = res.resolve(host, std::to_string(port));
 
-            boost::asio::connect(socket, resolution);
+            try
+            {
+                boost::asio::connect(socket, resolution);
+            }
+            catch (const boost::system::system_error& error)
+            {
+                std::cerr << "Connect failed: " << error.what() << '\n';
+                return;
+            }
 
             BeginRead();
 

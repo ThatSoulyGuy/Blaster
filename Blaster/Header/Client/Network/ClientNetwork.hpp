@@ -42,14 +42,20 @@ namespace Blaster::Client::Network
 
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
         {
-            packetHandlerMap[type].push_back(std::move(function));
+            boost::asio::post(strand, [this, type, receiver = std::move(function)]() mutable
+                {
+                    packetHandlerMap[type].push_back(std::move(receiver));
+                });
         }
 
         void Send(const PacketType type, const std::span<const std::uint8_t> payload)
         {
-            auto buffer = CreatePacket(type, networkId, payload);
+            auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, networkId, payload));
 
-            boost::asio::async_write(socket, boost::asio::buffer(buffer), [](auto, auto) { });
+            boost::asio::post(strand, [this, buffer]
+                {
+                    boost::asio::async_write(socket, boost::asio::buffer(*buffer), [buffer](auto, auto) {});
+                });
         }
 
         std::string GetStringId() const
@@ -91,7 +97,7 @@ namespace Blaster::Client::Network
 
         void BeginRead()
         {
-            socket.async_read_some(boost::asio::buffer(readBuffer), [this](const ErrorCode& errorCode, const std::size_t number)
+            socket.async_read_some(boost::asio::buffer(readBuffer), boost::asio::bind_executor(strand, [this] (const ErrorCode& errorCode, const std::size_t number)
                 {
                     if (errorCode)
                         return;
@@ -117,7 +123,7 @@ namespace Blaster::Client::Network
                     }
 
                     BeginRead();
-                });
+                }));
         }
 
         void HandlePacket(const PacketHeader& header, std::vector<std::uint8_t>&& data)
@@ -156,6 +162,8 @@ namespace Blaster::Client::Network
 
         std::array<std::uint8_t, 512> readBuffer = { };
         std::vector<std::uint8_t> inbox;
+
+        boost::asio::strand<boost::asio::io_context::executor_type> strand = boost::asio::make_strand(ioContext);
 
         std::unordered_map<PacketType, std::vector<std::function<void(std::vector<std::uint8_t>)>>> packetHandlerMap;
 

@@ -25,7 +25,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.1.0", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.2.1", { 750, 450 });
         }
 
         void Initialize()

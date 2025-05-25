@@ -1,5 +1,3 @@
-#define BOOST_ASIO_ENABLE_HANDLER_TRACKING
-
 #include "Client/ClientApplication.hpp"
 
 int main()

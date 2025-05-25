@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <random>
 #include <boost/asio.hpp>
 #include "Client/Core/Window.hpp"
 #include "Client/Network/ClientNetwork.hpp"
@@ -23,13 +24,32 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.0.0", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.1.0", { 750, 450 });
         }
 
         void Initialize()
         {
-            ClientNetwork::GetInstance().Initialize("127.0.0.1", 7777, "Player" + std::to_string(std::rand()));
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::Chat, [](std::vector<std::uint8_t> msg)
+            std::string ip;
+            std::uint16_t port;
+
+            std::cout << "Enter IPv4: ";
+            std::cin >> ip;
+
+            std::cout << "Enter PORT: ";
+            std::cin >> port;
+
+            std::random_device device;
+            std::mt19937 generator(device());
+
+            constexpr int min = 1;
+            constexpr int max = 100;
+
+            std::uniform_int_distribution distribution(min, max);
+
+            const int randomNumber = distribution(generator);
+
+            ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Chat, [](std::vector<std::uint8_t> msg)
                 {
                     const std::string text(reinterpret_cast<char*>(msg.data()), msg.size());
 
@@ -52,10 +72,12 @@ namespace Blaster::Client
 
         void Update()
         {
-            const std::string hello = ClientNetwork::GetInstance().GetStringId() + "§Hello world!";
-            ClientNetwork::GetInstance().Send(PacketType::Chat, std::span(reinterpret_cast<const std::uint8_t*>(hello.data()), hello.size()));
+            std::string input;
 
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+            std::getline(std::cin, input);
+
+            const std::string hello = ClientNetwork::GetInstance().GetStringId() + "§" + input;
+            ClientNetwork::GetInstance().Send(PacketType::C2S_Chat, std::span(reinterpret_cast<const std::uint8_t*>(hello.data()), hello.size()));
         }
 
         void Render()
@@ -67,7 +89,7 @@ namespace Blaster::Client
 
         void Uninitialize()
         {
-
+            ClientNetwork::GetInstance().Uninitialize();
         }
 
         static ClientApplication& GetInstance()

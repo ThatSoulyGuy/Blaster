@@ -16,19 +16,6 @@ namespace Blaster::Client::Network
 
     public:
 
-        ~ClientNetwork()
-        {
-            if (!running)
-                return;
-
-            ioContext.stop();
-
-            if (ioThread.joinable())
-                ioThread.join();
-
-            running = false;
-        }
-
         ClientNetwork(const ClientNetwork&) = delete;
         ClientNetwork(ClientNetwork&&) = delete;
         ClientNetwork& operator=(const ClientNetwork&) = delete;
@@ -73,6 +60,19 @@ namespace Blaster::Client::Network
         NetworkID GetNetworkId() const
         {
             return networkId;
+        }
+
+        void Uninitialize()
+        {
+            if (!running)
+                return;
+
+            ioContext.stop();
+
+            if (ioThread.joinable())
+                ioThread.join();
+
+            running = false;
         }
 
         static ClientNetwork& GetInstance()
@@ -122,9 +122,20 @@ namespace Blaster::Client::Network
 
         void HandlePacket(const PacketHeader& header, std::vector<std::uint8_t>&& data)
         {
-            if (header.type == PacketType::RequestStringId)
+            if (header.type == PacketType::S2C_RequestStringId)
             {
-                Send(PacketType::StringId, std::span(reinterpret_cast<const std::uint8_t*>(stringId.data()), stringId.size()));
+                Send(PacketType::C2S_StringId, std::span(reinterpret_cast<const std::uint8_t*>(stringId.data()), stringId.size()));
+                return;
+            }
+
+            if (header.type == PacketType::S2C_AssignNetworkId)
+            {
+                NetworkID id = 0;
+
+                std::memcpy(&id, data.data(), sizeof(NetworkID));
+
+                networkId = id;
+
                 return;
             }
 

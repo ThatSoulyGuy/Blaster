@@ -27,17 +27,22 @@ namespace Blaster::Server
 
         void Initialize()
         {
-            ServerNetwork::GetInstance().Initialize(7777);
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::StringId, [](const NetworkID who, std::vector<std::uint8_t> data)
+            std::uint16_t port;
+
+            std::cout << "Enter PORT: ";
+            std::cin >> port;
+
+            ServerNetwork::GetInstance().Initialize(port);
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkID who, std::vector<std::uint8_t> data)
                 {
                     const std::string name(reinterpret_cast<char*>(data.data()), data.size());
 
                     std::cout << "Client " << who << " is '" << name << "'\n";
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::Chat, [] (NetworkID who, std::vector<std::uint8_t> data)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Chat, [] (NetworkID who, std::vector<std::uint8_t> data)
             {
-                ServerNetwork::GetInstance().Broadcast(PacketType::Chat, std::span(data.data(), data.size()));
+                ServerNetwork::GetInstance().Broadcast(PacketType::S2C_Chat, std::span(data.data(), data.size()));
             });
         }
 
@@ -58,7 +63,7 @@ namespace Blaster::Server
 
         void Uninitialize()
         {
-
+            ServerNetwork::GetInstance().Uninitialize();
         }
 
         static ServerApplication& GetInstance()

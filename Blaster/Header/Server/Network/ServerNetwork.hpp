@@ -18,21 +18,6 @@ namespace Blaster::Server::Network
 
     public:
 
-        ~ServerNetwork()
-        {
-            if (!running)
-                return;
-
-            ioContext.stop();
-
-            if (ioThread.joinable())
-                ioThread.join();
-
-            clients.clear();
-
-            running = false;
-        }
-
         ServerNetwork(const ServerNetwork&) = delete;
         ServerNetwork(ServerNetwork&&) = delete;
         ServerNetwork& operator=(const ServerNetwork&) = delete;
@@ -79,6 +64,21 @@ namespace Blaster::Server::Network
             return running;
         }
 
+        void Uninitialize()
+        {
+            if (!running)
+                return;
+
+            ioContext.stop();
+
+            if (ioThread.joinable())
+                ioThread.join();
+
+            clients.clear();
+
+            running = false;
+        }
+
         static ServerNetwork& GetInstance()
         {
             std::call_once(initializationFlag, [&]()
@@ -105,19 +105,24 @@ namespace Blaster::Server::Network
 
         void DoAccept()
         {
-            acceptor->async_accept(
-                [this](const ErrorCode& errorCode, TcpProtocol::socket socket)
+            acceptor->async_accept([this](const ErrorCode& errorCode, TcpProtocol::socket socket)
                 {
                     if (!errorCode)
                     {
                         const auto client  = std::make_shared<Client>(Client{std::move(socket)});
 
-                        client->id = ++nextId;
+                        client->id = nextId += 1;
                         clients[client->id] = client;
 
-                        auto ask = CreatePacket(PacketType::RequestStringId, 0, {});
+                        std::array<std::uint8_t, sizeof(NetworkID)> networkIdBuffer;
+                        std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkID));
 
-                        boost::asio::async_write(client->sock, boost::asio::buffer(ask), [](auto,auto){});
+                        auto assign = CreatePacket(PacketType::S2C_AssignNetworkId, 0, std::span(networkIdBuffer.data(), networkIdBuffer.size()));
+                        boost::asio::async_write(client->sock, boost::asio::buffer(assign), [](auto, auto){ });
+
+                        auto ask = CreatePacket(PacketType::S2C_RequestStringId, 0, { });
+
+                        boost::asio::async_write(client->sock, boost::asio::buffer(ask), [](auto, auto){ });
 
                         BeginRead(client);
                     }
@@ -184,7 +189,7 @@ namespace Blaster::Server::Network
         static std::once_flag initializationFlag;
         static std::unique_ptr<ServerNetwork> instance;
 
-    }; 
+    };
 
     std::once_flag ServerNetwork::initializationFlag;
     std::unique_ptr<ServerNetwork> ServerNetwork::instance;

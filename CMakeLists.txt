@@ -121,20 +121,15 @@ if(NOT TARGET Boost::variant2)
     add_library(Boost::variant2 ALIAS boost_variant2)
 endif()
 
-if (WIN32)
-    FetchContent_Declare(
-            boost_winapi
-            GIT_REPOSITORY https://github.com/boostorg/winapi.git
-            GIT_TAG        ${BOOST_TAG}
-    )
-    FetchContent_MakeAvailable(boost_winapi)
+FetchContent_Declare(
+        boost_winapi
+        GIT_REPOSITORY https://github.com/boostorg/winapi.git
+        GIT_TAG        ${BOOST_TAG}
+)
+FetchContent_MakeAvailable(boost_winapi)
 
-    if(NOT TARGET Boost::winapi)
-        add_library(Boost::winapi ALIAS boost_winapi)
-    endif()
-
-else()
-    add_library(Boost::winapi INTERFACE)
+if(NOT TARGET Boost::winapi)
+    add_library(Boost::winapi ALIAS boost_winapi)
 endif()
 
 FetchContent_Declare(

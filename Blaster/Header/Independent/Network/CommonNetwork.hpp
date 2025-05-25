@@ -11,9 +11,11 @@ namespace Blaster::Independent::Network
 
     enum class PacketType : std::uint16_t
     {
-        RequestStringId = 1,
-        StringId = 2,
-        Chat = 10
+        S2C_RequestStringId = 1,
+        C2S_StringId = 2,
+        S2C_AssignNetworkId = 3,
+        C2S_Chat = 10,
+        S2C_Chat = 11
     };
 
     struct PacketHeader

@@ -1,12 +1,7 @@
 #pragma once
 
+#include <optional>
 #include <vector>
-
-namespace std
-{
-    template <typename T>
-    class optional;
-}
 
 namespace Blaster::Independent::Utility
 {

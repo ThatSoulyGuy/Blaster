@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <iostream>
+#include <random>
 #include <boost/asio.hpp>
 #include "Server/Network/ServerNetwork.hpp"
 #include "Server/Network/ServerSynchronization.hpp"
@@ -16,12 +17,25 @@ namespace Blaster::Server
 
     public:
 
+        void Initialize() override
+        {
+            if (GetGameObject()->IsAuthoritative())
+            {
+                std::random_device device;
+                std::mt19937 generator{device()};
+
+                std::uniform_int_distribution<int> distribution{0, 255};
+
+                myVar = distribution(generator);
+            }
+        }
+
         void Update() override
         {
             if (GetGameObject()->IsAuthoritative())
-                std::cout << UwU << " from server!" << std::endl;
+                std::cout << myVar << " from server!" << std::endl;
             else
-                std::cout << UwU << " from client!" << std::endl;
+                std::cout << myVar << " from client!" << std::endl;
         }
 
         std::string GetTypeName() const override
@@ -29,14 +43,14 @@ namespace Blaster::Server
             return typeid(TestComponent).name();
         }
 
-        int UwU = 320;
+        int myVar;
 
         template <class Archive>
-        void serialize(Archive& ar, const unsigned)
+        void serialize(Archive& archive, const unsigned)
         {
-            ar & boost::serialization::base_object<Component>(*this);
+            archive & boost::serialization::base_object<Component>(*this);
 
-            ar & boost::serialization::make_nvp("UwU", UwU);
+            archive & boost::serialization::make_nvp("myVar", myVar);
         }
 
     private:
@@ -123,3 +137,5 @@ namespace Blaster::Server
     std::once_flag ServerApplication::initializationFlag;
     std::unique_ptr<ServerApplication> ServerApplication::instance;
 }
+
+BOOST_CLASS_EXPORT(Blaster::Server::TestComponent)

@@ -647,7 +647,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(boost_asio)
 
 if(NOT TARGET Boost::asio)
-    add_library(Boost::asio INTERFACE)
+    add_library(Boost::asio INTERFACE
+            Blaster/Source/Independent/ComponentExportList.cpp
+            Blaster/Source/Independent/ComponentExportList.hpp)
     target_include_directories(Boost::asio INTERFACE
             ${boost_asio_SOURCE_DIR}/include)
 

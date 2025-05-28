@@ -7,6 +7,7 @@
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/nvp.hpp>
+#include <boost/serialization/export.hpp>
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/Math/Matrix.hpp"
@@ -267,13 +268,13 @@ namespace Blaster::Independent::Math
         friend class Blaster::Independent::ECS::ComponentFactory;
 
         template <class Archive>
-        void serialize(Archive& ar, const unsigned)
+        void serialize(Archive& archive, const unsigned)
         {
-            ar & boost::serialization::base_object<Component>(*this);
+            archive & boost::serialization::base_object<Component>(*this);
 
-            ar & boost::serialization::make_nvp("localPosition", localPosition);
-            ar & boost::serialization::make_nvp("localRotation", localRotation);
-            ar & boost::serialization::make_nvp("localScale", localScale);
+            archive & boost::serialization::make_nvp("localPosition", localPosition);
+            archive & boost::serialization::make_nvp("localRotation", localRotation);
+            archive & boost::serialization::make_nvp("localScale", localScale);
         }
 
         std::optional<std::weak_ptr<Transform>> parent;
@@ -286,5 +287,6 @@ namespace Blaster::Independent::Math
         Vector<float, 3> localRotation = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localScale = { 1.0f, 1.0f, 1.0f };
     };
-
 }
+
+BOOST_CLASS_EXPORT(Blaster::Independent::Math::Transform)

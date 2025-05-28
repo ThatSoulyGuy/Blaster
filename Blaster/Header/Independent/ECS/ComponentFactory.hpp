@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <functional>
 #include <mutex>
+#include <boost/serialization/shared_ptr.hpp>
 #include "Independent/ECS/Component.hpp"
 
 #define CONCAT_IMPL(a, b) a##b

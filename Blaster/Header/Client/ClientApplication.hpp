@@ -66,7 +66,11 @@ namespace Blaster::Client
 
                     const auto gameObject = GameObject::Create(name);
 
-                    NetworkSerialize::ObjectFromBytes(blob, *gameObject->GetTransform());
+                    std::shared_ptr<Transform> transform;
+
+                    NetworkSerialize::ObjectFromBytes(blob, transform);
+
+                    gameObject->GetTransform().swap(transform);
 
                     GameObjectManager::GetInstance().Register(gameObject);
                 });
@@ -102,11 +106,11 @@ namespace Blaster::Client
                     if (!raw)
                         return;
 
-                    const auto component = std::static_pointer_cast<Component>(raw);
+                    auto component = std::static_pointer_cast<Component>(raw);
 
                     const std::vector blob(second + 1, message.end());
 
-                    NetworkSerialize::ObjectFromBytes(blob, *component);
+                    NetworkSerialize::ObjectFromBytes(blob, component);
 
                     (*optionalGameObject)->AddComponentDynamic(component);
                 });

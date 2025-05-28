@@ -46,7 +46,7 @@ namespace Blaster::Server::Network
             if (!gameObject->AddComponentDynamic(component))
                 return;
 
-            auto componentBuffer = NetworkSerialize::ObjectToBytes(*component);
+            auto componentBuffer = NetworkSerialize::ObjectToBytes(component);
 
             const std::string& name = gameObject->GetName();
 
@@ -111,7 +111,7 @@ namespace Blaster::Server::Network
 
         static void SendGameObject(const std::optional<NetworkId> recipient, const std::shared_ptr<GameObject>& gameObject)
         {
-            auto blob = NetworkSerialize::ObjectToBytes(*gameObject->GetTransform());
+            auto blob = NetworkSerialize::ObjectToBytes(gameObject->GetTransform());
 
             const std::string& name = gameObject->GetName();
 
@@ -130,7 +130,7 @@ namespace Blaster::Server::Network
                 if (typeName == typeid(Transform))
                     continue;
 
-                auto componentBytes = NetworkSerialize::ObjectToBytes(*component);
+                auto componentBytes = NetworkSerialize::ObjectToBytes(component);
 
                 std::vector<std::uint8_t> buffer(name.begin(), name.end());
 
@@ -167,14 +167,6 @@ namespace Blaster::Server::Network
         static void BroadcastPayload(const PacketType type, const std::span<const std::uint8_t> payload)
         {
             ServerNetwork::GetInstance().Broadcast(type, payload);
-        }
-
-        template <class T>
-        static void BroadcastObject(const PacketType type, const T& object)
-        {
-            auto blob = NetworkSerialize::ObjectToBytes(object);
-
-            BroadcastPayload(type, blob);
         }
 
         static inline std::atomic<NetworkId> nextId = 0;

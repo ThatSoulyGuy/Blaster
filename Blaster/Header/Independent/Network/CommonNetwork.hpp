@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <span>
 #include <vector>
 
 namespace Blaster::Independent::Network

@@ -4,6 +4,8 @@
 #include <string>
 #include <boost/serialization/access.hpp>
 
+#include "boost/serialization/export.hpp"
+
 namespace Blaster::Independent::ECS
 {
     class GameObject;
@@ -39,3 +41,5 @@ namespace Blaster::Independent::ECS
 
     };
 }
+
+BOOST_CLASS_EXPORT(Blaster::Independent::ECS::Component)

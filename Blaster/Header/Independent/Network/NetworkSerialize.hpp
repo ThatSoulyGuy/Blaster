@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <boost/serialization/shared_ptr.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 
@@ -16,30 +17,30 @@ namespace Blaster::Independent::Network
         NetworkSerialize& operator=(const NetworkSerialize&) = delete;
         NetworkSerialize& operator=(NetworkSerialize&&) = delete;
 
-        template <class T>
-        static std::vector<std::uint8_t> ObjectToBytes(const T& object)
+        template<class Pointer>
+        static std::vector<std::uint8_t> ObjectToBytes(const Pointer& pointer)
         {
             std::ostringstream stream;
 
             boost::archive::text_oarchive archive(stream);
 
-            archive << object;
+            archive << BOOST_SERIALIZATION_NVP(pointer);
 
             const auto& buffer = stream.str();
 
-            return { buffer.begin(), buffer.end() };
+            return {buffer.begin(), buffer.end()};
         }
 
-        template <class T>
-        static void ObjectFromBytes(const std::vector<std::uint8_t>& byteList, T& object)
+        template <class Pointer>
+        static void ObjectFromBytes(const std::vector<std::uint8_t>& buffer, Pointer& pointer)
         {
-            const std::string buffer(reinterpret_cast<const char*>(byteList.data()), byteList.size());
+            const std::string bufferString(buffer.begin(), buffer.end());
 
-            std::istringstream stream(buffer);
+            std::istringstream stream(bufferString);
 
             boost::archive::text_iarchive archive(stream);
 
-            archive >> object;
+            archive >> BOOST_SERIALIZATION_NVP(pointer);
         }
 
     private:

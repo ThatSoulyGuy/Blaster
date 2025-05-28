@@ -71,7 +71,7 @@ namespace Blaster::Client::Network
             return stringId;
         }
 
-        NetworkID GetNetworkId() const
+        NetworkId GetNetworkId() const
         {
             return networkId;
         }
@@ -144,9 +144,9 @@ namespace Blaster::Client::Network
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
-                NetworkID id = 0;
+                NetworkId id = 0;
 
-                std::memcpy(&id, data.data(), sizeof(NetworkID));
+                std::memcpy(&id, data.data(), sizeof(NetworkId));
 
                 networkId = id;
 
@@ -166,7 +166,7 @@ namespace Blaster::Client::Network
         std::atomic<bool> running = false;
 
         std::string stringId;
-        NetworkID networkId = 0;
+        NetworkId networkId = 0;
 
         std::array<std::uint8_t, 512> readBuffer = { };
         std::vector<std::uint8_t> inbox;

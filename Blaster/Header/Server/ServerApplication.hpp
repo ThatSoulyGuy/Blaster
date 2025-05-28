@@ -5,11 +5,47 @@
 #include <iostream>
 #include <boost/asio.hpp>
 #include "Server/Network/ServerNetwork.hpp"
+#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
 {
+    class TestComponent : public Component
+    {
+
+    public:
+
+        void Update() override
+        {
+            if (GetGameObject()->IsAuthoritative())
+                std::cout << UwU << " from server!" << std::endl;
+            else
+                std::cout << UwU << " from client!" << std::endl;
+        }
+
+        std::string GetTypeName() const override
+        {
+            return typeid(TestComponent).name();
+        }
+
+        int UwU = 320;
+
+        template <class Archive>
+        void serialize(Archive& ar, const unsigned)
+        {
+            ar & boost::serialization::base_object<Component>(*this);
+
+            ar & boost::serialization::make_nvp("UwU", UwU);
+        }
+
+    private:
+
+        friend class boost::serialization::access;
+        friend class Blaster::Independent::ECS::ComponentFactory;
+
+    };
+
     class ServerApplication final
     {
 
@@ -33,17 +69,21 @@ namespace Blaster::Server
             std::cin >> port;
 
             ServerNetwork::GetInstance().Initialize(port);
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkID who, std::vector<std::uint8_t> data)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
                 {
                     const std::string name(reinterpret_cast<char*>(data.data()), data.size());
 
                     std::cout << "Client " << who << " is '" << name << "'\n";
+
+                    ServerSynchronization::SynchronizeFullTree(who);
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Chat, [] (NetworkID who, std::vector<std::uint8_t> data)
-            {
-                ServerNetwork::GetInstance().Broadcast(PacketType::S2C_Chat, std::span(data.data(), data.size()));
-            });
+
+            auto crate = ServerSynchronization::SpawnGameObject("Crate");
+            auto player = ServerSynchronization::SpawnGameObject("Player");
+
+            ServerSynchronization::AddComponent(crate, std::make_shared<TestComponent>());
+            ServerSynchronization::AddChild(player, crate);
         }
 
         bool IsRunning()
@@ -53,12 +93,7 @@ namespace Blaster::Server
 
         void Update()
         {
-
-        }
-
-        void Render()
-        {
-
+            GameObjectManager::GetInstance().Update();
         }
 
         void Uninitialize()

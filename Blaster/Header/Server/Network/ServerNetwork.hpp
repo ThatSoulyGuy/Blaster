@@ -36,12 +36,12 @@ namespace Blaster::Server::Network
             running  = true;
         }
 
-        void RegisterReceiver(const PacketType type, std::function<void(NetworkID, std::vector<std::uint8_t>)> function)
+        void RegisterReceiver(const PacketType type, std::function<void(NetworkId, std::vector<std::uint8_t>)> function)
         {
             packetHandlerMap[type].push_back(std::move(function));
         }
 
-        void SendTo(const NetworkID id, const PacketType type, const std::span<const std::uint8_t> payload)
+        void SendTo(const NetworkId id, const PacketType type, const std::span<const std::uint8_t> payload)
         {
             const auto iterator = clients.find(id);
 
@@ -97,7 +97,7 @@ namespace Blaster::Server::Network
         {
             TcpProtocol::socket sock;
 
-            NetworkID id;
+            NetworkId id;
 
             std::array<std::uint8_t, 512> readBuffer;
             std::vector<std::uint8_t> inbox;
@@ -114,8 +114,8 @@ namespace Blaster::Server::Network
                         client->id = nextId += 1;
                         clients[client->id] = client;
 
-                        std::array<std::uint8_t, sizeof(NetworkID)> networkIdBuffer;
-                        std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkID));
+                        std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer;
+                        std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkId));
 
                         auto assign = CreatePacket(PacketType::S2C_AssignNetworkId, 0, std::span(networkIdBuffer.data(), networkIdBuffer.size()));
                         boost::asio::async_write(client->sock, boost::asio::buffer(assign), [](auto, auto){ });
@@ -180,11 +180,11 @@ namespace Blaster::Server::Network
         std::optional<TcpProtocol::acceptor> acceptor;
         std::thread ioThread;
         std::atomic<bool> running = false;
-        std::atomic<NetworkID> nextId = 0;
+        std::atomic<NetworkId> nextId = 0;
 
-        std::unordered_map<NetworkID, std::shared_ptr<Client>> clients;
+        std::unordered_map<NetworkId, std::shared_ptr<Client>> clients;
 
-        std::unordered_map<PacketType, std::vector<std::function<void(NetworkID, std::vector<std::uint8_t>)>>> packetHandlerMap;
+        std::unordered_map<PacketType, std::vector<std::function<void(NetworkId, std::vector<std::uint8_t>)>>> packetHandlerMap;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ServerNetwork> instance;

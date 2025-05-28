@@ -7,6 +7,9 @@
 #include <boost/asio.hpp>
 #include "Client/Core/Window.hpp"
 #include "Client/Network/ClientNetwork.hpp"
+#include "Independent/ECS/ComponentFactory.hpp"
+#include "Independent/ECS/GameObjectManager.hpp"
+#include "Independent/Network/NetworkSerialize.hpp"
 
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
@@ -25,7 +28,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.2.1", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.3.5", { 750, 450 });
         }
 
         void Initialize()
@@ -50,19 +53,111 @@ namespace Blaster::Client
             const int randomNumber = distribution(generator);
 
             ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Chat, [](std::vector<std::uint8_t> msg)
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CreateGameObject, [](std::vector<std::uint8_t> message)
                 {
-                    const std::string text(reinterpret_cast<char*>(msg.data()), msg.size());
+                    const auto iterator = std::ranges::find(message, '\0');
 
-                    const auto delimeter = text.find('§');
+                    if (iterator == message.end())
+                        return;
 
-                    if (delimeter != std::string::npos)
-                    {
-                        const std::string sender  = text.substr(0, delimeter);
-                        const std::string content = text.substr(delimeter + 1);
+                    const std::string name(message.begin(), iterator);
+                    const std::vector blob(iterator + 1, message.end());
 
-                        std::cout << sender << " >> " << content << '\n';
-                    }
+                    const auto gameObject = GameObject::Create(name);
+
+                    NetworkSerialize::ObjectFromBytes(blob, *gameObject->GetTransform());
+
+                    GameObjectManager::GetInstance().Register(gameObject);
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_DestroyGameObject, [](std::vector<std::uint8_t> message)
+                {
+                    const std::string name(message.begin(), message.end());
+                    GameObjectManager::GetInstance().Unregister(name);
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_AddComponent, [](std::vector<std::uint8_t> message)
+                {
+                    const auto first = std::ranges::find(message, '\0');
+
+                    if (first == message.end())
+                        return;
+
+                    const auto second = std::find(first + 1, message.end(), '\0');
+
+                    if (second == message.end())
+                        return;
+
+                    const std::string gameObjectName(message.begin(), first);
+                    const std::string componentType(first + 1, second);
+
+                    const auto optionalGameObject = GameObjectManager::GetInstance().Get(gameObjectName);
+
+                    if (!optionalGameObject)
+                        return;
+
+                    const auto raw = ComponentFactory::Instantiate(componentType);
+
+                    if (!raw)
+                        return;
+
+                    const auto component = std::static_pointer_cast<Component>(raw);
+
+                    const std::vector blob(second + 1, message.end());
+
+                    NetworkSerialize::ObjectFromBytes(blob, *component);
+
+                    (*optionalGameObject)->AddComponentDynamic(component);
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveComponent, [](std::vector<std::uint8_t> msg)
+                {
+                    const auto nul = std::ranges::find(msg, '\0');
+
+                    if (nul == msg.end())
+                        return;
+
+                    const std::string goName(msg.begin(), nul);
+
+                    std::string componentType(nul + 1, msg.end());
+
+                    auto optionalGameObject = GameObjectManager::GetInstance().Get(goName);
+
+                    if (!optionalGameObject)
+                        return;
+
+                    (*optionalGameObject)->RemoveComponentDynamic(componentType);
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_AddChild, [](std::vector<std::uint8_t> message)
+                {
+                    const auto iterator = std::ranges::find(message, '\0');
+
+                    if (iterator == message.end())
+                        return;
+
+                    const std::string parentName(message.begin(), iterator);
+                    const std::string childName(iterator + 1, message.end());
+
+                    const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName);
+
+                    if (const auto childGameObject = GameObjectManager::GetInstance().Get(childName); parentGameObject && childGameObject)
+                        (*parentGameObject)->AddChild(*childGameObject);
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveChild, [](std::vector<std::uint8_t> message)
+                {
+                    const auto iterator = std::ranges::find(message, '\0');
+
+                    if (iterator == message.end())
+                        return;
+
+                    const std::string parentName(message.begin(), iterator);
+                    const std::string childName(iterator + 1, message.end());
+
+                    if (const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName))
+                        (*parentGameObject)->RemoveChild(childName);
                 });
         }
 
@@ -73,17 +168,14 @@ namespace Blaster::Client
 
         void Update()
         {
-            std::string input;
-
-            std::getline(std::cin, input);
-
-            const std::string hello = ClientNetwork::GetInstance().GetStringId() + "§" + input;
-            ClientNetwork::GetInstance().Send(PacketType::C2S_Chat, std::span(reinterpret_cast<const std::uint8_t*>(hello.data()), hello.size()));
+            GameObjectManager::GetInstance().Update();
         }
 
         void Render()
         {
             Window::Clear();
+
+            GameObjectManager::GetInstance().Render();
 
             Window::GetInstance().Present();
         }

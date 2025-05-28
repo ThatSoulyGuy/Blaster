@@ -34,7 +34,7 @@ namespace Blaster::Independent::Math
 		{ a.end() } -> std::input_or_output_iterator;
 	};
 
-	template <Arithmetic T, size_t N>
+	template <Arithmetic T, size_t N> requires (N > 1)
 	class Vector final
 	{
 

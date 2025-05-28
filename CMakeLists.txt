@@ -630,7 +630,6 @@ if(NOT TARGET Boost::chrono)
     add_library(Boost::chrono ALIAS boost_chrono)
 endif()
 
-
 FetchContent_Declare(
         boost_ratio
         GIT_REPOSITORY https://github.com/boostorg/ratio.git
@@ -703,6 +702,7 @@ function(blaster_add_executable target source_glob)
             Bullet::BulletDynamics
             Bullet::BulletCollision
             Bullet::LinearMath
+            Boost::serialization
             Boost::asio
             ${EXTRA_PLATFORM_LIBS}
     )
@@ -713,8 +713,8 @@ function(blaster_add_executable target source_glob)
     endif()
 endfunction()
 
-blaster_add_executable(Client "${CMAKE_SOURCE_DIR}/Blaster/Source/Client/*.cpp")
-blaster_add_executable(Server "${CMAKE_SOURCE_DIR}/Blaster/Source/Server/*.cpp")
+blaster_add_executable(Client "${CMAKE_SOURCE_DIR}/Blaster/Source/Client/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
+blaster_add_executable(Server "${CMAKE_SOURCE_DIR}/Blaster/Source/Server/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
 
 set(SOURCE_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 set(BUILD_ASSETS_DIR  "${CMAKE_CURRENT_BINARY_DIR}/Assets")

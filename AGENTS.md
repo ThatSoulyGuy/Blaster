@@ -1,0 +1,1 @@
+This is a server-client game. You need to run the server and client executables both to connect them together. Ensure you keep your coding style the same as mine-- never abbreviate variable/function/class/namespace names.

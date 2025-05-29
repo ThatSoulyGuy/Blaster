@@ -20,7 +20,9 @@ namespace Blaster::Independent::Network
         S2C_AddComponent = 6,
         S2C_RemoveComponent = 7,
         S2C_AddChild = 8,
-        S2C_RemoveChild = 9
+        S2C_RemoveChild = 9,
+        S2C_Rpc = 10,
+        C2S_Rpc = 11
     };
 
     struct PacketHeader

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <random>
 #include <boost/asio.hpp>
+#include "Network/RpcServer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
 #include "Server/Network/ServerSynchronization.hpp"
 
@@ -92,12 +93,15 @@ namespace Blaster::Server
                     ServerSynchronization::SynchronizeFullTree(who);
                 });
 
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rpc, [](NetworkId who, std::vector<std::uint8_t> pk)
+                {
+                    ServerRpc::HandleRequest(who, std::move(pk));
+                });
+
 
             auto crate = ServerSynchronization::SpawnGameObject("Crate");
-            auto player = ServerSynchronization::SpawnGameObject("Player");
 
             ServerSynchronization::AddComponent(crate, std::make_shared<TestComponent>());
-            ServerSynchronization::AddChild(player, crate);
         }
 
         bool IsRunning()

@@ -82,6 +82,25 @@ namespace Blaster::Independent::ECS
             return std::make_optional(std::static_pointer_cast<T>(componentMap[typeid(T)]));
         }
 
+        std::optional<std::shared_ptr<Component>> GetComponentDynamic(const std::string& typeName)
+        {
+            std::optional<std::type_index> typeIndex = std::nullopt;
+
+            for (auto iterator = componentMap.begin(); iterator != componentMap.end(); ++iterator)
+            {
+                if (iterator->second->GetTypeName() == typeName)
+                    typeIndex = iterator->first;
+            }
+
+            if (!typeIndex.has_value())
+            {
+                std::cout << "Component map for game object '" << name << "' doesn't contain component '" << typeName << "'!" << std::endl;
+                return std::nullopt;
+            }
+
+            return std::make_optional(componentMap[typeIndex.value()]);
+        }
+
         std::shared_ptr<Transform> GetTransform()
         {
             return std::static_pointer_cast<Transform>(componentMap[typeid(Transform)]);

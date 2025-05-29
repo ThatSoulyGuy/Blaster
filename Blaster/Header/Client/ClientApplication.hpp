@@ -4,21 +4,60 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <thread>
 #include <boost/asio.hpp>
 #include "Client/Core/Window.hpp"
 #include "Client/Network/ClientNetwork.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Network/NetworkSerialize.hpp"
+#include "Network/ClientRpc.hpp"
 
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 
 namespace Blaster::Client
 {
-    class ClientApplication final
+    class ClientComponent final : public Component
     {
 
+    public:
+
+        void Initialize() override
+        {
+            if (!GetGameObject()->IsAuthoritative())
+            {
+                std::random_device device;
+                std::mt19937 generator{device()};
+
+                std::uniform_int_distribution<int> distribution{0, 255};
+
+                myNumber = distribution(generator);
+            }
+        }
+
+        void Update() override
+        {
+            if (GetGameObject()->IsAuthoritative())
+                std::cout << "From RPC! " << myNumber << std::endl;
+        }
+
+        std::string GetTypeName() const override
+        {
+            return typeid(ClientComponent).name();
+        }
+
+    private:
+
+        friend class boost::serialization::access;
+        friend class Blaster::Independent::ECS::ComponentFactory;
+
+        int myNumber;
+
+    };
+
+    class ClientApplication final
+    {
     public:
 
         ClientApplication(const ClientApplication&) = delete;
@@ -28,7 +67,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.3.5", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.4.6", { 750, 450 });
         }
 
         void Initialize()
@@ -53,6 +92,11 @@ namespace Blaster::Client
             const int randomNumber = distribution(generator);
 
             ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Rpc, [](std::vector<std::uint8_t> pk)
+            {
+                ClientRpc::HandleReply(std::move(pk));
+            });
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CreateGameObject, [](std::vector<std::uint8_t> message)
                 {
@@ -163,6 +207,18 @@ namespace Blaster::Client
                     if (const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName))
                         (*parentGameObject)->RemoveChild(childName);
                 });
+
+            auto crateFuture = ClientRpc::CreateGameObject("Cratee");
+
+            std::thread([crateFuture = std::move(crateFuture)]() mutable
+            {
+                if(const auto gameObject = crateFuture.get())
+                {
+                    auto componentFuture = ClientRpc::AddComponent(gameObject->GetName(), std::make_shared<ClientComponent>());
+
+                    ClientRpc::TranslateTo(gameObject->GetName(), { 5, 0, 0 }, 2.0f);
+                }
+            });
         }
 
         bool IsRunning()
@@ -211,3 +267,5 @@ namespace Blaster::Client
     std::once_flag ClientApplication::initializationFlag;
     std::unique_ptr<ClientApplication> ClientApplication::instance;
 }
+
+BOOST_CLASS_EXPORT(Blaster::Client::ClientComponent)

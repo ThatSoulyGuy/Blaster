@@ -649,7 +649,10 @@ FetchContent_MakeAvailable(boost_asio)
 if(NOT TARGET Boost::asio)
     add_library(Boost::asio INTERFACE
             Blaster/Source/Independent/ComponentExportList.cpp
-            Blaster/Source/Independent/ComponentExportList.hpp)
+            Blaster/Source/Independent/ComponentExportList.hpp
+            Blaster/Header/Server/Network/RpcServer.hpp
+            Blaster/Header/Independent/Network/CommonRpc.hpp
+            Blaster/Header/Client/Network/ClientRpc.hpp)
     target_include_directories(Boost::asio INTERFACE
             ${boost_asio_SOURCE_DIR}/include)
 

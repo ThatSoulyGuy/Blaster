@@ -212,13 +212,13 @@ namespace Blaster::Client
 
             std::thread([crateFuture = std::move(crateFuture)]() mutable
             {
-                if(const auto gameObject = crateFuture.get())
+                if (const auto gameObject = crateFuture.get())
                 {
                     auto componentFuture = ClientRpc::AddComponent(gameObject->GetName(), std::make_shared<ClientComponent>());
 
                     ClientRpc::TranslateTo(gameObject->GetName(), { 5, 0, 0 }, 2.0f);
                 }
-            });
+            }).detach();
         }
 
         bool IsRunning()

@@ -48,9 +48,9 @@ namespace Blaster::Server::Network
             if (iterator == clients.end())
                 return;
 
-            auto buffer = CreatePacket(type, 0, payload);
+            auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, 0, payload));
 
-            boost::asio::async_write(iterator->second->sock, boost::asio::buffer(buffer), [](auto, auto) { });
+            boost::asio::async_write(iterator->second->sock, boost::asio::buffer(*buffer), [buffer](auto, auto) { });
         }
 
         void Broadcast(const PacketType type, const std::span<const std::uint8_t> payload)
@@ -117,12 +117,14 @@ namespace Blaster::Server::Network
                         std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer;
                         std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkId));
 
-                        auto assign = CreatePacket(PacketType::S2C_AssignNetworkId, 0, std::span(networkIdBuffer.data(), networkIdBuffer.size()));
-                        boost::asio::async_write(client->sock, boost::asio::buffer(assign), [](auto, auto){ });
+                        auto assign = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_AssignNetworkId,
+                                                                                      0,
+                                                                                      std::span(networkIdBuffer.data(), networkIdBuffer.size())));
+                        boost::asio::async_write(client->sock, boost::asio::buffer(*assign), [assign](auto, auto){ });
 
-                        auto ask = CreatePacket(PacketType::S2C_RequestStringId, 0, { });
+                        auto ask = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_RequestStringId, 0, { }));
 
-                        boost::asio::async_write(client->sock, boost::asio::buffer(ask), [](auto, auto){ });
+                        boost::asio::async_write(client->sock, boost::asio::buffer(*ask), [ask](auto, auto){ });
 
                         BeginRead(client);
                     }

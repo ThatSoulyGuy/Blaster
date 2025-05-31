@@ -168,9 +168,9 @@ namespace Blaster::Client
 
                     const std::string goName(msg.begin(), nul);
 
-                    std::string componentType(nul + 1, msg.end());
+                    const std::string componentType(nul + 1, msg.end());
 
-                    auto optionalGameObject = GameObjectManager::GetInstance().Get(goName);
+                    const auto optionalGameObject = GameObjectManager::GetInstance().Get(goName);
 
                     if (!optionalGameObject)
                         return;

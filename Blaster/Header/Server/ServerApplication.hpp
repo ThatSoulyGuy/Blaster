@@ -5,7 +5,7 @@
 #include <iostream>
 #include <random>
 #include <boost/asio.hpp>
-#include "Network/RpcServer.hpp"
+#include "Network/ServerRpc.hpp"
 #include "Server/Network/ServerNetwork.hpp"
 #include "Server/Network/ServerSynchronization.hpp"
 
@@ -93,7 +93,7 @@ namespace Blaster::Server
                     ServerSynchronization::SynchronizeFullTree(who);
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rpc, [](NetworkId who, std::vector<std::uint8_t> pk)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rpc, [](const NetworkId who, std::vector<std::uint8_t> pk)
                 {
                     ServerRpc::HandleRequest(who, std::move(pk));
                 });

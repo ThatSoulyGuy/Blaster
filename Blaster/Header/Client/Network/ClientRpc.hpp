@@ -42,7 +42,7 @@ namespace Blaster::Client::Network
             return MakeCall<void>(RpcType::C2S_DestroyGameObject, buffer);
         }
 
-        static Future<std::shared_ptr<Component>> AddComponent(std::string gameObjectName, const std::shared_ptr<Component> &component)
+        static Future<std::shared_ptr<Component>> AddComponent(std::string gameObjectName, const std::shared_ptr<Component>& component)
         {
             auto componentBytes = NetworkSerialize::ObjectToBytes(component);
 

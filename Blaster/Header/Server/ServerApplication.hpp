@@ -97,11 +97,6 @@ namespace Blaster::Server
                 {
                     ServerRpc::HandleRequest(who, std::move(pk));
                 });
-
-
-            auto crate = ServerSynchronization::SpawnGameObject("Crate");
-
-            ServerSynchronization::AddComponent(crate, std::make_shared<TestComponent>());
         }
 
         bool IsRunning()

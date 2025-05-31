@@ -25,15 +25,12 @@ namespace Blaster::Client
 
         void Initialize() override
         {
-            if (!GetGameObject()->IsAuthoritative())
-            {
-                std::random_device device;
-                std::mt19937 generator{device()};
+            std::random_device device;
+            std::mt19937 generator{device()};
 
-                std::uniform_int_distribution<int> distribution{0, 255};
+            std::uniform_int_distribution<int> distribution{0, 255};
 
-                myNumber = distribution(generator);
-            }
+            myNumber = distribution(generator);
         }
 
         void Update() override
@@ -52,6 +49,13 @@ namespace Blaster::Client
         friend class boost::serialization::access;
         friend class Blaster::Independent::ECS::ComponentFactory;
 
+        template <class Archive>
+        void serialize(Archive& archive, const unsigned)
+        {
+            archive & boost::serialization::base_object<Component>(*this);
+            archive & boost::serialization::make_nvp("myNumber", myNumber);
+        }
+
         int myNumber;
 
     };
@@ -67,7 +71,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.4.6", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.6.7", { 750, 450 });
         }
 
         void Initialize()
@@ -115,6 +119,9 @@ namespace Blaster::Client
                     NetworkSerialize::ObjectFromBytes(blob, transform);
 
                     gameObject->GetTransform().swap(transform);
+
+                    if (GameObjectManager::GetInstance().Has(name))
+                        GameObjectManager::GetInstance().Unregister(name);
 
                     GameObjectManager::GetInstance().Register(gameObject);
                 });
@@ -210,15 +217,9 @@ namespace Blaster::Client
 
             auto crateFuture = ClientRpc::CreateGameObject("Cratee");
 
-            std::thread([crateFuture = std::move(crateFuture)]() mutable
-            {
-                if (const auto gameObject = crateFuture.get())
-                {
-                    auto componentFuture = ClientRpc::AddComponent(gameObject->GetName(), std::make_shared<ClientComponent>());
+            ClientRpc::AddComponent("Cratee", std::make_shared<ClientComponent>()).get();
 
-                    ClientRpc::TranslateTo(gameObject->GetName(), { 5, 0, 0 }, 2.0f);
-                }
-            }).detach();
+            ClientRpc::TranslateTo("Cratee", { 5, 0, 0 }, 2.0f).get();
         }
 
         bool IsRunning()

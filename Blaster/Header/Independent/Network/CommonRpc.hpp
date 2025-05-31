@@ -8,20 +8,20 @@ namespace Blaster::Independent::Network
 {
     enum class RpcType : std::uint16_t
     {
-        C2S_CreateGameObject = 100,
-        S2C_CreateGameObject,
-        C2S_DestroyGameObject,
-        S2C_DestroyGameObject,
-        C2S_AddComponent,
-        S2C_AddComponent,
-        C2S_RemoveComponent,
-        S2C_RemoveComponent,
-        C2S_AddChild,
-        S2C_AddChild,
-        C2S_RemoveChild,
-        S2C_RemoveChild,
-        C2S_TranslateTo,
-        S2C_TranslateTo
+        C2S_CreateGameObject = 1,
+        S2C_CreateGameObject = 2,
+        C2S_DestroyGameObject = 3,
+        S2C_DestroyGameObject = 4,
+        C2S_AddComponent = 5,
+        S2C_AddComponent = 6,
+        C2S_RemoveComponent = 7,
+        S2C_RemoveComponent = 8,
+        C2S_AddChild = 9,
+        S2C_AddChild = 10,
+        C2S_RemoveChild = 11,
+        S2C_RemoveChild = 12,
+        C2S_TranslateTo = 13,
+        S2C_TranslateTo = 14
     };
 
     struct RpcHeader

@@ -177,6 +177,8 @@ namespace Blaster::Client::Network
 
             pending[id] = promise;
 
+            std::cout << "Sent packet with RPC type " << static_cast<int>(type) << std::endl;
+
             ClientNetwork::GetInstance().Send(PacketType::C2S_Rpc, packet);
 
             return promise->get_future();

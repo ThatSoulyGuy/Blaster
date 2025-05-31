@@ -9,7 +9,7 @@ using namespace Blaster::Independent::Network;
 
 namespace Blaster::Server::Network
 {
-    class ServerRpc
+    class ServerRpc final
     {
 
     public:
@@ -26,6 +26,8 @@ namespace Blaster::Server::Network
             std::memcpy(&header, packet.data(), sizeof header);
             packet.erase(packet.begin(), packet.begin() + sizeof header);
 
+            std::cout << "Packet received!" << std::endl;
+
             switch (header.type)
             {
                 case RpcType::C2S_CreateGameObject:
@@ -35,6 +37,8 @@ namespace Blaster::Server::Network
                     auto gameObject = ServerSynchronization::SpawnGameObject(name);
 
                     SendReply(who, header.id, RpcType::S2C_CreateGameObject, std::span(reinterpret_cast<const std::uint8_t*>(name.data()), name.size()));
+
+                    std::cout << "C2S_CreateGameObject" << std::endl;
 
                     break;
                 }
@@ -53,20 +57,25 @@ namespace Blaster::Server::Network
 
                 case RpcType::C2S_AddComponent:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
 
-                    std::string goName(packet.begin(), lineEndIterator);
-                    std::string type(lineEndIterator + 1, std::find(lineEndIterator + 1, packet.end(), '\0'));
-                    std::vector blob(std::find(lineEndIterator + 1, packet.end(), '\0') + 1, packet.end());
+                    std::string goName(packet.begin(), nul);
+                    std::string type(nul + 1, std::find(nul + 1, packet.end(), '\0'));
+                    std::vector blob(std::find(nul + 1, packet.end(), '\0') + 1, packet.end());
 
-                    if (auto gameObject = GameObjectManager::GetInstance().Get(goName))
+                    std::shared_ptr<Component> component;
+                    NetworkSerialize::ObjectFromBytes(blob, component);
+
+                    if (!component)
                     {
-                        auto raw = ComponentFactory::Instantiate(type);
-                        auto component = std::static_pointer_cast<Component>(raw);
+                        if (auto raw = ComponentFactory::Instantiate(type))
+                            component = std::static_pointer_cast<Component>(raw);
+                    }
 
-                        NetworkSerialize::ObjectFromBytes(blob, component);
-
-                        ServerSynchronization::AddComponent(*gameObject, component);
+                    if (component)
+                    {
+                        if (auto go = GameObjectManager::GetInstance().Get(goName))
+                            ServerSynchronization::AddComponent(*go, component);
                     }
 
                     std::vector<std::uint8_t> pay(goName.begin(), goName.end());
@@ -75,6 +84,8 @@ namespace Blaster::Server::Network
                     pay.insert(pay.end(), type.begin(), type.end());
 
                     SendReply(who, header.id, RpcType::S2C_AddComponent, pay);
+
+                    std::cout << "C2S_AddComponent" << std::endl;
 
                     break;
                 }
@@ -158,6 +169,8 @@ namespace Blaster::Server::Network
                         (*gameObject)->GetTransform()->Translate(target);
 
                     SendReply(who, header.id, RpcType::S2C_TranslateTo, {});
+
+                    std::cout << "C2S_TranslateTo" << std::endl;
 
                     break;
                 }

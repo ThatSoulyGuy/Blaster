@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Client/Network/ClientNetwork.hpp"
-#include "Independent/ECS/GameObject.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 #include "Independent/Network/CommonRpc.hpp"
@@ -27,6 +26,22 @@ namespace Blaster::Client::Network
         ClientRpc(ClientRpc&&) = delete;
         ClientRpc& operator=(const ClientRpc&) = delete;
         ClientRpc& operator=(ClientRpc&&) = delete;
+
+        static void OnGameObjectReplicated(const std::string& name)
+        {
+            auto& entry = pendingGameObjectMap[name];
+
+            entry.created = true;
+
+            if (entry.promise)
+            {
+                auto gameObject = GameObjectManager::GetInstance().Get(name);
+
+                entry.promise->set_value(gameObject ? *gameObject : nullptr);
+
+                pendingGameObjectMap.erase(name);
+            }
+        }
 
         static Future<std::shared_ptr<GameObject>> CreateGameObject(std::string name)
         {
@@ -92,16 +107,19 @@ namespace Blaster::Client::Network
         static Future<void> TranslateTo(std::string gameObject, const Vector<float, 3> target, const float seconds)
         {
             std::vector<std::uint8_t> buffer(gameObject.begin(), gameObject.end());
-
             buffer.push_back('\0');
 
-            auto targetBytes = NetworkSerialize::ObjectToBytes(target);
+            auto pushBlob = [&](const auto& obj)
+            {
+                auto blob = NetworkSerialize::ObjectToBytes(obj);
+                const std::uint32_t length = static_cast<std::uint32_t>(blob.size());
 
-            buffer.insert(buffer.end(), targetBytes.begin(), targetBytes.end());
+                buffer.insert(buffer.end(), reinterpret_cast<const std::uint8_t*>(&length), reinterpret_cast<const std::uint8_t*>(&length) + sizeof length);
+                buffer.insert(buffer.end(), blob.begin(), blob.end());
+            };
 
-            auto secondsBytes = NetworkSerialize::ObjectToBytes(seconds);
-
-            buffer.insert(buffer.end(), secondsBytes.begin(), secondsBytes.end());
+            pushBlob(target);
+            pushBlob(seconds);
 
             return MakeCall<void>(RpcType::C2S_TranslateTo, buffer);
         }
@@ -112,24 +130,35 @@ namespace Blaster::Client::Network
 
             std::memcpy(&header, packetData.data(), sizeof header);
 
+            std::cout << "[RPC-RX] id=" << header.id
+                << "  type=" << static_cast<int>(header.type) << '\n';
+
             packetData.erase(packetData.begin(), packetData.begin() + sizeof header);
 
-            const auto iterator = pending.find(header.id);
+            const auto iterator = pendingMap.find(header.id);
 
-            if (iterator == pending.end())
+            if (iterator == pendingMap.end())
                 return;
 
             switch (header.type)
             {
                 case RpcType::S2C_CreateGameObject:
                 {
-                    const auto promise = std::static_pointer_cast<std::promise<std::shared_ptr<GameObject>>>(iterator->second);
-
                     const std::string name(packetData.begin(), packetData.end());
 
-                    auto gameObject = GameObjectManager::GetInstance().Get(name);
+                    auto& [created, replied, promise] = pendingGameObjectMap[name];
 
-                    promise->set_value(gameObject ? *gameObject : nullptr);
+                    replied = true;
+                    promise = std::static_pointer_cast<std::promise<std::shared_ptr<GameObject>>>(iterator->second);
+
+                    if (created)
+                    {
+                        auto gameObject = GameObjectManager::GetInstance().Get(name);
+
+                        promise->set_value(gameObject ? *gameObject : nullptr);
+
+                        pendingGameObjectMap.erase(name);
+                    }
 
                     break;
                 }
@@ -154,7 +183,7 @@ namespace Blaster::Client::Network
                     std::static_pointer_cast<std::promise<void>>(iterator->second)->set_value();
             }
 
-            pending.erase(iterator);
+            pendingMap.erase(iterator);
         }
 
     private:
@@ -166,6 +195,10 @@ namespace Blaster::Client::Network
         {
             const std::uint64_t id = nextId++;
 
+            std::cout << "[RPC-TX] id=" << id
+                      << "  type=" << static_cast<int>(type)
+                      << "  bytes=" << payload.size() << '\n';
+
             const RpcHeader header{ id, type };
 
             std::vector<std::uint8_t> packet(sizeof header);
@@ -175,7 +208,7 @@ namespace Blaster::Client::Network
 
             auto promise = std::make_shared<std::promise<T>>();
 
-            pending[id] = promise;
+            pendingMap[id] = promise;
 
             std::cout << "Sent packet with RPC type " << static_cast<int>(type) << std::endl;
 
@@ -184,11 +217,22 @@ namespace Blaster::Client::Network
             return promise->get_future();
         }
 
-        static std::unordered_map<std::uint64_t, PromiseBase> pending;
+        struct PendingGameObject
+        {
+            bool created = false;
+            bool replied = false;
+
+            std::shared_ptr<std::promise<std::shared_ptr<GameObject>>> promise;
+        };
+
+        static std::unordered_map<std::string, PendingGameObject> pendingGameObjectMap;
+
+        static std::unordered_map<std::uint64_t, PromiseBase> pendingMap;
         static std::atomic_uint64_t nextId;
 
     };
 
-    std::unordered_map<std::uint64_t, ClientRpc::PromiseBase> ClientRpc::pending = {};
+    std::unordered_map<std::string, ClientRpc::PendingGameObject> ClientRpc::pendingGameObjectMap;
+    std::unordered_map<std::uint64_t, ClientRpc::PromiseBase> ClientRpc::pendingMap = {};
     std::atomic_uint64_t ClientRpc::nextId = 1;
 }

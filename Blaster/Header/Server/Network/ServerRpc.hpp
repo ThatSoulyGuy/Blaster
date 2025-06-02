@@ -26,6 +26,10 @@ namespace Blaster::Server::Network
             std::memcpy(&header, packet.data(), sizeof header);
             packet.erase(packet.begin(), packet.begin() + sizeof header);
 
+            std::cout << "[RPC-RX] id=" << header.id
+                << "  type=" << static_cast<int>(header.type)
+                << "  from=" << who << '\n';
+
             std::cout << "Packet received!" << std::endl;
 
             switch (header.type)
@@ -152,18 +156,34 @@ namespace Blaster::Server::Network
 
                 case RpcType::C2S_TranslateTo:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
+                    std::string goName(packet.begin(), nul);
 
-                    std::string goName(packet.begin(), lineEndIterator);
+                    auto cursor = nul + 1;
 
-                    Vector<float, 3> target;
+                    auto readBlob = [&](auto& outObj)
+                    {
+                        if (cursor + 4 > packet.end())
+                            throw std::runtime_error("malformed packet");
 
-                    float seconds = 0;
+                        std::uint32_t len;
+                        std::memcpy(&len, &*cursor, 4);
 
-                    std::vector rest(lineEndIterator+1, packet.end());
+                        cursor += 4;
 
-                    NetworkSerialize::ObjectFromBytes({ rest.begin(), rest.begin() + sizeof(target) * 4 }, target);
-                    NetworkSerialize::ObjectFromBytes({ rest.begin() + sizeof(target) * 4, rest.end() }, seconds);
+                        if (cursor + len > packet.end())
+                            throw std::runtime_error("malformed packet");
+
+                        NetworkSerialize::ObjectFromBytes({cursor, cursor + len}, outObj);
+
+                        cursor += len;
+                    };
+
+                    Vector<float,3> target;
+                    float seconds = 0.f;
+
+                    readBlob(target);
+                    readBlob(seconds);
 
                     if (auto gameObject = GameObjectManager::GetInstance().Get(goName))
                         (*gameObject)->GetTransform()->Translate(target);
@@ -188,6 +208,10 @@ namespace Blaster::Server::Network
         {
             const RpcHeader header{ id, type };
 
+            std::cout << "[RPC-RX] id=" << header.id
+                << "  type=" << static_cast<int>(header.type)
+                << "  from=" << who << '\n';
+
             std::vector<std::uint8_t> packet(sizeof header);
             std::memcpy(packet.data(), &header, sizeof header);
 
@@ -195,6 +219,5 @@ namespace Blaster::Server::Network
 
             ServerNetwork::GetInstance().SendTo(who, PacketType::S2C_Rpc, packet);
         }
-
     };
 }

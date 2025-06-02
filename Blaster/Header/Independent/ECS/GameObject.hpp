@@ -10,12 +10,13 @@
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 
+using namespace Blaster::Independent::Math;
+using namespace Blaster::Independent::Network;
+
 namespace Blaster::Server::Network
 {
     class ServerSynchronization;
 }
-
-using namespace Blaster::Independent::Math;
 
 namespace Blaster::Independent::ECS
 {
@@ -224,13 +225,13 @@ namespace Blaster::Independent::ECS
                 child->Update();
         }
 
-        void Render()
+        void Render(const std::shared_ptr<Client::Render::Camera>& camera)
         {
             for (const auto& component : componentMap | std::views::values)
-                component->Render();
+                component->Render(camera);
 
             for (const auto& child : childMap | std::views::values)
-                child->Render();
+                child->Render(camera);
         }
 
         static std::shared_ptr<GameObject> Create(const std::string& name)

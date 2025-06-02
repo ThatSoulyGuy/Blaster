@@ -4,62 +4,26 @@
 #include <memory>
 #include <mutex>
 #include <random>
-#include <thread>
 #include <boost/asio.hpp>
 #include "Client/Core/Window.hpp"
+#include "Client/Core/InputManager.hpp"
 #include "Client/Network/ClientNetwork.hpp"
+#include "Client/Network/ClientRpc.hpp"
+#include "Client/Render/ShaderManager.hpp"
+#include "Client/Render/Camera.hpp"
+#include "Client/Render/Mesh.hpp"
+#include "Client/Render/Vertices/FatVertex.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Network/NetworkSerialize.hpp"
-#include "Network/ClientRpc.hpp"
 
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
+using namespace Blaster::Client::Render;
+using namespace Blaster::Client::Render::Vertices;
 
 namespace Blaster::Client
 {
-    class ClientComponent final : public Component
-    {
-
-    public:
-
-        void Initialize() override
-        {
-            std::random_device device;
-            std::mt19937 generator{device()};
-
-            std::uniform_int_distribution<int> distribution{0, 255};
-
-            myNumber = distribution(generator);
-        }
-
-        void Update() override
-        {
-            if (GetGameObject()->IsAuthoritative())
-                std::cout << "From RPC! " << myNumber << std::endl;
-        }
-
-        std::string GetTypeName() const override
-        {
-            return typeid(ClientComponent).name();
-        }
-
-    private:
-
-        friend class boost::serialization::access;
-        friend class Blaster::Independent::ECS::ComponentFactory;
-
-        template <class Archive>
-        void serialize(Archive& archive, const unsigned)
-        {
-            archive & boost::serialization::base_object<Component>(*this);
-            archive & boost::serialization::make_nvp("myNumber", myNumber);
-        }
-
-        int myNumber;
-
-    };
-
     class ClientApplication final
     {
     public:
@@ -71,7 +35,11 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.6.7", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.10.9", { 750, 450 });
+
+            ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
+
+            InputManager::GetInstance().Initialize();
         }
 
         void Initialize()
@@ -124,6 +92,8 @@ namespace Blaster::Client
                         GameObjectManager::GetInstance().Unregister(name);
 
                     GameObjectManager::GetInstance().Register(gameObject);
+
+                    ClientRpc::OnGameObjectReplicated(gameObject->GetName());
                 });
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_DestroyGameObject, [](std::vector<std::uint8_t> message)
@@ -215,11 +185,49 @@ namespace Blaster::Client
                         (*parentGameObject)->RemoveChild(childName);
                 });
 
-            auto crateFuture = ClientRpc::CreateGameObject("Cratee");
 
-            ClientRpc::AddComponent("Cratee", std::make_shared<ClientComponent>()).get();
+            auto meshGameObjectFuture = ClientRpc::CreateGameObject("mesh");
 
-            ClientRpc::TranslateTo("Cratee", { 5, 0, 0 }, 2.0f).get();
+            std::thread([future = std::move(meshGameObjectFuture)]() mutable
+            {
+                if (const auto gameObject = future.get())
+                {
+                    ClientRpc::AddComponent(gameObject->GetName(), ShaderManager::GetInstance().Get("blaster.fat").value());
+
+                    auto meshFuture = ClientRpc::AddComponent(
+                            gameObject->GetName(),
+                            Mesh<FatVertex>::Create(
+                            {
+                                { { 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 0.0f } },
+                                { { 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 0.0f, 1.0f } },
+                                { { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 1.0f } },
+                                { { 1.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f } }
+                            },
+                            {
+                                0, 1, 2,
+                                2, 1, 3
+                            }));
+
+                    if (const auto mesh = std::static_pointer_cast<Mesh<FatVertex>>(meshFuture.get()))
+                        mesh->Generate();
+                }
+            }).detach();
+
+
+            auto playerGameObjectFuture = ClientRpc::CreateGameObject("player");
+
+            std::thread([this, playerFuture = std::move(playerGameObjectFuture)]() mutable
+            {
+                if (const auto player = playerFuture.get())
+                {
+                    auto cameraFuture = ClientRpc::AddComponent(player->GetName(), Camera::Create(45.f, 0.01f, 1000.f));
+
+                    if (auto cameraComponent = std::static_pointer_cast<Camera>(cameraFuture.get()))
+                        camera = std::make_optional(cameraComponent);
+
+                    ClientRpc::TranslateTo(player->GetName(), { 0.0f, 0.0f, -5.0f }, 2.0f);
+                }
+            }).detach();
         }
 
         bool IsRunning()
@@ -236,9 +244,11 @@ namespace Blaster::Client
         {
             Window::Clear();
 
-            GameObjectManager::GetInstance().Render();
+            GameObjectManager::GetInstance().Render(camera);
 
             Window::GetInstance().Present();
+
+            InputManager::GetInstance().Update();
         }
 
         void Uninitialize()
@@ -260,6 +270,8 @@ namespace Blaster::Client
 
         ClientApplication() = default;
 
+        std::optional<std::shared_ptr<Camera>> camera;
+
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientApplication> instance;
 
@@ -268,5 +280,3 @@ namespace Blaster::Client
     std::once_flag ClientApplication::initializationFlag;
     std::unique_ptr<ClientApplication> ClientApplication::instance;
 }
-
-BOOST_CLASS_EXPORT(Blaster::Client::ClientComponent)

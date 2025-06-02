@@ -386,8 +386,11 @@ namespace Blaster::Independent::Math
 
 		std::array<std::array<T, R>, C> data;
 
-		friend bool operator==(const Matrix& lhs, const Matrix& rhs);
-		friend bool operator!=(const Matrix& lhs, const Matrix& rhs);
+		template <Arithmetic U, size_t V, size_t X>
+		friend bool operator==(const Matrix<U, V, X>&, const Matrix<U, V, X>&);
+
+		template <Arithmetic U, size_t V, size_t X>
+		friend bool operator!=(const Matrix<U, V, X>&, const Matrix<U, V, X>&);
 	};
 
 	template <Arithmetic T, size_t R, size_t C>

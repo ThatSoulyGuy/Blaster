@@ -8,6 +8,7 @@
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/export.hpp>
+#include "Independent/ComponentRegistry.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/Math/Matrix.hpp"
@@ -289,4 +290,4 @@ namespace Blaster::Independent::Math
     };
 }
 
-BOOST_CLASS_EXPORT(Blaster::Independent::Math::Transform)
+REGISTER_COMPONENT(Blaster::Independent::Math::Transform)

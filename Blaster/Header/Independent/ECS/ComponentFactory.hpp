@@ -8,26 +8,6 @@
 #include <boost/serialization/shared_ptr.hpp>
 #include "Independent/ECS/Component.hpp"
 
-#define CONCAT_IMPL(a, b) a##b
-#define CONCAT(a, b)      CONCAT_IMPL(a, b)
-
-#define REGISTER_COMPONENT(type)                                               \
-namespace {                                                                    \
-    static const bool CONCAT(_component_registered_, __COUNTER__) = [](){      \
-        ComponentFactory::Register<type>();                                    \
-        return true;                                                           \
-    }();                                                                       \
-}
-
-#define REGISTER_COMPONENT_TEMPLATED(type)                                     \
-namespace {                                                                    \
-    template <typename T>                                                      \
-    static const bool CONCAT(_component_registered_, __COUNTER__) = [](){      \
-        ComponentFactory::Register<type<T>>();                                 \
-        return true;                                                           \
-    }();                                                                       \
-}
-
 namespace Blaster::Independent::ECS
 {
     class ComponentFactory

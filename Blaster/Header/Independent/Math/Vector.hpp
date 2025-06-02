@@ -13,6 +13,9 @@
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/access.hpp>
 
+#include "boost/core/demangle.hpp"
+#include "boost/serialization/export.hpp"
+
 namespace Blaster::Independent::Math
 {
 	template <typename T>
@@ -32,6 +35,21 @@ namespace Blaster::Independent::Math
 
 		{ a.begin() } -> std::input_or_output_iterator;
 		{ a.end() } -> std::input_or_output_iterator;
+	};
+
+	template<class Concrete>
+	struct AutoExporter
+	{
+		static const boost::archive::detail::extra_detail::guid_initializer<Concrete>& GetInstance()
+		{
+			static const auto& result =
+				boost::serialization::singleton<boost::archive::detail::extra_detail::guid_initializer<Concrete>>::get_mutable_instance()
+				.export_guid( boost::core::demangle(typeid(Concrete).name()).c_str() );
+
+			return result;
+		}
+
+		static inline const bool touched = (GetInstance(), true);
 	};
 
 	template <Arithmetic T, size_t N> requires (N > 1)
@@ -562,14 +580,6 @@ namespace Blaster::Independent::Math
 			return result;
 		}
 
-		friend class boost::serialization::access;
-
-		template<class Archive>
-		void serialize(Archive& archive, const unsigned)
-		{
-			archive & boost::serialization::make_array(data.data(), N);
-		}
-
 		template <ArrayType U>
 		operator U() const
 		{
@@ -590,6 +600,16 @@ namespace Blaster::Independent::Math
 		}
 
 	private:
+
+		friend class boost::serialization::access;
+
+		template <class Archive>
+		void serialize(Archive& archive, const unsigned)
+		{
+			archive & boost::serialization::make_nvp("data", boost::serialization::make_array(data.data(), N));
+		}
+
+		static inline const bool _autoExport = AutoExporter<Vector>::touched;
 
 		std::array<T, N> data;
 

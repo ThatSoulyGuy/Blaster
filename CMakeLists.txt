@@ -720,6 +720,12 @@ endfunction()
 blaster_add_executable(Client "${CMAKE_SOURCE_DIR}/Blaster/Source/Client/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
 blaster_add_executable(Server "${CMAKE_SOURCE_DIR}/Blaster/Source/Server/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
 
+if (WIN32)
+    target_compile_options(Client PRIVATE "-Wa,-mbig-obj")
+    target_compile_options(Server PRIVATE "-Wa,-mbig-obj")
+endif()
+
+
 set(SOURCE_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 set(BUILD_ASSETS_DIR  "${CMAKE_CURRENT_BINARY_DIR}/Assets")
 

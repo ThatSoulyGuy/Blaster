@@ -158,9 +158,11 @@ namespace Blaster::Server::Network
 
                         payload.resize(header->size);
 
-                        std::memcpy(payload.data(), client->inbox.data()+sizeof(PacketHeader), header->size);
+                        std::memcpy(payload.data(),
+                                    client->inbox.data() + sizeof(PacketHeader),
+                                    header->size);
 
-                        HandlePacket(*header, std::move(payload));
+                        HandlePacket(client->id, *header, std::move(payload));
 
                         client->inbox.erase(client->inbox.begin(), client->inbox.begin() + needed);
                     }
@@ -169,12 +171,14 @@ namespace Blaster::Server::Network
                 });
         }
 
-        void HandlePacket(const PacketHeader& header, std::vector<std::uint8_t>&& data)
+        void HandlePacket(const NetworkId from,
+                          const PacketHeader& header,
+                          std::vector<std::uint8_t>&& data)
         {
             if (const auto iterator = packetHandlerMap.find(header.type); iterator != packetHandlerMap.end())
             {
-                for (auto& function: iterator->second)
-                    function(header.from, std::move(data));
+                for (auto& function : iterator->second)
+                    function(from, std::move(data));
             }
         }
 

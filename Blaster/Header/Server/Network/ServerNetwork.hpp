@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <array>
+#include <deque>
 #include <ranges>
 #include <thread>
 #include <boost/asio.hpp>
@@ -50,18 +51,36 @@ namespace Blaster::Server::Network
 
             auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, 0, payload));
 
-            boost::asio::async_write(iterator->second->sock, boost::asio::buffer(*buffer), [buffer](auto, auto) { });
+            boost::asio::dispatch(iterator->second->strand, [this, client = iterator->second, buf = std::move(buffer)]() mutable
+            {
+                client->writeQueue.push_back(std::move(buf));
+
+                if (client->writeQueue.size() == 1)
+                    StartWrite(client);
+            });
         }
 
-        void Broadcast(const PacketType type, const std::span<const std::uint8_t> payload)
+        void Broadcast(const PacketType type, const std::span<const std::uint8_t> payload, const std::optional<NetworkId> except = std::nullopt)
         {
             for (const auto& id: clients | std::views::keys)
+            {
+                if (except.has_value() && id == except.value())
+                    continue;
+
                 SendTo(id, type, payload);
+            }
         }
 
         bool IsRunning() const
         {
             return running;
+        }
+
+        std::vector<NetworkId> GetConnectedClients() const
+        {
+            auto result = clients | std::views::keys;
+
+            return { result.begin(), result.end() };
         }
 
         void Uninitialize()
@@ -95,13 +114,34 @@ namespace Blaster::Server::Network
 
         struct Client
         {
-            TcpProtocol::socket sock;
+            TcpProtocol::socket socket;
+            boost::asio::basic_stream_socket<boost::asio::ip::tcp>::executor_type strand;
 
-            NetworkId id;
+            std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
 
-            std::array<std::uint8_t, 512> readBuffer;
+            NetworkId id{};
+            std::array<std::uint8_t, 512> readBuffer{};
             std::vector<std::uint8_t> inbox;
+
+            explicit Client(TcpProtocol::socket sock) : socket(std::move(sock)), strand(socket.get_executor()) { }
         };
+
+        void StartWrite(const std::shared_ptr<Client>& client)
+        {
+            boost::asio::async_write(client->socket, boost::asio::buffer(*client->writeQueue.front()), boost::asio::bind_executor(client->strand, [client, this](const boost::system::error_code& error, std::size_t)
+            {
+                client->writeQueue.pop_front();
+
+                if (error)
+                {
+                    std::cerr << "Error during packet sending! " << error << std::endl;
+                    return;
+                }
+
+                if (!client->writeQueue.empty())
+                    StartWrite(client);
+            }));
+        }
 
         void DoAccept()
         {
@@ -109,22 +149,24 @@ namespace Blaster::Server::Network
                 {
                     if (!errorCode)
                     {
+                        socket.set_option(TcpProtocol::no_delay(true));
+
                         const auto client  = std::make_shared<Client>(Client{std::move(socket)});
 
                         client->id = nextId += 1;
                         clients[client->id] = client;
 
-                        std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer;
+                        std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer{};
                         std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkId));
 
                         auto assign = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_AssignNetworkId,
                                                                                       0,
                                                                                       std::span(networkIdBuffer.data(), networkIdBuffer.size())));
-                        boost::asio::async_write(client->sock, boost::asio::buffer(*assign), [assign](auto, auto){ });
+                        boost::asio::async_write(client->socket, boost::asio::buffer(*assign), [assign](auto, auto){ });
 
                         auto ask = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_RequestStringId, 0, { }));
 
-                        boost::asio::async_write(client->sock, boost::asio::buffer(*ask), [ask](auto, auto){ });
+                        boost::asio::async_write(client->socket, boost::asio::buffer(*ask), [ask](auto, auto){ });
 
                         BeginRead(client);
                     }
@@ -135,7 +177,7 @@ namespace Blaster::Server::Network
 
         void BeginRead(const std::shared_ptr<Client>& client)
         {
-            client->sock.async_read_some(boost::asio::buffer(client->readBuffer), [this, client](const ErrorCode& errorCode, const std::size_t number)
+            client->socket.async_read_some(boost::asio::buffer(client->readBuffer), [this, client](const ErrorCode& errorCode, const std::size_t number)
                 {
                     if (errorCode)
                     {
@@ -171,9 +213,7 @@ namespace Blaster::Server::Network
                 });
         }
 
-        void HandlePacket(const NetworkId from,
-                          const PacketHeader& header,
-                          std::vector<std::uint8_t>&& data)
+        void HandlePacket(const NetworkId from, const PacketHeader& header, std::vector<std::uint8_t>&& data)
         {
             if (const auto iterator = packetHandlerMap.find(header.type); iterator != packetHandlerMap.end())
             {

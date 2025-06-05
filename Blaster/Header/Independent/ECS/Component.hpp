@@ -19,14 +19,16 @@ namespace Blaster::Independent::ECS
 
     public:
 
-        virtual ~Component() { }
+        virtual ~Component() = default;
 
         virtual void Initialize() { }
         virtual void Update() { }
         virtual void Render(const std::shared_ptr<Client::Render::Camera>&) { }
 
+        [[nodiscard]]
         virtual std::string GetTypeName() const = 0;
 
+        [[nodiscard]]
         std::shared_ptr<GameObject> GetGameObject() const
         {
             return gameObject.lock();

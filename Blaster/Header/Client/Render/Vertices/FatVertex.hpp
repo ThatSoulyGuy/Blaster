@@ -17,6 +17,7 @@ namespace Blaster::Client::Render::Vertices
 
         FatVertex() = default;
 
+        [[nodiscard]]
         VertexBufferLayout GetLayout() const override
         {
             VertexBufferLayout layout;
@@ -47,10 +48,10 @@ namespace Blaster::Client::Render::Vertices
             archive & boost::serialization::make_nvp("uvs", uvs);
         }
 
-        Vector<float, 3> position;
-        Vector<float, 3> color;
-        Vector<float, 3> normal;
-        Vector<float, 2> uvs;
+        Vector<float, 3> position{};
+        Vector<float, 3> color{};
+        Vector<float, 3> normal{};
+        Vector<float, 2> uvs{};
     };
 }
 

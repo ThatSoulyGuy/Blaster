@@ -4,11 +4,13 @@
 #include <mutex>
 #include <iostream>
 #include <random>
-#include <boost/asio.hpp>
-#include "Network/ServerRpc.hpp"
+#include "Independent/Utility/Time.hpp"
+#include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
+#include "Server/Network/ServerRpc.hpp"
 #include "Server/Network/ServerSynchronization.hpp"
 
+using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
@@ -42,6 +44,10 @@ namespace Blaster::Server
 
                     std::cout << "Client " << who << " is '" << name << "'\n";
 
+                    const auto playerObject = ServerSynchronization::SpawnGameObject("player-" + name, who);
+
+                    ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
+
                     ServerSynchronization::SynchronizeFullTree(who);
                 });
 
@@ -59,6 +65,8 @@ namespace Blaster::Server
         void Update()
         {
             GameObjectManager::GetInstance().Update();
+
+            Time::GetInstance().Update();
         }
 
         void Uninitialize()

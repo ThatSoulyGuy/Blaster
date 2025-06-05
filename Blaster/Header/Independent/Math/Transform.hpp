@@ -55,12 +55,13 @@ namespace Blaster::Independent::Math
                 function(localScale);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetLocalPosition() const
         {
             return localPosition;
         }
 
-        void SetLocalPosition(const Vector<float, 3>& value, bool update = true)
+        void SetLocalPosition(const Vector<float, 3>& value, const bool update = true)
         {
             localPosition = value;
 
@@ -71,12 +72,13 @@ namespace Blaster::Independent::Math
                 function(localPosition);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetLocalRotation() const
         {
             return localRotation;
         }
 
-        void SetLocalRotation(const Vector<float, 3>& value, bool update = true)
+        void SetLocalRotation(const Vector<float, 3>& value, const bool update = true)
         {
             localRotation = value;
 
@@ -95,6 +97,7 @@ namespace Blaster::Independent::Math
                 function(localRotation);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetLocalScale() const
         {
             return localScale;
@@ -111,6 +114,7 @@ namespace Blaster::Independent::Math
                 function(localScale);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetWorldPosition() const
         {
             auto M = GetModelMatrix();
@@ -118,6 +122,7 @@ namespace Blaster::Independent::Math
             return { M[3][0], M[3][1], M[3][2] };
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetWorldScale() const
         {
             auto M = GetModelMatrix();
@@ -135,6 +140,7 @@ namespace Blaster::Independent::Math
             };
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetForward() const
         {
             auto M = GetModelMatrix();
@@ -144,6 +150,7 @@ namespace Blaster::Independent::Math
             return Vector<float, 3>::Normalize(f);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetRight() const
         {
             auto M = GetModelMatrix();
@@ -153,6 +160,7 @@ namespace Blaster::Independent::Math
             return Vector<float, 3>::Normalize(r);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetUp() const
         {
             auto M = GetModelMatrix();
@@ -162,6 +170,7 @@ namespace Blaster::Independent::Math
             return Vector<float, 3>::Normalize(u);
         }
 
+        [[nodiscard]]
         Vector<float, 3> GetWorldRotation() const
         {
             auto M = GetModelMatrix();
@@ -193,7 +202,7 @@ namespace Blaster::Independent::Math
                 roll = std::atan2(M[2][1], M[2][2]);
             }
 
-            const float rad2deg = 180.0f / std::numbers::pi_v<float>;
+            constexpr float rad2deg = 180.0f / std::numbers::pi_v<float>;
 
             return Vector<float, 3>{ pitch* rad2deg, yaw* rad2deg, roll* rad2deg };
         }
@@ -213,6 +222,7 @@ namespace Blaster::Independent::Math
             onScaleUpdated.push_back(function);
         }
 
+        [[nodiscard]]
         std::optional<std::weak_ptr<Transform>> GetParent() const
         {
             return parent;
@@ -226,6 +236,7 @@ namespace Blaster::Independent::Math
                 parent = std::make_optional<std::weak_ptr<Transform>>(newParent);
         }
 
+        [[nodiscard]]
         Matrix<float, 4, 4> GetModelMatrix() const
         {
             const auto T = Matrix<float, 4, 4>::Translation(localPosition);
@@ -245,6 +256,7 @@ namespace Blaster::Independent::Math
             return localMatrix;
         }
 
+        [[nodiscard]]
         std::string GetTypeName() const override
         {
             return typeid(Transform).name();

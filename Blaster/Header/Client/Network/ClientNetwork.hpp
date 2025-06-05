@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <array>
+#include <deque>
 #include <thread>
 #include <boost/asio.hpp>
 #include "Independent/Network/CommonNetwork.hpp"
@@ -42,6 +43,8 @@ namespace Blaster::Client::Network
                 return;
             }
 
+            socket.set_option(TcpProtocol::no_delay(true));
+
             BeginRead();
 
             ioThread = std::thread([this]{ ioContext.run(); });
@@ -58,11 +61,14 @@ namespace Blaster::Client::Network
 
         void Send(const PacketType type, const std::span<const std::uint8_t> payload)
         {
-            auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, networkId, payload));
+            auto buf = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, networkId, payload));
 
-            boost::asio::post(strand, [this, buffer]
+            boost::asio::post(strand, [this, buf]
                 {
-                    boost::asio::async_write(socket, boost::asio::buffer(*buffer), [buffer](auto, auto) {});
+                    writeQueue.push_back(buf);
+
+                    if (writeQueue.size() == 1)
+                        StartWrite();
                 });
         }
 
@@ -102,6 +108,24 @@ namespace Blaster::Client::Network
     private:
 
         ClientNetwork() = default;
+
+        void StartWrite()
+        {
+            boost::asio::async_write(socket, boost::asio::buffer(*writeQueue.front()), boost::asio::bind_executor(strand,
+                [this](const ErrorCode& error, std::size_t)
+                {
+                    writeQueue.pop_front();
+
+                    if (error)
+                    {
+                        std::cerr << "ClientNetwork: write failed: " << error.message() << '\n';
+                        return;
+                    }
+
+                    if (!writeQueue.empty())
+                        StartWrite();
+                }));
+        }
 
         void BeginRead()
         {
@@ -174,6 +198,8 @@ namespace Blaster::Client::Network
         boost::asio::strand<boost::asio::io_context::executor_type> strand = boost::asio::make_strand(ioContext);
 
         std::unordered_map<PacketType, std::vector<std::function<void(std::vector<std::uint8_t>)>>> packetHandlerMap;
+
+        std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientNetwork> instance;

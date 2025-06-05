@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.4...4.0)
 
 project(Blaster LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(BLASTER_HEADERS_DIR "${CMAKE_SOURCE_DIR}/Blaster/Header")
@@ -719,6 +719,8 @@ endfunction()
 
 blaster_add_executable(Client "${CMAKE_SOURCE_DIR}/Blaster/Source/Client/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
 blaster_add_executable(Server "${CMAKE_SOURCE_DIR}/Blaster/Source/Server/*.cpp" "${CMAKE_SOURCE_DIR}/Blaster/Source/Independent/*.cpp")
+
+target_compile_definitions(Server PRIVATE IS_SERVER)
 
 if (WIN32)
     target_compile_options(Client PRIVATE "-Wa,-mbig-obj")

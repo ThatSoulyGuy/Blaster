@@ -164,6 +164,9 @@ namespace Blaster::Server::Entity::Entities
                 return;
             }
 
+            if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
+                InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
+
             Vector<float, 2> mouseDelta = InputManager::GetInstance().GetMouseDelta();
 
             const auto transform = camera->GetGameObject()->GetTransform();

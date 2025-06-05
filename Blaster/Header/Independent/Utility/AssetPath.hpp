@@ -26,7 +26,7 @@ inline std::string GetExecutableDirectory()
     {
         const std::string fullPath(buffer);
 
-        return fullPath.substr(0, fullPath.find_last_of('/'));
+        return fullPath.substr(0, fullPath.find_last_of('/')) + "/";
     }
 
     throw std::runtime_error("Failed to get exe path");
@@ -61,7 +61,7 @@ namespace Blaster::Independent::Utility
         [[nodiscard]]
         std::string GetFullPath() const
         {
-            return std::format("{}/Assets/{}/{}", GetExecutableDirectory(), domain, localPath);
+            return std::format("{}Assets/{}/{}", GetExecutableDirectory(), domain, localPath);
         }
 
         template <typename Archive>

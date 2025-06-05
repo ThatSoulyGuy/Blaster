@@ -21,10 +21,14 @@ namespace Blaster::Server::Network
 
         static void HandleRequest(NetworkId who, std::vector<std::uint8_t> packet)
         {
-            RpcHeader header;
+            RpcHeader header = {};
 
             std::memcpy(&header, packet.data(), sizeof header);
             packet.erase(packet.begin(), packet.begin() + sizeof header);
+
+            std::cout << "[RPC-RX] id=" << header.id
+                << "  type=" << static_cast<int>(header.type)
+                << "  from=" << who << '\n';
 
             std::cout << "Packet received!" << std::endl;
 
@@ -32,11 +36,52 @@ namespace Blaster::Server::Network
             {
                 case RpcType::C2S_CreateGameObject:
                 {
-                    std::string name(packet.begin(), packet.end());
+                    std::string fullPath(packet.begin(), packet.end());
 
-                    auto gameObject = ServerSynchronization::SpawnGameObject(name);
+                    if (auto existing = FindGameObject(fullPath))
+                    {
+                        SendReply(who, header.id, RpcType::S2C_CreateGameObject, std::span(reinterpret_cast<const std::uint8_t*>(fullPath.data()), fullPath.size()));
 
-                    SendReply(who, header.id, RpcType::S2C_CreateGameObject, std::span(reinterpret_cast<const std::uint8_t*>(name.data()), name.size()));
+                        break;
+                    }
+
+                    auto toView = [](auto &&sub)
+                    {
+                        return std::string_view(&*sub.begin(), std::ranges::distance(sub));
+                    };
+
+                    auto tokenView = std::string_view(fullPath) | std::views::split('.') | std::views::transform(toView);
+
+                    auto tokenIterator = tokenView.begin();
+
+                    if (tokenIterator == tokenView.end())
+                    {
+                        SendReply(who, header.id, RpcType::S2C_CreateGameObject, {});
+                        break;
+                    }
+
+                    auto masterToken = *tokenIterator;
+
+                    auto parent = GameObjectManager::GetInstance().Get(std::string{ masterToken });
+
+                    if (!parent)
+                        parent = ServerSynchronization::SpawnGameObject(std::string{ masterToken }, std::make_optional(who));
+
+                    for (auto token : tokenView | std::views::drop(1))
+                    {
+                        if (auto child = parent.value()->GetChild(std::string{ token }))
+                            parent = child;
+                        else
+                        {
+                            auto fresh = ServerSynchronization::SpawnGameObject(std::string{ token }); //TODO: Does this need 'except: std::make_optional(who)'?
+
+                            ServerSynchronization::AddChild(parent.value(), fresh, std::make_optional(who));
+
+                            parent = fresh;
+                        }
+                    }
+
+                    SendReply(who, header.id, RpcType::S2C_CreateGameObject, std::span( reinterpret_cast<const std::uint8_t*>( fullPath.data() ), fullPath.size() ) );
 
                     std::cout << "C2S_CreateGameObject" << std::endl;
 
@@ -45,10 +90,10 @@ namespace Blaster::Server::Network
 
                 case RpcType::C2S_DestroyGameObject:
                 {
-                    std::string name(packet.begin(), packet.end());
+                    std::string fullPath(packet.begin(), packet.end());
 
-                    if (auto gameObject = GameObjectManager::GetInstance().Get(name))
-                        ServerSynchronization::DestroyGameObject(*gameObject);
+                    if (auto leaf = FindGameObject(fullPath))
+                        ServerSynchronization::DestroyGameObject(*leaf);
 
                     SendReply(who, header.id, RpcType::S2C_DestroyGameObject, {});
 
@@ -59,8 +104,8 @@ namespace Blaster::Server::Network
                 {
                     auto nul = std::ranges::find(packet, '\0');
 
-                    std::string goName(packet.begin(), nul);
-                    std::string type(nul + 1, std::find(nul + 1, packet.end(), '\0'));
+                    std::string path(packet.begin(), nul);
+                    std::string type(nul + 1, std::find(nul + 1, packet.end(), '\0' ));
                     std::vector blob(std::find(nul + 1, packet.end(), '\0') + 1, packet.end());
 
                     std::shared_ptr<Component> component;
@@ -74,16 +119,18 @@ namespace Blaster::Server::Network
 
                     if (component)
                     {
-                        if (auto go = GameObjectManager::GetInstance().Get(goName))
-                            ServerSynchronization::AddComponent(*go, component);
+                        if (auto target = FindGameObject(path))
+                            ServerSynchronization::AddComponent(*target, component, std::make_optional(who));
                     }
 
-                    std::vector<std::uint8_t> pay(goName.begin(), goName.end());
+                    std::vector<std::uint8_t> reply(path.begin(), path.end());
 
-                    pay.push_back('\0');
-                    pay.insert(pay.end(), type.begin(), type.end());
+                    reply.push_back('\0' );
+                    reply.insert(reply.end(), type.begin(), type.end());
+                    reply.push_back('\0' );
+                    reply.insert(reply.end(), blob.begin(), blob.end());
 
-                    SendReply(who, header.id, RpcType::S2C_AddComponent, pay);
+                    SendReply(who, header.id, RpcType::S2C_AddComponent, reply);
 
                     std::cout << "C2S_AddComponent" << std::endl;
 
@@ -92,86 +139,126 @@ namespace Blaster::Server::Network
 
                 case RpcType::C2S_RemoveComponent:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
 
-                    std::string goName(packet.begin(), lineEndIterator);
-                    std::string type(lineEndIterator + 1, packet.end());
+                    std::string path(packet.begin(), nul);
+                    std::string type(nul + 1, packet.end());
 
-                    if (auto gameObject = GameObjectManager::GetInstance().Get(goName))
-                        ServerSynchronization::RemoveComponent(*gameObject, type);
+                    if (auto target = FindGameObject(path))
+                        ServerSynchronization::RemoveComponent(*target, type);
 
-                    std::vector<std::uint8_t> pay(goName.begin(), goName.end());
-                    pay.push_back('\0');
-                    pay.insert(pay.end(), type.begin(), type.end());
+                    std::vector<std::uint8_t> reply(path.begin(), path.end());
 
-                    SendReply(who, header.id, RpcType::S2C_RemoveComponent, pay);
+                    reply.push_back('\0');
+                    reply.insert(reply.end(), type.begin(), type.end());
+
+                    SendReply(who, header.id, RpcType::S2C_RemoveComponent, reply);
 
                     break;
                 }
 
                 case RpcType::C2S_AddChild:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
 
-                    std::string parentName(packet.begin(), lineEndIterator);
-                    std::string childName(lineEndIterator + 1, packet.end());
+                    std::string parentPath(packet.begin(), nul);
+                    std::string childPath(nul + 1, packet.end());
 
-                    auto parent = GameObjectManager::GetInstance().Get(parentName);
-                    auto child  = GameObjectManager::GetInstance().Get(childName);
+                    auto current = [&](const std::string& path)
+                    {
+                        std::scoped_lock lock(worldMutex);
+                        return EnsureGameObjectExists(path, who);
+                    };
 
-                    if (parent && child)
-                        ServerSynchronization::AddChild(*parent, *child);
+                    auto parentGO = current(parentPath);
+                    auto childGO = current(childPath);
 
-                    std::vector<std::uint8_t> pay(parentName.begin(), parentName.end());
-                    pay.push_back('\0');
-                    pay.insert(pay.end(), childName.begin(), childName.end());
+                    ServerSynchronization::AddChild(parentGO, childGO, std::make_optional(who));
 
-                    SendReply(who, header.id, RpcType::S2C_AddChild, pay);
+                    std::vector<std::uint8_t> reply(parentPath.begin(), parentPath.end());
+
+                    reply.push_back('\0');
+                    reply.insert(reply.end(), childPath.begin(), childPath.end());
+
+                    SendReply(who, header.id, RpcType::S2C_AddChild, reply);
+
+                    std::cout << "C2S_AddChild\n";
 
                     break;
                 }
 
                 case RpcType::C2S_RemoveChild:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
 
-                    std::string parentName(packet.begin(), lineEndIterator);
-                    std::string childName(lineEndIterator + 1, packet.end());
+                    std::string parentPath(packet.begin(), nul);
+                    std::string childPath(nul + 1, packet.end());
 
-                    if (auto parent = GameObjectManager::GetInstance().Get(parentName))
-                        ServerSynchronization::RemoveChild(*parent, childName);
+                    if (auto parent = FindGameObject(parentPath))
+                        ServerSynchronization::RemoveChild(*parent, childPath);
 
-                    std::vector<std::uint8_t> pay(parentName.begin(), parentName.end());
-                    pay.push_back('\0');
-                    pay.insert(pay.end(), childName.begin(), childName.end());
+                    std::vector<std::uint8_t> reply(parentPath.begin(), parentPath.end());
 
-                    SendReply(who, header.id, RpcType::S2C_RemoveChild, pay);
+                    reply.push_back('\0');
+                    reply.insert(reply.end(), childPath.begin(), childPath.end());
+
+                    SendReply(who, header.id, RpcType::S2C_RemoveChild, reply);
 
                     break;
                 }
 
                 case RpcType::C2S_TranslateTo:
                 {
-                    auto lineEndIterator = std::ranges::find(packet, '\0');
+                    auto nul = std::ranges::find(packet, '\0');
+                    std::string path(packet.begin(), nul);
 
-                    std::string goName(packet.begin(), lineEndIterator);
+                    auto cursor = nul + 1;
 
-                    Vector<float, 3> target;
+                    auto readBlob = [&](auto &dst)
+                    {
+                        std::uint32_t len;
+                        std::memcpy(&len, &*cursor, 4);
 
-                    float seconds = 0;
+                        cursor += 4;
 
-                    std::vector rest(lineEndIterator+1, packet.end());
+                        NetworkSerialize::ObjectFromBytes({cursor, cursor + len}, dst);
 
-                    NetworkSerialize::ObjectFromBytes({ rest.begin(), rest.begin() + sizeof(target) * 4 }, target);
-                    NetworkSerialize::ObjectFromBytes({ rest.begin() + sizeof(target) * 4, rest.end() }, seconds);
+                        cursor += len;
+                    };
 
-                    if (auto gameObject = GameObjectManager::GetInstance().Get(goName))
-                        (*gameObject)->GetTransform()->Translate(target);
+                    Vector<float, 3> target{};
+                    float seconds = 0.0f;
+
+                    readBlob(target);
+                    readBlob(seconds);
+
+                    if (auto gameObject = FindGameObject(path))
+                        (*gameObject)->GetTransform()->SetLocalPosition(target);
+
+                    std::vector<std::uint8_t> payload;
+
+                    payload.reserve(packet.size() + 1);
+                    payload.insert(payload.end(), path.begin(), path.end());
+                    payload.push_back('\0');
+
+                    auto pushBlob = [&](const auto& obj)
+                    {
+                        auto blob = NetworkSerialize::ObjectToBytes(obj);
+
+                        auto len = static_cast<std::uint32_t>(blob.size());
+
+                        payload.insert(payload.end(), reinterpret_cast<std::uint8_t*>(&len), reinterpret_cast<std::uint8_t*>(&len) + sizeof len);
+                        payload.insert(payload.end(), blob.begin(), blob.end());
+                    };
+
+                    pushBlob(target);
+                    pushBlob(seconds);
 
                     SendReply(who, header.id, RpcType::S2C_TranslateTo, {});
 
-                    std::cout << "C2S_TranslateTo" << std::endl;
+                    ServerNetwork::GetInstance().Broadcast(PacketType::S2C_TranslateTo, payload, who);
 
+                    std::cout << "C2S_TranslateTo from " << who << std::endl;
                     break;
                 }
 
@@ -184,9 +271,72 @@ namespace Blaster::Server::Network
 
         ServerRpc() = default;
 
+        static std::shared_ptr<GameObject> EnsureGameObjectExists(std::string_view fullPath, const std::optional<NetworkId> exceptClient = std::nullopt)
+        {
+            auto toView = [](auto &&sub)
+            {
+                return std::string_view(&*sub.begin(), std::ranges::distance(sub));
+            };
+
+            auto tokenView = fullPath | std::views::split('.') | std::views::transform(toView);
+            const auto tokenIter = tokenView.begin();
+
+            if (tokenIter == tokenView.end())
+                throw std::runtime_error("empty game-object path");
+
+            auto current = GameObjectManager::GetInstance().Get(std::string{ *tokenIter });
+
+            if (!current)
+                current = ServerSynchronization::SpawnGameObject(std::string{ *tokenIter }, std::nullopt, exceptClient);
+
+            for (auto seg : tokenView | std::views::drop(1))
+            {
+                if (const auto child = current.value()->GetChild(std::string{ seg }))
+                    current = child;
+                else
+                {
+                    auto fresh = ServerSynchronization::SpawnGameObject(std::string{ seg }, std::nullopt, exceptClient);
+                    ServerSynchronization::AddChild(*current, fresh, exceptClient);
+                    current = fresh;
+                }
+            }
+
+            return *current;
+        }
+
+        static std::optional<std::shared_ptr<GameObject>> FindGameObject(std::string_view path)
+        {
+            auto toView = [](auto &&sub)
+            {
+                return std::string_view(&*sub.begin(), std::ranges::distance(sub));
+            };
+
+            auto tokenView = path | std::views::split( '.' ) | std::views::filter([](auto sub){ return !sub.empty(); }) | std::views::transform(toView);
+            const auto tokenIter = tokenView.begin();
+
+            if (tokenIter == tokenView.end())
+                return std::nullopt;
+
+            auto current = GameObjectManager::GetInstance().Get( std::string{ *tokenIter } );
+
+            for(auto seg : tokenView | std::views::drop(1))
+            {
+                current = current.and_then([&](const std::shared_ptr<GameObject> &node)
+                {
+                    return node->GetChild(std::string{ seg });
+                });
+            }
+
+            return current;
+        };
+
         static void SendReply(const NetworkId who, const std::uint64_t id, const RpcType type, std::span<const std::uint8_t> payload)
         {
             const RpcHeader header{ id, type };
+
+            std::cout << "[RPC-RX] id=" << header.id
+                << "  type=" << static_cast<int>(header.type)
+                << "  from=" << who << '\n';
 
             std::vector<std::uint8_t> packet(sizeof header);
             std::memcpy(packet.data(), &header, sizeof header);
@@ -196,5 +346,8 @@ namespace Blaster::Server::Network
             ServerNetwork::GetInstance().SendTo(who, PacketType::S2C_Rpc, packet);
         }
 
+        static std::mutex worldMutex;
     };
+
+    std::mutex ServerRpc::worldMutex;
 }

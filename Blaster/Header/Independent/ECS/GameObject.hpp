@@ -6,16 +6,19 @@
 #include <optional>
 #include <ranges>
 #include <unordered_map>
+#include "Client/Network/ClientNetwork.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
+
+using namespace Blaster::Client::Network;
+using namespace Blaster::Independent::Math;
+using namespace Blaster::Independent::Network;
 
 namespace Blaster::Server::Network
 {
     class ServerSynchronization;
 }
-
-using namespace Blaster::Independent::Math;
 
 namespace Blaster::Independent::ECS
 {
@@ -70,6 +73,20 @@ namespace Blaster::Independent::ECS
             return componentMap.contains(typeid(T));
         }
 
+        bool HasComponentDynamic(const std::string& typeName) const
+        {
+            return [this, typeName]
+            {
+                for (const auto& component : componentMap | std::views::values)
+                {
+                    if (component->GetTypeName() == typeName)
+                        return true;
+                }
+
+                return false;
+            }();
+        }
+
         template <typename T> requires (std::is_base_of_v<Component, T>)
         std::optional<std::shared_ptr<T>> GetComponent()
         {
@@ -86,10 +103,10 @@ namespace Blaster::Independent::ECS
         {
             std::optional<std::type_index> typeIndex = std::nullopt;
 
-            for (auto iterator = componentMap.begin(); iterator != componentMap.end(); ++iterator)
+            for (auto& [type, component] : componentMap)
             {
-                if (iterator->second->GetTypeName() == typeName)
-                    typeIndex = iterator->first;
+                if (component->GetTypeName() == typeName)
+                    typeIndex = type;
             }
 
             if (!typeIndex.has_value())
@@ -142,7 +159,7 @@ namespace Blaster::Independent::ECS
 
             std::string childName = child->GetName();
 
-            childMap.insert({ childName, child });
+            childMap.insert({ childName, std::move(child) });
 
             return childMap[childName];
         }
@@ -178,12 +195,16 @@ namespace Blaster::Independent::ECS
         {
             if (parent != nullptr)
             {
+                owningClient = parent->GetOwningClient();
+
                 GetTransform()->SetParent(parent->GetTransform());
 
                 this->parent = std::make_optional(parent);
             }
             else
             {
+                owningClient = std::nullopt;
+
                 GetTransform()->SetParent(nullptr);
 
                 this->parent = std::nullopt;
@@ -205,9 +226,14 @@ namespace Blaster::Independent::ECS
             return name;
         }
 
-        NetworkId GetNetworkId() const noexcept
+        std::optional<NetworkId> GetOwningClient() const
         {
-            return networkId;
+            return owningClient;
+        }
+
+        void SetOwningClient(const std::optional<NetworkId> owningClient)
+        {
+            this->owningClient = owningClient;
         }
 
         bool IsAuthoritative() const noexcept
@@ -215,8 +241,16 @@ namespace Blaster::Independent::ECS
             return authoritative;
         }
 
+        bool IsLocallyControlled() const noexcept
+        {
+            return !IsAuthoritative() && GetOwningClient().has_value() && GetOwningClient().value() == ClientNetwork::GetInstance().GetNetworkId();
+        }
+
         void Update()
         {
+            if (!IsAuthoritative() && owningClient.has_value() && owningClient.value() != ClientNetwork::GetInstance().GetNetworkId())
+                return;
+
             for (const auto& component : componentMap | std::views::values)
                 component->Update();
 
@@ -224,20 +258,21 @@ namespace Blaster::Independent::ECS
                 child->Update();
         }
 
-        void Render()
+        void Render(const std::shared_ptr<Client::Render::Camera>& camera)
         {
             for (const auto& component : componentMap | std::views::values)
-                component->Render();
+                component->Render(camera);
 
             for (const auto& child : childMap | std::views::values)
-                child->Render();
+                child->Render(camera);
         }
 
-        static std::shared_ptr<GameObject> Create(const std::string& name)
+        static std::shared_ptr<GameObject> Create(const std::string& name, const std::optional<NetworkId>& owningClient = std::nullopt)
         {
             std::shared_ptr<GameObject> result(new GameObject());
 
             result->name = name;
+            result->owningClient = owningClient;
             result->AddComponent(Transform::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
 
             return result;
@@ -251,8 +286,8 @@ namespace Blaster::Independent::ECS
 
         std::string name;
 
-        NetworkId networkId = 0;
         bool authoritative = false;
+        std::optional<NetworkId> owningClient = std::nullopt;
 
         std::optional<std::weak_ptr<GameObject>> parent;
 

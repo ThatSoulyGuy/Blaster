@@ -44,7 +44,7 @@ namespace Blaster::Independent::ECS
             gameObjectMap.erase(name);
         }
 
-        bool Has(const std::string& name) override
+        bool Has(const std::string& name) const override
         {
             return gameObjectMap.contains(name);
         }
@@ -71,10 +71,17 @@ namespace Blaster::Independent::ECS
                 gameObject->Update();
         }
 
-        void Render()
+        void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
         {
+            if (!camera.has_value())
+            {
+                std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
+
+                return;
+            }
+
             for (const auto& gameObject : gameObjectMap | std::views::values)
-                gameObject->Render();
+                gameObject->Render(camera.value());
         }
 
         static GameObjectManager& GetInstance()

@@ -21,8 +21,9 @@ namespace Blaster::Independent::Network
         S2C_RemoveComponent = 7,
         S2C_AddChild = 8,
         S2C_RemoveChild = 9,
-        S2C_Rpc = 10,
-        C2S_Rpc = 11
+        S2C_TranslateTo = 10,
+        S2C_Rpc = 11,
+        C2S_Rpc = 12
     };
 
     struct PacketHeader
@@ -33,17 +34,15 @@ namespace Blaster::Independent::Network
         std::uint32_t from;
     };
 
-    static_assert(sizeof(PacketHeader) == 12, "Unexpected padding!");
-
     inline std::vector<std::uint8_t> CreatePacket(const PacketType type, const NetworkId from, const std::span<const std::uint8_t> payload)
     {
         const PacketHeader header{type, static_cast<std::uint32_t>(payload.size()), from};
 
-        std::vector<std::uint8_t> buf(sizeof(PacketHeader) + payload.size());
+        std::vector<std::uint8_t> buffer(sizeof(PacketHeader) + payload.size());
 
-        std::memcpy(buf.data(), &header, sizeof header);
-        std::memcpy(buf.data() + sizeof header, payload.data(), payload.size());
+        std::memcpy(buffer.data(), &header, sizeof header);
+        std::memcpy(buffer.data() + sizeof header, payload.data(), payload.size());
 
-        return buf;
+        return buffer;
     }
 }

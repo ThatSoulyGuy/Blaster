@@ -1,0 +1,7 @@
+#include "Client/Render/Vertices/FatVertex.hpp"
+#include "Client/Render/Camera.hpp"
+#include "Client/Render/Mesh.hpp"
+#include "Client/Render/Vertex.hpp"
+#include "Client/Render/Shader.hpp"
+#include "Independent/Math/Transform.hpp"
+#include "Server/Entity/Entities/EntityPlayer.hpp"

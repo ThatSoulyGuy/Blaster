@@ -4,63 +4,17 @@
 #include <mutex>
 #include <iostream>
 #include <random>
-#include <boost/asio.hpp>
-#include "Network/ServerRpc.hpp"
+#include "Independent/Utility/Time.hpp"
+#include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
+#include "Server/Network/ServerRpc.hpp"
 #include "Server/Network/ServerSynchronization.hpp"
 
+using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
 {
-    class TestComponent : public Component
-    {
-
-    public:
-
-        void Initialize() override
-        {
-            if (GetGameObject()->IsAuthoritative())
-            {
-                std::random_device device;
-                std::mt19937 generator{device()};
-
-                std::uniform_int_distribution<int> distribution{0, 255};
-
-                myVar = distribution(generator);
-            }
-        }
-
-        void Update() override
-        {
-            if (GetGameObject()->IsAuthoritative())
-                std::cout << myVar << " from server!" << std::endl;
-            else
-                std::cout << myVar << " from client!" << std::endl;
-        }
-
-        std::string GetTypeName() const override
-        {
-            return typeid(TestComponent).name();
-        }
-
-        int myVar;
-
-        template <class Archive>
-        void serialize(Archive& archive, const unsigned)
-        {
-            archive & boost::serialization::base_object<Component>(*this);
-
-            archive & boost::serialization::make_nvp("myVar", myVar);
-        }
-
-    private:
-
-        friend class boost::serialization::access;
-        friend class Blaster::Independent::ECS::ComponentFactory;
-
-    };
-
     class ServerApplication final
     {
 
@@ -90,6 +44,10 @@ namespace Blaster::Server
 
                     std::cout << "Client " << who << " is '" << name << "'\n";
 
+                    const auto playerObject = ServerSynchronization::SpawnGameObject("player-" + name, who);
+
+                    ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
+
                     ServerSynchronization::SynchronizeFullTree(who);
                 });
 
@@ -107,6 +65,8 @@ namespace Blaster::Server
         void Update()
         {
             GameObjectManager::GetInstance().Update();
+
+            Time::GetInstance().Update();
         }
 
         void Uninitialize()
@@ -136,5 +96,3 @@ namespace Blaster::Server
     std::once_flag ServerApplication::initializationFlag;
     std::unique_ptr<ServerApplication> ServerApplication::instance;
 }
-
-BOOST_CLASS_EXPORT(Blaster::Server::TestComponent)

@@ -20,15 +20,18 @@ namespace Blaster::Server::Network
 
         static std::shared_ptr<GameObject> SpawnGameObject(const std::string& name, const std::optional<NetworkId> owningClient = std::nullopt, const std::optional<NetworkId> except = std::nullopt)
         {
-            auto gameObject = GameObject::Create(name, owningClient);
+            const auto gameObject = GameObject::Create(name, owningClient);
 
             gameObject->authoritative = true;
 
-            GameObjectManager::GetInstance().Register(gameObject);
+            auto movedGameObject = GameObjectManager::GetInstance().Register(gameObject);
 
-            BroadcastGameObject(gameObject, except);
+            if (owningClient.has_value() && ServerNetwork::GetInstance().HasClient(owningClient.value()))
+                ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.push_back(movedGameObject);
 
-            return gameObject;
+            BroadcastGameObject(movedGameObject, except);
+
+            return movedGameObject;
         }
 
         static void DestroyGameObject(const std::shared_ptr<GameObject>& go)

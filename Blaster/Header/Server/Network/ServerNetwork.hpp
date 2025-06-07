@@ -24,6 +24,22 @@ namespace Blaster::Server::Network
         ServerNetwork& operator=(const ServerNetwork&) = delete;
         ServerNetwork& operator=(ServerNetwork&&) = delete;
 
+        struct ClientReference
+        {
+            TcpProtocol::socket socket;
+            boost::asio::basic_stream_socket<boost::asio::ip::tcp>::executor_type strand;
+
+            std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
+
+            std::vector<std::weak_ptr<GameObject>> ownedGameObjectList;
+
+            NetworkId id{};
+            std::array<std::uint8_t, 512> readBuffer{};
+            std::vector<std::uint8_t> inbox;
+
+            explicit ClientReference(TcpProtocol::socket sock) : socket(std::move(sock)), strand(socket.get_executor()) { }
+        };
+
         void Initialize(const std::uint16_t port)
         {
             if (running)
@@ -44,9 +60,9 @@ namespace Blaster::Server::Network
 
         void SendTo(const NetworkId id, const PacketType type, const std::span<const std::uint8_t> payload)
         {
-            const auto iterator = clients.find(id);
+            const auto iterator = clientMap.find(id);
 
-            if (iterator == clients.end())
+            if (iterator == clientMap.end())
                 return;
 
             auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, 0, payload));
@@ -62,7 +78,7 @@ namespace Blaster::Server::Network
 
         void Broadcast(const PacketType type, const std::span<const std::uint8_t> payload, const std::optional<NetworkId> except = std::nullopt)
         {
-            for (const auto& id: clients | std::views::keys)
+            for (const auto& id: clientMap | std::views::keys)
             {
                 if (except.has_value() && id == except.value())
                     continue;
@@ -76,9 +92,25 @@ namespace Blaster::Server::Network
             return running;
         }
 
+        bool HasClient(const NetworkId id) const
+        {
+            return clientMap.contains(id);
+        }
+
+        std::optional<std::shared_ptr<ClientReference>> GetClient(const NetworkId id)
+        {
+            if (!clientMap.contains(id))
+            {
+                std::cerr << "Client map doesn't contain client id '" << id << "'!";
+                return std::nullopt;
+            }
+
+            return std::make_optional(clientMap[id]);
+        }
+
         std::vector<NetworkId> GetConnectedClients() const
         {
-            auto result = clients | std::views::keys;
+            auto result = clientMap | std::views::keys;
 
             return { result.begin(), result.end() };
         }
@@ -93,7 +125,10 @@ namespace Blaster::Server::Network
             if (ioThread.joinable())
                 ioThread.join();
 
-            clients.clear();
+            for (auto &client: clientMap | std::views::values)
+                CleanupOwnedObjects(client);
+
+            clientMap.clear();
 
             running = false;
         }
@@ -112,21 +147,7 @@ namespace Blaster::Server::Network
 
         ServerNetwork() = default;
 
-        struct Client
-        {
-            TcpProtocol::socket socket;
-            boost::asio::basic_stream_socket<boost::asio::ip::tcp>::executor_type strand;
-
-            std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
-
-            NetworkId id{};
-            std::array<std::uint8_t, 512> readBuffer{};
-            std::vector<std::uint8_t> inbox;
-
-            explicit Client(TcpProtocol::socket sock) : socket(std::move(sock)), strand(socket.get_executor()) { }
-        };
-
-        void StartWrite(const std::shared_ptr<Client>& client)
+        void StartWrite(const std::shared_ptr<ClientReference>& client)
         {
             boost::asio::async_write(client->socket, boost::asio::buffer(*client->writeQueue.front()), boost::asio::bind_executor(client->strand, [client, this](const boost::system::error_code& error, std::size_t)
             {
@@ -135,6 +156,10 @@ namespace Blaster::Server::Network
                 if (error)
                 {
                     std::cerr << "Error during packet sending! " << error << std::endl;
+
+                    clientMap.erase(client->id);
+                    CleanupOwnedObjects(client);
+
                     return;
                 }
 
@@ -151,10 +176,10 @@ namespace Blaster::Server::Network
                     {
                         socket.set_option(TcpProtocol::no_delay(true));
 
-                        const auto client  = std::make_shared<Client>(Client{std::move(socket)});
+                        const auto client  = std::make_shared<ClientReference>(ClientReference{std::move(socket)});
 
                         client->id = nextId += 1;
-                        clients[client->id] = client;
+                        clientMap[client->id] = client;
 
                         std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer{};
                         std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkId));
@@ -175,13 +200,16 @@ namespace Blaster::Server::Network
                 });
         }
 
-        void BeginRead(const std::shared_ptr<Client>& client)
+        void BeginRead(const std::shared_ptr<ClientReference>& client)
         {
             client->socket.async_read_some(boost::asio::buffer(client->readBuffer), [this, client](const ErrorCode& errorCode, const std::size_t number)
                 {
                     if (errorCode)
                     {
-                        clients.erase(client->id);
+                        clientMap.erase(client->id);
+
+                        CleanupOwnedObjects(client);
+
                         return;
                     }
 
@@ -200,9 +228,7 @@ namespace Blaster::Server::Network
 
                         payload.resize(header->size);
 
-                        std::memcpy(payload.data(),
-                                    client->inbox.data() + sizeof(PacketHeader),
-                                    header->size);
+                        std::memcpy(payload.data(), client->inbox.data() + sizeof(PacketHeader), header->size);
 
                         HandlePacket(client->id, *header, std::move(payload));
 
@@ -222,13 +248,52 @@ namespace Blaster::Server::Network
             }
         }
 
+        static void BroadcastDestroy(const std::string& goName)
+        {
+            std::vector<std::uint8_t> pkt(goName.begin(), goName.end());
+            GetInstance().Broadcast(PacketType::S2C_DestroyGameObject, pkt);
+        }
+
+        static void DestroySubtree(const std::shared_ptr<GameObject>& node)
+        {
+            std::vector<std::shared_ptr<GameObject>> children;
+
+            for (const auto& ch : node->GetChildMap() | std::views::values)
+                children.emplace_back(ch);
+
+            for (auto& child : children)
+            {
+                node->RemoveChild(child->GetName());
+                DestroySubtree(child);
+            }
+
+            if (auto parentW = node->GetParent(); parentW && !parentW->expired())
+            {
+                auto parent = parentW->lock();
+                parent->RemoveChild(node->GetName());
+            }
+            else
+                GameObjectManager::GetInstance().Unregister(node->GetName());
+
+            BroadcastDestroy(node->GetName());
+        }
+
+        static void CleanupOwnedObjects(const std::shared_ptr<ClientReference>& client)
+        {
+            for (auto& weak : client->ownedGameObjectList)
+                if (auto root = weak.lock())
+                    DestroySubtree(root);
+
+            client->ownedGameObjectList.clear();
+        }
+
         boost::asio::io_context ioContext;
         std::optional<TcpProtocol::acceptor> acceptor;
         std::thread ioThread;
         std::atomic<bool> running = false;
         std::atomic<NetworkId> nextId = 0;
 
-        std::unordered_map<NetworkId, std::shared_ptr<Client>> clients;
+        std::unordered_map<NetworkId, std::shared_ptr<ClientReference>> clientMap;
 
         std::unordered_map<PacketType, std::vector<std::function<void(NetworkId, std::vector<std::uint8_t>)>>> packetHandlerMap;
 

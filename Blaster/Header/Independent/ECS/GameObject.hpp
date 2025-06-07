@@ -216,6 +216,11 @@ namespace Blaster::Independent::ECS
             return componentMap;
         }
 
+        auto& GetChildMap() const
+        {
+            return childMap;
+        }
+
         std::optional<std::weak_ptr<GameObject>> GetParent()
         {
             return parent;

@@ -78,6 +78,8 @@ namespace Blaster::Server::Network
                             ServerSynchronization::AddChild(parent.value(), fresh, std::make_optional(who));
 
                             parent = fresh;
+
+                            GameObjectManager::GetInstance().Unregister(fresh->GetName());
                         }
                     }
 

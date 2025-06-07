@@ -5,6 +5,10 @@
 #include <mutex>
 #include <random>
 #include <chrono>
+#include <ranges>
+#include <list>
+#include <vector>
+#include <spanstream>
 #include "Client/Core/Window.hpp"
 #include "Client/Core/InputManager.hpp"
 #include "Client/Network/ClientNetwork.hpp"
@@ -18,7 +22,6 @@
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Network/NetworkSerialize.hpp"
 #include "Independent/Utility/Time.hpp"
-
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Core;
@@ -116,11 +119,51 @@ namespace Blaster::Client
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_DestroyGameObject, [](std::vector<std::uint8_t> messageIn)
                 {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        const std::string name(message.begin(), message.end());
-                        GameObjectManager::GetInstance().Unregister(name);
-                    });
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [msg = std::move(messageIn)]
+                        {
+                            const std::string fullPath(msg.begin(), msg.end());
+
+                            if (fullPath.empty())
+                                return;
+
+                            auto toStringView = [](auto&& sub)
+                            {
+                                return std::string_view(&*sub.begin(), std::ranges::distance(sub));
+                            };
+
+                            auto view = fullPath | std::views::split('.') | std::views::filter([](auto s) { return !s.empty(); }) | std::views::transform(toStringView);
+
+                            const std::vector<std::string_view> segments{ view.begin(), view.end() };
+
+                            if (segments.empty())
+                                return;
+
+                            if (segments.size() == 1)
+                            {
+                                GameObjectManager::GetInstance().Unregister(std::string{segments.front()});
+
+                                return;
+                            }
+
+                            auto currentOpt = GameObjectManager::GetInstance().Get(std::string{segments.front()});
+
+                            if (!currentOpt)
+                                return;
+
+                            auto current = *currentOpt;
+
+                            for (std::size_t i = 1; i + 1 < segments.size(); ++i)
+                            {
+                                auto childOpt = current->GetChild(std::string{segments[i]});
+
+                                if (!childOpt)
+                                    return;
+
+                                current = *childOpt;
+                            }
+
+                            current->RemoveChild(std::string{segments.back()});
+                        });
                 });
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_AddComponent, [](std::vector<std::uint8_t> messageIn)
@@ -201,21 +244,21 @@ namespace Blaster::Client
                     });
                 });
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveChild, [](std::vector<std::uint8_t> messageIn)
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveChild, [](std::vector<std::uint8_t> bytes)
                 {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        const auto iterator = std::ranges::find(message, '\0');
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [data = std::move(bytes)]
+                        {
+                            auto nul = std::ranges::find(data, '\0');
 
-                        if (iterator == message.end())
-                            return;
+                            if (nul == data.begin() || nul == data.end() || std::next(nul) == data.end())
+                                return;
 
-                        const std::string parentName(message.begin(), iterator);
-                        const std::string childName(iterator + 1, message.end());
+                            const std::string parentName(data.begin(), nul);
+                            const std::string childName(std::next(nul), data.end());
 
-                        if (const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName))
-                            (*parentGameObject)->RemoveChild(childName);
-                    });
+                            if (const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName))
+                                (*parentGameObject)->RemoveChild(childName);
+                        });
                 });
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_TranslateTo, [](std::vector<std::uint8_t> messageIn)

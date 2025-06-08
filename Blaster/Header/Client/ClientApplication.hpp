@@ -78,44 +78,67 @@ namespace Blaster::Client
                 ClientRpc::HandleReply(std::move(pk));
             });
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CreateGameObject, [](std::vector<std::uint8_t> messageIn)
-            {
-                MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CreateGameObject, [](std::vector<std::uint8_t> msg)
                 {
-                    const auto nulPos = std::ranges::find(message, '\0');
-
-                    if (nulPos == message.end())
-                        return;
-
-                    const std::string name(message.begin(), nulPos);
-
-                    if (std::distance(nulPos, message.end()) < 5)
-                        return;
-
-                    std::uint32_t owner = 0;
-                    std::memcpy(&owner, &*(nulPos + 1), 4);
-
-                    const std::vector blob(nulPos + 1 + 4, message.end());
-
-                    std::shared_ptr<GameObject> gameObject;
-
-                    if (const auto existing = GameObjectManager::GetInstance().Get(name))
-                        gameObject = *existing;
-                    else
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [msg = std::move(msg)]
                     {
-                        gameObject = GameObject::Create(name);
-                        GameObjectManager::GetInstance().Register(gameObject);
-                    }
+                        auto nul = std::ranges::find(msg, '\0');
 
-                    if (owner != 4096)
-                        gameObject->SetOwningClient(owner);
+                        if (nul == msg.end() || std::distance(nul, msg.end()) < 5)
+                            return;
 
-                    std::shared_ptr<Transform> transform;
+                        const std::string fullPath(msg.begin(), nul);
 
-                    NetworkSerialize::ObjectFromBytes(blob, transform);
-                    gameObject->GetTransform().swap(transform);
+                        std::uint32_t ownerId {};
+                        std::memcpy(&ownerId, &*(nul + 1), 4);
+
+                        const std::vector blob(nul + 1 + 4, msg.end());
+
+                        auto toStringView = [](auto &&sub)
+                        {
+                            return std::string_view(&*sub.begin(),std::ranges::distance(sub));
+                        };
+
+                        auto segmentView = fullPath | std::views::split('.') | std::views::filter([](auto s){ return !s.empty(); }) | std::views::transform(toStringView);
+
+                        std::shared_ptr<GameObject> parent {};
+                        std::string currentPath;
+
+                        for (auto segment : segmentView)
+                        {
+                            if (!currentPath.empty()) currentPath += '.';
+                            currentPath.append(segment);
+
+                            std::shared_ptr<GameObject> node;
+
+                            if (auto opt = GameObjectManager::GetInstance().Get(currentPath))
+                                node = *opt;
+                            else
+                            {
+                                node = GameObject::Create(currentPath);
+                                GameObjectManager::GetInstance().Register(node);
+                            }
+
+                            if (parent && !parent->HasChild(node->GetName()))
+                                parent->AddChild(node);
+
+                            parent = node;
+                        }
+
+                        if (!parent)
+                            return;
+
+                        if (ownerId != 4096)
+                            parent->SetOwningClient(ownerId);
+
+                        std::shared_ptr<Transform> transform;
+
+                        NetworkSerialize::ObjectFromBytes(blob, transform);
+
+                        if (transform)
+                            parent->GetTransform().swap(transform);
+                    });
                 });
-            });
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_DestroyGameObject, [](std::vector<std::uint8_t> messageIn)
                 {

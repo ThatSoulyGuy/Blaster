@@ -224,7 +224,7 @@ namespace Blaster::Server::Entity::Entities
 
         std::shared_ptr<Camera> camera;
 
-        static constexpr float kSyncPeriod = 2.0f;
+        static constexpr float kSyncPeriod = 1.0f;
         float syncAccumulator = 0.0f;
 
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)

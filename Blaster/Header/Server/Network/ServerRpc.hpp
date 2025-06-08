@@ -159,56 +159,6 @@ namespace Blaster::Server::Network
                     break;
                 }
 
-                case RpcType::C2S_AddChild:
-                {
-                    auto nul = std::ranges::find(packet, '\0');
-
-                    std::string parentPath(packet.begin(), nul);
-                    std::string childPath(nul + 1, packet.end());
-
-                    auto current = [&](const std::string& path)
-                    {
-                        std::scoped_lock lock(worldMutex);
-                        return EnsureGameObjectExists(path, who);
-                    };
-
-                    auto parentGO = current(parentPath);
-                    auto childGO = current(childPath);
-
-                    ServerSynchronization::AddChild(parentGO, childGO, std::make_optional(who));
-
-                    std::vector<std::uint8_t> reply(parentPath.begin(), parentPath.end());
-
-                    reply.push_back('\0');
-                    reply.insert(reply.end(), childPath.begin(), childPath.end());
-
-                    SendReply(who, header.id, RpcType::S2C_AddChild, reply);
-
-                    std::cout << "C2S_AddChild\n";
-
-                    break;
-                }
-
-                case RpcType::C2S_RemoveChild:
-                {
-                    auto nul = std::ranges::find(packet, '\0');
-
-                    std::string parentPath(packet.begin(), nul);
-                    std::string childPath(nul + 1, packet.end());
-
-                    if (auto parent = FindGameObject(parentPath))
-                        ServerSynchronization::RemoveChild(*parent, childPath);
-
-                    std::vector<std::uint8_t> reply(parentPath.begin(), parentPath.end());
-
-                    reply.push_back('\0');
-                    reply.insert(reply.end(), childPath.begin(), childPath.end());
-
-                    SendReply(who, header.id, RpcType::S2C_RemoveChild, reply);
-
-                    break;
-                }
-
                 case RpcType::C2S_TranslateTo:
                 {
                     auto nul = std::ranges::find(packet, '\0');

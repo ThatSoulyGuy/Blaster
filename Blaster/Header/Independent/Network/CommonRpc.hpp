@@ -16,10 +16,6 @@ namespace Blaster::Independent::Network
         S2C_AddComponent,
         C2S_RemoveComponent,
         S2C_RemoveComponent,
-        C2S_AddChild,
-        S2C_AddChild,
-        C2S_RemoveChild,
-        S2C_RemoveChild,
         C2S_TranslateTo,
         S2C_TranslateTo
     };

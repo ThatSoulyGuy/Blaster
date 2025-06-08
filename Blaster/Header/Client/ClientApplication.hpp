@@ -6,11 +6,11 @@
 #include <random>
 #include <chrono>
 #include <ranges>
-#include <list>
 #include <vector>
 #include <spanstream>
 #include "Client/Core/Window.hpp"
 #include "Client/Core/InputManager.hpp"
+#include "Client/Network/TranslationBuffer.hpp"
 #include "Client/Network/ClientNetwork.hpp"
 #include "Client/Network/ClientRpc.hpp"
 #include "Client/Render/ShaderManager.hpp"
@@ -43,7 +43,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.15.12", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.16.12", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
 
@@ -288,7 +288,7 @@ namespace Blaster::Client
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
                     {
-                        const auto nul = std::ranges::find(message, '\0');
+                        auto nul = std::ranges::find(message,'\0');
 
                         if (nul == message.end())
                             return;
@@ -303,8 +303,7 @@ namespace Blaster::Client
                                 return;
 
                             std::uint32_t len;
-                            std::memcpy(&len, &*cursor, 4);
-
+                            std::memcpy(&len,&*cursor,4);
                             cursor += 4;
 
                             if (cursor + len > message.end())
@@ -321,30 +320,7 @@ namespace Blaster::Client
                         readBlob(target);
                         readBlob(seconds);
 
-                        auto locate = [&](const std::string& p) -> std::optional<std::shared_ptr<GameObject>>
-                        {
-                            auto toView = [](auto&& sub)
-                            {
-                                return std::string_view(&*sub.begin(), std::ranges::distance(sub));
-                            };
-
-                            auto segments = p | std::views::split('.') | std::views::transform(toView);
-
-                            const auto iterator = segments.begin();
-
-                            if (iterator == segments.end())
-                                return std::nullopt;
-
-                            auto current = GameObjectManager::GetInstance().Get(std::string{*iterator});
-
-                            for (auto segment : segments | std::views::drop(1))
-                                current = current ? (*current)->GetChild(std::string{segment}) : std::nullopt;
-
-                            return current;
-                        };
-
-                        if (const auto gameObject = locate(path))
-                            (*gameObject)->GetTransform()->SetLocalPosition(target);
+                        TranslationBuffer::GetInstance().Push(path, target, seconds);
 
                         std::cout << "TranslateTo " << path << std::endl;
                     });
@@ -451,6 +427,8 @@ namespace Blaster::Client
             MainThreadExecutor::GetInstance().Execute();
 
             Time::GetInstance().Update();
+
+            TranslationBuffer::GetInstance().Update();
         }
 
         void Render()

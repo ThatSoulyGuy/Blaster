@@ -3,6 +3,8 @@
 #include <chrono>
 #include <mutex>
 
+#undef GetCurrentTime
+
 namespace Blaster::Independent::Utility
 {
     class Time final
@@ -17,28 +19,34 @@ namespace Blaster::Independent::Utility
 
         void Update()
         {
-            const auto now = std::chrono::high_resolution_clock::now();
+            using clock = std::chrono::steady_clock;
+
+            const auto now = clock::now();
 
             if (!initialized)
             {
-                lastFrameTime = now;
-                deltaTime = 0.0f;
+                last = now;
+                elapsed = 0.0f;
+                delta = 0.0f;
 
                 initialized = true;
 
                 return;
             }
 
-            const std::chrono::duration<float> frameDuration = now - lastFrameTime;
-
-            deltaTime = frameDuration.count();
-
-            lastFrameTime = now;
+            delta = std::chrono::duration<float>(now - last).count();
+            elapsed += delta;
+            last = now;
         }
 
         float GetDeltaTime() const
         {
-            return deltaTime;
+            return delta;
+        }
+
+        float GetCurrentTime() const
+        {
+            return elapsed;
         }
 
         static Time& GetInstance()
@@ -57,9 +65,10 @@ namespace Blaster::Independent::Utility
 
         bool initialized = false;
 
-        std::chrono::high_resolution_clock::time_point lastFrameTime;
+        float elapsed = 0.0f;
+        float delta = 0.0f;
 
-        float deltaTime = 0.0f;
+        std::chrono::steady_clock::time_point last;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<Time> instance;

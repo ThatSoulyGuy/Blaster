@@ -69,26 +69,6 @@ namespace Blaster::Client::Network
             return MakeCall<void>(RpcType::C2S_RemoveComponent, buffer);
         }
 
-        static Future<void> AddChild(std::string parent, std::string child)
-        {
-            std::vector<std::uint8_t> buffer(parent.begin(), parent.end());
-
-            buffer.push_back('\0');
-            buffer.insert(buffer.end(), child.begin(), child.end());
-
-            return MakeCall<void>(RpcType::C2S_AddChild, buffer);
-        }
-
-        static Future<void> RemoveChild(std::string parent, std::string child)
-        {
-            std::vector<std::uint8_t> buffer(parent.begin(), parent.end());
-
-            buffer.push_back('\0');
-            buffer.insert(buffer.end(), child.begin(), child.end());
-
-            return MakeCall<void>(RpcType::C2S_RemoveChild, buffer);
-        }
-
         static Future<void> TranslateTo(std::string gameObject, const Vector<float, 3> target, const float seconds)
         {
             std::vector<std::uint8_t> buffer(gameObject.begin(), gameObject.end());

@@ -214,7 +214,7 @@ namespace Blaster::Server::Entity::Entities
 
             syncAccumulator += Time::GetInstance().GetDeltaTime();
 
-            if (syncAccumulator >= kSyncPeriod)
+            if (syncAccumulator >= syncPeriod)
             {
                 syncAccumulator = 0.0f;
 
@@ -224,7 +224,7 @@ namespace Blaster::Server::Entity::Entities
 
         std::shared_ptr<Camera> camera;
 
-        static constexpr float kSyncPeriod = 1.0f;
+        static constexpr float syncPeriod = 0.10f;
         float syncAccumulator = 0.0f;
 
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)

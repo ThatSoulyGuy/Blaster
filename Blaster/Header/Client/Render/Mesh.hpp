@@ -14,8 +14,19 @@
 
 namespace Blaster::Client::Render
 {
+    using UniformValue = std::variant<int, float, Vector<float, 2>, Vector<float, 3>, Matrix<float, 4, 4>>;
+
+    struct ShaderCall final
+    {
+        std::string name;
+        UniformValue value;
+    };
+
     template <typename T>
-    concept VertexType = std::derived_from<T, VertexExtension>;
+    concept VertexType = requires(T a)
+    {
+        { a.GetLayout() } -> std::same_as<VertexBufferLayout>;
+    };
 
     template <VertexType T>
     class Mesh final : public Component, public std::enable_shared_from_this<Mesh<T>>
@@ -26,13 +37,13 @@ namespace Blaster::Client::Render
         ~Mesh() override
         {
             if (VAO)
-                glDeleteVertexArrays(1,&VAO);
+                glDeleteVertexArrays(1, &VAO);
 
             if (VBO)
-                glDeleteBuffers(1,&VBO);
+                glDeleteBuffers(1, &VBO);
 
             if (EBO)
-                glDeleteBuffers(1,&EBO);
+                glDeleteBuffers(1, &EBO);
         }
 
         Mesh(const Mesh&) = delete;
@@ -42,7 +53,7 @@ namespace Blaster::Client::Render
 
         void Initialize() override
         {
-            if (!GetGameObject()->IsAuthoritative() && GetGameObject()->GetOwningClient().has_value() && GetGameObject()->GetOwningClient().value() != ClientNetwork::GetInstance().GetNetworkId() && !vertices.empty() && !indices.empty())
+            if (shouldRegenerate && !GetGameObject()->IsAuthoritative() && GetGameObject()->GetOwningClient().has_value() && GetGameObject()->GetOwningClient().value() != ClientNetwork::GetInstance().GetNetworkId() && !vertices.empty() && !indices.empty())
             {
                 VAO = VBO = EBO = 0;
 
@@ -64,18 +75,32 @@ namespace Blaster::Client::Render
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size()*sizeof(uint32_t),indices.data(),GL_STATIC_DRAW);
 
-            const auto layout  = vertices[0].GetLayout();
-            const GLuint stride = layout.GetStride();
-
-            for (auto const& [index, count, type, isNormalized, offset] : layout.GetElements())
+            for (const auto layout = T::GetLayout(); auto const& element : layout.GetElements())
             {
-                glEnableVertexAttribArray(index);
-                glVertexAttribPointer(index, count, type, isNormalized, stride, reinterpret_cast<const void*>(offset));
+                const GLuint stride = sizeof(T);
+
+                glEnableVertexAttribArray(element.index);
+
+                if (element.type == GL_INT || element.type == GL_UNSIGNED_INT)
+                    glVertexAttribIPointer(element.index, element.componentCount, element.type, stride, reinterpret_cast<const void*>(element.offset));
+                else
+                    glVertexAttribPointer (element.index, element.componentCount, element.type, element.normalized, stride, reinterpret_cast<const void*>(element.offset));
             }
 
             glBindVertexArray(0);
 
             areVerticesDirty = areIndicesDirty = false;
+        }
+
+        template <typename U> requires std::constructible_from<UniformValue, U>
+        void QueueShaderCall(const std::string& name, U&& data)
+        {
+            shaderCallDeque.emplace_back(std::string{name}, UniformValue{std::forward<U>(data)});
+        }
+
+        void QueueRenderCall(const std::function<void()>& function)
+        {
+            renderCallDeque.emplace_back(function);
         }
 
         void Render(const std::shared_ptr<Camera>& camera) override
@@ -88,6 +113,16 @@ namespace Blaster::Client::Render
                 shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
                 shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
                 shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
+
+                for (const auto& [name, value] : shaderCallDeque)
+                    std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);
+
+                shaderCallDeque.clear();
+
+                for (const auto& function : renderCallDeque)
+                    function();
+
+                renderCallDeque.clear();
 
                 glBindVertexArray(VAO);
                 glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT,nullptr);
@@ -108,15 +143,16 @@ namespace Blaster::Client::Render
         [[nodiscard]]
         std::string GetTypeName() const override
         {
-            return typeid(Mesh).name();
+            return typeid(Mesh<T>).name();
         }
 
-        static std::shared_ptr<Mesh> Create(const std::vector<T>& vertices, const std::vector<uint32_t>& indices)
+        static std::shared_ptr<Mesh> Create(const std::vector<T>& vertices, const std::vector<uint32_t>& indices, const bool shouldRegenerate = true)
         {
             std::shared_ptr<Mesh> result(new Mesh());
 
             result->vertices = vertices;
             result->indices = indices;
+            result->shouldRegenerate = shouldRegenerate;
 
             return result;
         }
@@ -132,6 +168,9 @@ namespace Blaster::Client::Render
         void serialize(Archive& archive, const unsigned)
         {
             archive & boost::serialization::base_object<Component>(*this);
+
+            if (!shouldRegenerate)
+                return;
 
             archive & boost::serialization::make_nvp("vertices", vertices);
             archive & boost::serialization::make_nvp("indices", indices);
@@ -219,17 +258,22 @@ namespace Blaster::Client::Render
 
         void MarkVertexChanges(std::vector<T>&& newV)
         {
-            markRange(vertices, std::move(newV), areVerticesDirty, areVerticesResized, firstVerticeDirty, lastVerticeDirty);
+            MarkRange(vertices, std::move(newV), areVerticesDirty, areVerticesResized, firstVerticeDirty, lastVerticeDirty);
         }
+
         void MarkIndexChanges(std::vector<uint32_t>&& newI)
         {
             MarkRange(indices, std::move(newI), areIndicesDirty, areIndicesResized, firstIndiceDirty, lastIndiceDirty);
         }
 
+        std::deque<ShaderCall> shaderCallDeque;
+        std::deque<std::function<void()>> renderCallDeque;
         std::vector<T> vertices;
         std::vector<uint32_t> indices;
 
-        GLuint VAO = 0,VBO = 0,EBO = 0;
+        GLuint VAO = 0, VBO = 0, EBO = 0;
+
+        bool shouldRegenerate = true;
 
         bool areVerticesDirty = false, areIndicesDirty = false;
         bool areVerticesResized = false, areIndicesResized = false;

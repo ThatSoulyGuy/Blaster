@@ -226,6 +226,37 @@ namespace Blaster::Independent::ECS
             return parent;
         }
 
+        [[nodiscard]]
+        std::string GetAbsolutePath() const
+        {
+            std::vector<std::string_view> segments;
+
+            auto current = this;
+
+            while (current != nullptr)
+            {
+                segments.emplace_back(current->name);
+
+                if (current->parent && !current->parent->expired())
+                    current = current->parent->lock().get();
+                else
+                    current = nullptr;
+            }
+
+            std::string path;
+            path.reserve(segments.size() * 8);
+
+            for (auto it = segments.rbegin(); it != segments.rend(); ++it)
+            {
+                if (!path.empty())
+                    path.push_back('.');
+
+                path.append(it->data(), it->size());
+            }
+
+            return path;
+        }
+
         std::string GetName() const
         {
             return name;

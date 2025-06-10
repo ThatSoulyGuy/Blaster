@@ -8,50 +8,37 @@ using namespace Blaster::Independent::Math;
 
 namespace Blaster::Client::Render::Vertices
 {
-    class FatVertex final : public VertexExtension
+    struct FatVertex final
     {
-
-    public:
-
         FatVertex(const Vector<float, 3> position, const Vector<float, 3> color, const Vector<float, 3> normal, const Vector<float, 2> uvs) : position(position), color(color), normal(normal), uvs(uvs) { }
 
         FatVertex() = default;
 
-        [[nodiscard]]
-        VertexBufferLayout GetLayout() const override
+        static VertexBufferLayout GetLayout()
         {
             VertexBufferLayout layout;
 
-            layout.Add(0, 3, GL_FLOAT, GL_FALSE);
-
-            layout.Add(1, 3, GL_FLOAT, GL_FALSE);
-
-            layout.Add(2, 3, GL_FLOAT, GL_FALSE);
-
-            layout.Add(3, 2, GL_FLOAT, GL_FALSE);
+            layout.Add(0, 3, GL_FLOAT, offsetof(FatVertex, position));
+            layout.Add(1, 3, GL_FLOAT, offsetof(FatVertex, color));
+            layout.Add(2, 3, GL_FLOAT, offsetof(FatVertex, normal));
+            layout.Add(3, 2, GL_FLOAT, offsetof(FatVertex, uvs));
 
             return layout;
         }
 
-    private:
-
-        friend class boost::serialization::access;
-
         template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive & boost::serialization::base_object<VertexExtension>(*this);
-
             archive & boost::serialization::make_nvp("position", position);
             archive & boost::serialization::make_nvp("color", color);
             archive & boost::serialization::make_nvp("normal", normal);
             archive & boost::serialization::make_nvp("uvs", uvs);
         }
 
-        Vector<float, 3> position{};
-        Vector<float, 3> color{};
-        Vector<float, 3> normal{};
-        Vector<float, 2> uvs{};
+        Vector<float, 3> position;
+        Vector<float, 3> color;
+        Vector<float, 3> normal;
+        Vector<float, 2> uvs;
     };
 }
 

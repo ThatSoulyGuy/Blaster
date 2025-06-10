@@ -14,8 +14,10 @@
 #include "Client/Network/ClientNetwork.hpp"
 #include "Client/Network/ClientRpc.hpp"
 #include "Client/Render/ShaderManager.hpp"
+#include "Client/Render/TextureManager.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Mesh.hpp"
+#include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Thread/MainThreadExecutor.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
@@ -46,6 +48,9 @@ namespace Blaster::Client
             Window::GetInstance().Initialize("Blaster* 1.16.12", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
+            ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.wood", { "Blaster", "Texture/Wood.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.stone", { "Blaster", "Texture/Stone.png" }));
 
             InputManager::GetInstance().Initialize();
         }
@@ -336,45 +341,11 @@ namespace Blaster::Client
                 {
                     if (const auto gameObject = future.get())
                     {
-                        ClientRpc::AddComponent(gameObject->GetName(), ShaderManager::GetInstance().Get("blaster.fat").value());
+                        ClientRpc::AddComponent(gameObject->GetName(), Model::Create({ "Blaster", "Model/Test.fbx" }));
 
                         std::this_thread::sleep_for(20ms);
 
-                        auto meshFuture = ClientRpc::AddComponent(gameObject->GetName(), Mesh<FatVertex>::Create(
-                            {
-                                { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { -1.0f, -1.0f, -1.0f }, { 0.0f, 0.0f } },
-                                { {  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  1.0f, -1.0f, -1.0f }, { 1.0f, 0.0f } },
-                                { {  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, {  1.0f,  1.0f, -1.0f }, { 1.0f, 1.0f } },
-                                { { -0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f }, { -1.0f,  1.0f, -1.0f }, { 0.0f, 1.0f } },
-                                { { -0.5f, -0.5f,  0.5f }, { 1.0f, 0.0f, 1.0f }, { -1.0f, -1.0f,  1.0f }, { 0.0f, 0.0f } },
-                                { {  0.5f, -0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f }, {  1.0f, -1.0f,  1.0f }, { 1.0f, 0.0f } },
-                                { {  0.5f,  0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, {  1.0f,  1.0f,  1.0f }, { 1.0f, 1.0f } },
-                                { { -0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f, 0.0f }, { -1.0f,  1.0f,  1.0f }, { 0.0f, 1.0f } }
-                            },
-                            {
-                                0, 1, 2,
-                                0, 2, 3,
-                                4, 6, 5,
-                                4, 7, 6,
-                                4, 0, 3,
-                                4, 3, 7,
-                                1, 5, 6,
-                                1, 6, 2,
-                                4, 5, 1,
-                                4, 1, 0,
-                                3, 2, 6,
-                                3, 6, 7
-                            }));
-
-                        std::this_thread::sleep_for(20ms);
-
-                        if (const auto mesh = std::static_pointer_cast<Mesh<FatVertex>>(meshFuture.get()))
-                        {
-                            MainThreadExecutor::GetInstance().EnqueueTask(this, [mesh]
-                            {
-                                mesh->Generate();
-                            });
-                        }
+                        ClientRpc::AddComponent(gameObject->GetName(), TextureManager::GetInstance().Get("blaster.stone").value());
                     }
                 }).detach();
             }

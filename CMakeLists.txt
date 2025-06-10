@@ -13,12 +13,23 @@ file(GLOB_RECURSE LIBRARY_HEADERS   CONFIGURE_DEPENDS "${LIBRARY_HEADERS_DIR}/*.
 
 include(FetchContent)
 
+set(BUILD_SHARED_LIBS OFF)
+
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
         glfw
         GIT_REPOSITORY https://github.com/glfw/glfw.git
         GIT_TAG        master
 )
 FetchContent_MakeAvailable(glfw)
+
+add_library(GLFW::GLFW ALIAS glfw)
+
+set(FREEIMAGE_BUILD_STATIC ON  CACHE BOOL "" FORCE)
+set(FREEIMAGE_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
         FreeImage
@@ -27,6 +38,10 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(FreeImage)
+
+if (TARGET FreeImage)
+    target_compile_definitions(FreeImage PUBLIC FREEIMAGE_LIB)
+endif()
 
 if(NOT TARGET FreeImage::FreeImage)
     add_library(FreeImage::FreeImage ALIAS FreeImage)
@@ -653,6 +668,28 @@ if(NOT TARGET Boost::asio)
     target_link_libraries(Boost::asio INTERFACE Boost::system)
 endif()
 
+set(BUILD_SHARED_LIBS ON)
+
+set(BUILD_SHARED_LIBS            ON  CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SHARED_LIBS     ON  CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_TESTS           OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS    OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_DOCS            OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INJECT_DEBUG_POSTFIX  OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+        assimp
+        GIT_REPOSITORY https://github.com/assimp/assimp.git
+        GIT_TAG        master
+)
+FetchContent_MakeAvailable(assimp)
+
+if (TARGET assimp AND NOT TARGET assimp::assimp)
+    add_library(assimp::assimp ALIAS assimp)
+endif()
+
+set(BUILD_SHARED_LIBS OFF)
+
 set(EXTRA_PLATFORM_LIBS "")
 set(APPLE_FRAMEWORKS    "")
 
@@ -690,6 +727,7 @@ function(blaster_add_executable target source_glob)
     target_include_directories(${target}
             PRIVATE
             "${boost_serialization_SOURCE_DIR}/include"
+            "${FreeImage_SOURCE_DIR}/Source"
             ${BLASTER_HEADERS_DIR}
             ${LIBRARY_HEADERS_DIR}
     )
@@ -703,6 +741,7 @@ function(blaster_add_executable target source_glob)
             Bullet::LinearMath
             Boost::serialization
             Boost::asio
+            assimp::assimp
             ${EXTRA_PLATFORM_LIBS}
     )
 
@@ -717,11 +756,17 @@ blaster_add_executable(Server "${CMAKE_SOURCE_DIR}/Blaster/Source/Server/*.cpp" 
 
 target_compile_definitions(Server PRIVATE IS_SERVER)
 
+foreach(tgt Client Server)
+    set_property(TARGET ${tgt} APPEND PROPERTY
+            COMPILE_DEFINITIONS GLFW_STATIC)
+endforeach()
+
 if (WIN32)
     target_compile_options(Client PRIVATE "-Wa,-mbig-obj")
     target_compile_options(Server PRIVATE "-Wa,-mbig-obj")
 endif()
 
+add_link_options(-static-libstdc++ -static-libgcc)
 
 set(SOURCE_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 set(BUILD_ASSETS_DIR  "${CMAKE_CURRENT_BINARY_DIR}/Assets")

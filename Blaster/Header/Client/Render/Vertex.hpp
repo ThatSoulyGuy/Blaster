@@ -22,7 +22,12 @@ namespace Blaster::Client::Render
 
         VertexBufferLayout() = default;
 
-        void Add(const GLuint index, const GLint componentCount, const GLenum type, const GLboolean normalized = GL_FALSE)
+        void Add(const GLuint index, const GLint count, const GLenum type, const std::size_t offset, const GLboolean normalized = GL_FALSE)
+        {
+            elements.push_back({ index, count, type, normalized, offset });
+        }
+
+        void AddAutomatic(const GLuint index, const GLint componentCount, const GLenum type, const GLboolean normalized = GL_FALSE)
         {
             elements.push_back({ index, componentCount, type, normalized, stride });
 
@@ -64,24 +69,4 @@ namespace Blaster::Client::Render
         std::vector<VertexBufferElement> elements;
         std::size_t stride = 0;
     };
-
-    class VertexExtension
-    {
-
-    public:
-
-        virtual ~VertexExtension() { }
-
-        virtual VertexBufferLayout GetLayout() const = 0;
-
-    private:
-
-        friend class boost::serialization::access;
-
-        template <typename Archive>
-        void serialize(Archive&, const unsigned) { }
-
-    };
 }
-
-BOOST_CLASS_EXPORT(Blaster::Client::Render::VertexExtension)

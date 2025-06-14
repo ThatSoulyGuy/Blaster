@@ -21,12 +21,33 @@ namespace Blaster::Independent::ECS
 
         virtual ~Component() = default;
 
-        virtual void Initialize() { }
-        virtual void Update() { }
-        virtual void Render(const std::shared_ptr<Client::Render::Camera>&) { }
+        [[nodiscard]]
+        bool WasAdded() const noexcept
+        {
+            return wasAdded;
+        }
 
         [[nodiscard]]
-        virtual std::string GetTypeName() const = 0;
+        bool WasRemoved() const noexcept
+        {
+            return wasRemoved;
+        }
+
+        void ClearTransientFlags() noexcept
+        {
+            wasAdded = false;
+            wasRemoved = false;
+        }
+
+        virtual void Initialize() {}
+        virtual void Update() {}
+        virtual void Render(const std::shared_ptr<Client::Render::Camera>&) {}
+
+        [[nodiscard]]
+        virtual std::string GetTypeName() const
+        {
+            return typeid(*this).name();
+        }
 
         [[nodiscard]]
         std::shared_ptr<GameObject> GetGameObject() const
@@ -40,11 +61,13 @@ namespace Blaster::Independent::ECS
 
         std::weak_ptr<GameObject> gameObject;
 
+        bool wasAdded = false;
+        bool wasRemoved = false;
+
         friend class boost::serialization::access;
 
         template <class Archive>
-        void serialize(Archive&, const unsigned) { }
-
+        void serialize(Archive&, const unsigned) {}
     };
 }
 

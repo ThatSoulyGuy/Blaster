@@ -14,6 +14,10 @@
 #include "Independent/Math/Matrix.hpp"
 #include "Independent/Math/Vector.hpp"
 
+#ifdef IS_SERVER
+#include "Server/Network/ServerSynchronization.hpp"
+#endif
+
 using namespace Blaster::Independent::ECS;
 
 namespace Blaster::Independent::Math
@@ -29,6 +33,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onPositionUpdated)
                 function(localPosition);
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         void Rotate(const Vector<float, 3>& rotationDeg)
@@ -45,6 +53,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onRotationUpdated)
                 function(localRotation);
+            
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         void Scale(const Vector<float, 3>& scale)
@@ -53,6 +65,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onScaleUpdated)
                 function(localScale);
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         [[nodiscard]]
@@ -70,6 +86,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onPositionUpdated)
                 function(localPosition);
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         [[nodiscard]]
@@ -95,6 +115,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onRotationUpdated)
                 function(localRotation);
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         [[nodiscard]]
@@ -112,6 +136,10 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onScaleUpdated)
                 function(localScale);
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
+#endif
         }
 
         [[nodiscard]]

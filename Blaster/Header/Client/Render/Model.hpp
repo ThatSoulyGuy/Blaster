@@ -10,6 +10,7 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Texture.hpp"
 #include "Client/Thread/MainThreadExecutor.hpp"
+#include "Independent/ECS/GameObjectManager.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Render::Vertices;
@@ -156,7 +157,7 @@ namespace Blaster::Client::Render
 
             meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
 
-            GetGameObject()->AddChild(meshGameObject);
+            GameObjectManager::GetInstance().Register(meshGameObject, GetGameObject()->GetAbsolutePath());
         }
 
         static Vector<float, 3> ToVector(const aiVector3D& v)

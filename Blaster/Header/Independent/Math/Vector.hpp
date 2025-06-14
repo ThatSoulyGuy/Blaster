@@ -12,7 +12,6 @@
 #include <numeric>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/access.hpp>
-
 #include "boost/core/demangle.hpp"
 #include "boost/serialization/export.hpp"
 

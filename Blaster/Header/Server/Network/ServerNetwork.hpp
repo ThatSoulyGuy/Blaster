@@ -4,12 +4,14 @@
 #include <mutex>
 #include <array>
 #include <deque>
+#include <queue>
 #include <ranges>
 #include <thread>
 #include <boost/asio.hpp>
-
+#include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 
+using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Network;
 
 namespace Blaster::Server::Network
@@ -27,17 +29,19 @@ namespace Blaster::Server::Network
         struct ClientReference
         {
             TcpProtocol::socket socket;
-            boost::asio::basic_stream_socket<boost::asio::ip::tcp>::executor_type strand;
+
+            boost::asio::strand<boost::asio::any_io_executor> strand;
 
             std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
-
-            std::vector<std::weak_ptr<GameObject>> ownedGameObjectList;
+            std::vector<std::weak_ptr<IGameObjectSynchronization>> ownedGameObjectList;
 
             NetworkId id{};
+            std::string stringId = "!";
+
             std::array<std::uint8_t, 512> readBuffer{};
             std::vector<std::uint8_t> inbox;
 
-            explicit ClientReference(TcpProtocol::socket sock) : socket(std::move(sock)), strand(socket.get_executor()) { }
+            explicit ClientReference(TcpProtocol::socket sock) : socket(std::move(sock)), strand(boost::asio::make_strand(socket.get_executor())) { }
         };
 
         void Initialize(const std::uint16_t port)
@@ -58,32 +62,33 @@ namespace Blaster::Server::Network
             packetHandlerMap[type].push_back(std::move(function));
         }
 
-        void SendTo(const NetworkId id, const PacketType type, const std::span<const std::uint8_t> payload)
+        template <typename... Args> requires DataConvertible<Args...>
+        void SendTo(const NetworkId id, const PacketType type, Args&&... args)
         {
-            const auto iterator = clientMap.find(id);
+            const auto hit = clientMap.find(id);
 
-            if (iterator == clientMap.end())
+            if (hit == clientMap.end())
                 return;
 
-            auto buffer = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, 0, payload));
+            auto buf = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(type, 0, std::forward<Args>(args)...));
 
-            boost::asio::dispatch(iterator->second->strand, [this, client = iterator->second, buf = std::move(buffer)]() mutable
+            boost::asio::post(hit->second->strand, [this, client = hit->second, buf]()
             {
-                client->writeQueue.push_back(std::move(buf));
-
+                client->writeQueue.push_back(buf);
                 if (client->writeQueue.size() == 1)
                     StartWrite(client);
             });
         }
 
-        void Broadcast(const PacketType type, const std::span<const std::uint8_t> payload, const std::optional<NetworkId> except = std::nullopt)
+        template <typename... Args> requires DataConvertible<Args...>
+        void Broadcast(const PacketType type, const std::optional<NetworkId> except, Args&&... args)
         {
-            for (const auto& id: clientMap | std::views::keys)
+            for (const auto& id : clientMap | std::views::keys)
             {
                 if (except.has_value() && id == except.value())
                     continue;
 
-                SendTo(id, type, payload);
+                SendTo(id, type, std::forward<Args>(args)...);
             }
         }
 
@@ -113,6 +118,11 @@ namespace Blaster::Server::Network
             auto result = clientMap | std::views::keys;
 
             return { result.begin(), result.end() };
+        }
+
+        auto& GetIoContext()
+        {
+            return ioContext;
         }
 
         void Uninitialize()
@@ -157,8 +167,7 @@ namespace Blaster::Server::Network
                 {
                     std::cerr << "Error during packet sending! " << error << std::endl;
 
-                    clientMap.erase(client->id);
-                    CleanupOwnedObjects(client);
+                    HandleDisconnect(client);
 
                     return;
                 }
@@ -178,18 +187,13 @@ namespace Blaster::Server::Network
 
                         const auto client  = std::make_shared<ClientReference>(ClientReference{std::move(socket)});
 
-                        client->id = nextId += 1;
+                        client->id = AcquireId();
                         clientMap[client->id] = client;
 
-                        std::array<std::uint8_t, sizeof(NetworkId)> networkIdBuffer{};
-                        std::memcpy(networkIdBuffer.data(), &client->id, sizeof(NetworkId));
-
-                        auto assign = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_AssignNetworkId,
-                                                                                      0,
-                                                                                      std::span(networkIdBuffer.data(), networkIdBuffer.size())));
+                        auto assign = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_AssignNetworkId, 0, client->id));
                         boost::asio::async_write(client->socket, boost::asio::buffer(*assign), [assign](auto, auto){ });
 
-                        auto ask = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(PacketType::S2C_RequestStringId, 0, { }));
+                        auto ask = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_RequestStringId, 0, 0));
 
                         boost::asio::async_write(client->socket, boost::asio::buffer(*ask), [ask](auto, auto){ });
 
@@ -206,9 +210,7 @@ namespace Blaster::Server::Network
                 {
                     if (errorCode)
                     {
-                        clientMap.erase(client->id);
-
-                        CleanupOwnedObjects(client);
+                        HandleDisconnect(client);
 
                         return;
                     }
@@ -239,6 +241,15 @@ namespace Blaster::Server::Network
                 });
         }
 
+        void HandleDisconnect(const std::shared_ptr<ClientReference>& client)
+        {
+            clientMap.erase(client->id);
+            CleanupOwnedObjects(client);
+            ReleaseId(client->id);
+
+            std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!" << std::endl;
+        }
+
         void HandlePacket(const NetworkId from, const PacketHeader& header, std::vector<std::uint8_t>&& data)
         {
             if (const auto iterator = packetHandlerMap.find(header.type); iterator != packetHandlerMap.end())
@@ -248,41 +259,13 @@ namespace Blaster::Server::Network
             }
         }
 
-        static void BroadcastDestroy(const std::string& goName)
-        {
-            std::vector<std::uint8_t> pkt(goName.begin(), goName.end());
-            GetInstance().Broadcast(PacketType::S2C_DestroyGameObject, pkt);
-        }
-
-        static void DestroySubtree(const std::shared_ptr<GameObject>& node)
-        {
-            std::vector<std::shared_ptr<GameObject>> children;
-
-            for (const auto& ch : node->GetChildMap() | std::views::values)
-                children.emplace_back(ch);
-
-            for (auto& child : children)
-            {
-                node->RemoveChild(child->GetName());
-                DestroySubtree(child);
-            }
-
-            if (auto parentW = node->GetParent(); parentW && !parentW->expired())
-            {
-                auto parent = parentW->lock();
-                parent->RemoveChild(node->GetName());
-            }
-            else
-                GameObjectManager::GetInstance().Unregister(node->GetName());
-
-            BroadcastDestroy(node->GetName());
-        }
-
         static void CleanupOwnedObjects(const std::shared_ptr<ClientReference>& client)
         {
             for (auto& weak : client->ownedGameObjectList)
-                if (auto root = weak.lock())
-                    DestroySubtree(root);
+            {
+                if (auto gameObject = weak.lock())
+                    gameObject->MarkDestroyed();
+            }
 
             client->ownedGameObjectList.clear();
         }
@@ -292,6 +275,31 @@ namespace Blaster::Server::Network
         std::thread ioThread;
         std::atomic<bool> running = false;
         std::atomic<NetworkId> nextId = 0;
+
+        std::queue<NetworkId> freeIds;
+        std::mutex idMutex;
+
+        NetworkId AcquireId()
+        {
+            std::scoped_lock lock(idMutex);
+
+            if (!freeIds.empty())
+            {
+                NetworkId id = freeIds.front();
+
+                freeIds.pop();
+
+                return id;
+            }
+
+            return ++nextId;
+        }
+
+        void ReleaseId(NetworkId id)
+        {
+            std::scoped_lock lk(idMutex);
+            freeIds.push(id);
+        }
 
         std::unordered_map<NetworkId, std::shared_ptr<ClientReference>> clientMap;
 

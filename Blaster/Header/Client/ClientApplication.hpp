@@ -10,9 +10,9 @@
 #include <spanstream>
 #include "Client/Core/Window.hpp"
 #include "Client/Core/InputManager.hpp"
-#include "Client/Network/TranslationBuffer.hpp"
+//#include "Client/Network/TranslationBuffer.hpp"
 #include "Client/Network/ClientNetwork.hpp"
-#include "Client/Network/ClientRpc.hpp"
+#include "Client/Network/ClientSynchronization.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
 #include "Client/Render/Camera.hpp"
@@ -45,7 +45,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.16.12", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.22.17", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -78,259 +78,23 @@ namespace Blaster::Client
 
             ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Rpc, [](std::vector<std::uint8_t> pk)
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Rpc, [](std::vector<std::uint8_t> messageIn)
             {
-                ClientRpc::HandleReply(std::move(pk));
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
+                        {
+
+                        });
             });
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CreateGameObject, [](std::vector<std::uint8_t> msg)
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Snapshot, [](std::vector<std::uint8_t> messageIn)
                 {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [msg = std::move(msg)]
-                    {
-                        auto nul = std::ranges::find(msg, '\0');
-
-                        if (nul == msg.end() || std::distance(nul, msg.end()) < 5)
-                            return;
-
-                        const std::string fullPath(msg.begin(), nul);
-
-                        std::uint32_t ownerId {};
-                        std::memcpy(&ownerId, &*(nul + 1), 4);
-
-                        const std::vector blob(nul + 1 + 4, msg.end());
-
-                        auto toStringView = [](auto &&sub)
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
                         {
-                            return std::string_view(&*sub.begin(),std::ranges::distance(sub));
-                        };
-
-                        auto segmentView = fullPath | std::views::split('.') | std::views::filter([](auto s){ return !s.empty(); }) | std::views::transform(toStringView);
-
-                        std::shared_ptr<GameObject> parent {};
-                        std::string currentPath;
-
-                        for (auto segment : segmentView)
-                        {
-                            if (!currentPath.empty()) currentPath += '.';
-                            currentPath.append(segment);
-
-                            std::shared_ptr<GameObject> node;
-
-                            if (auto opt = GameObjectManager::GetInstance().Get(currentPath))
-                                node = *opt;
-                            else
-                            {
-                                node = GameObject::Create(currentPath);
-                                GameObjectManager::GetInstance().Register(node);
-                            }
-
-                            if (parent && !parent->HasChild(node->GetName()))
-                                parent->AddChild(node);
-
-                            parent = node;
-                        }
-
-                        if (!parent)
-                            return;
-
-                        if (ownerId != 4096)
-                            parent->SetOwningClient(ownerId);
-
-                        std::shared_ptr<Transform> transform;
-
-                        NetworkSerialize::ObjectFromBytes(blob, transform);
-
-                        if (transform)
-                            parent->GetTransform().swap(transform);
-                    });
-                });
-
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_DestroyGameObject, [](std::vector<std::uint8_t> messageIn)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [msg = std::move(messageIn)]
-                        {
-                            const std::string fullPath(msg.begin(), msg.end());
-
-                            if (fullPath.empty())
-                                return;
-
-                            auto toStringView = [](auto&& sub)
-                            {
-                                return std::string_view(&*sub.begin(), std::ranges::distance(sub));
-                            };
-
-                            auto view = fullPath | std::views::split('.') | std::views::filter([](auto s) { return !s.empty(); }) | std::views::transform(toStringView);
-
-                            const std::vector<std::string_view> segments{ view.begin(), view.end() };
-
-                            if (segments.empty())
-                                return;
-
-                            if (segments.size() == 1)
-                            {
-                                GameObjectManager::GetInstance().Unregister(std::string{segments.front()});
-
-                                return;
-                            }
-
-                            auto currentOpt = GameObjectManager::GetInstance().Get(std::string{segments.front()});
-
-                            if (!currentOpt)
-                                return;
-
-                            auto current = *currentOpt;
-
-                            for (std::size_t i = 1; i + 1 < segments.size(); ++i)
-                            {
-                                auto childOpt = current->GetChild(std::string{segments[i]});
-
-                                if (!childOpt)
-                                    return;
-
-                                current = *childOpt;
-                            }
-
-                            current->RemoveChild(std::string{segments.back()});
+                            ClientSynchronization::HandleSnapshotPayload(message);
                         });
                 });
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_AddComponent, [](std::vector<std::uint8_t> messageIn)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        const auto first = std::ranges::find(message, '\0');
-
-                        if (first == message.end())
-                            return;
-
-                        const auto second = std::find(first + 1, message.end(), '\0');
-
-                        if (second == message.end())
-                            return;
-
-                        const std::string gameObjectName(message.begin(), first);
-                        const std::string componentType(first + 1, second);
-
-                        const auto optionalGameObject = GameObjectManager::GetInstance().Get(gameObjectName);
-
-                        if (!optionalGameObject)
-                            return;
-
-                        const auto raw = ComponentFactory::Instantiate(componentType);
-
-                        if (!raw)
-                            return;
-
-                        auto component = std::static_pointer_cast<Component>(raw);
-
-                        const std::vector blob(second + 1, message.end());
-
-                        NetworkSerialize::ObjectFromBytes(blob, component);
-
-                        (*optionalGameObject)->AddComponentDynamic(component);
-                    });
-                });
-
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveComponent, [](std::vector<std::uint8_t> messageIn)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        const auto nul = std::ranges::find(message, '\0');
-
-                        if (nul == message.end())
-                            return;
-
-                        const std::string goName(message.begin(), nul);
-
-                        const std::string componentType(nul + 1, message.end());
-
-                        const auto optionalGameObject = GameObjectManager::GetInstance().Get(goName);
-
-                        if (!optionalGameObject)
-                            return;
-
-                        (*optionalGameObject)->RemoveComponentDynamic(componentType);
-                    });
-                });
-
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_AddChild, [](std::vector<std::uint8_t> messageIn)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        const auto iterator = std::ranges::find(message, '\0');
-
-                        if (iterator == message.end())
-                            return;
-
-                        const std::string parentName(message.begin(), iterator);
-                        const std::string childName(iterator + 1, message.end());
-
-                        const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName);
-
-                        if (const auto childGameObject = GameObjectManager::GetInstance().Get(childName); parentGameObject && childGameObject)
-                            (*parentGameObject)->AddChild(*childGameObject);
-                    });
-                });
-
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_RemoveChild, [](std::vector<std::uint8_t> bytes)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [data = std::move(bytes)]
-                        {
-                            auto nul = std::ranges::find(data, '\0');
-
-                            if (nul == data.begin() || nul == data.end() || std::next(nul) == data.end())
-                                return;
-
-                            const std::string parentName(data.begin(), nul);
-                            const std::string childName(std::next(nul), data.end());
-
-                            if (const auto parentGameObject = GameObjectManager::GetInstance().Get(parentName))
-                                (*parentGameObject)->RemoveChild(childName);
-                        });
-                });
-
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_TranslateTo, [](std::vector<std::uint8_t> messageIn)
-                {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                    {
-                        auto nul = std::ranges::find(message,'\0');
-
-                        if (nul == message.end())
-                            return;
-
-                        const std::string path(message.begin(), nul);
-
-                        auto cursor = nul + 1;
-
-                        auto readBlob = [&](auto& dst)
-                        {
-                            if (cursor + 4 > message.end())
-                                return;
-
-                            std::uint32_t len;
-                            std::memcpy(&len,&*cursor,4);
-                            cursor += 4;
-
-                            if (cursor + len > message.end())
-                                return;
-
-                            NetworkSerialize::ObjectFromBytes({cursor, cursor + len}, dst);
-                            cursor += len;
-                        };
-
-                        Vector<float, 3> target{};
-
-                        float seconds = 0.0f;
-
-                        readBlob(target);
-                        readBlob(seconds);
-
-                        TranslationBuffer::GetInstance().Push(path, target, seconds);
-
-                        std::cout << "TranslateTo " << path << std::endl;
-                    });
-                });
-
+            /*
             if (!GameObjectManager::GetInstance().Has("mesh"))
             {
                 auto meshGameObjectFuture = ClientRpc::CreateGameObject("mesh");
@@ -383,7 +147,7 @@ namespace Blaster::Client
                 }
 
                 this->camera = camera->GetComponent<Camera>();
-            }).detach();
+            }).detach();*/
         }
 
         bool IsRunning()
@@ -399,14 +163,14 @@ namespace Blaster::Client
 
             Time::GetInstance().Update();
 
-            TranslationBuffer::GetInstance().Update();
+            //TranslationBuffer::GetInstance().Update();
         }
 
         void Render()
         {
             Window::Clear();
 
-            GameObjectManager::GetInstance().Render(camera);
+            //GameObjectManager::GetInstance().Render(camera);
 
             Window::GetInstance().Present();
 

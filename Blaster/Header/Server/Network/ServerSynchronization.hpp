@@ -1,11 +1,17 @@
 #pragma once
 
-#include <ranges>
-
-#include "Independent/ECS/GameObjectManager.hpp"
-#include "Independent/Network/NetworkSerialize.hpp"
+#include <unordered_set>
+#include <boost/archive/text_oarchive.hpp>
+#include "Independent/ECS/IGameObjectSynchronization.hpp"
+#include "Independent/Network/CommonSynchronization.hpp"
 #include "Server/Network/ServerNetwork.hpp"
 
+namespace Blaster::Independent::ECS
+{
+    class GameObject;
+}
+
+using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Network;
 
 namespace Blaster::Server::Network
@@ -20,255 +26,201 @@ namespace Blaster::Server::Network
         ServerSynchronization& operator=(const ServerSynchronization&) = delete;
         ServerSynchronization& operator=(ServerSynchronization&&) = delete;
 
-        static std::shared_ptr<GameObject> SpawnGameObject(const std::string& name, const std::optional<NetworkId> owningClient = std::nullopt, const std::optional<NetworkId> except = std::nullopt)
+        static void MarkDirty(const std::shared_ptr<GameObject>& rawGameObject)
         {
-            const auto gameObject = GameObject::Create(name, owningClient);
+            auto gameObject = std::static_pointer_cast<IGameObjectSynchronization>(rawGameObject);
 
-            gameObject->authoritative = true;
+            if (gameObject == nullptr)
+                return;
 
-            auto movedGameObject = GameObjectManager::GetInstance().Register(gameObject);
+            dirty.insert(gameObject);
 
-            if (owningClient.has_value() && ServerNetwork::GetInstance().HasClient(owningClient.value()))
-                ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.push_back(movedGameObject);
+            bool expected = false;
 
-            BroadcastGameObject(movedGameObject, except);
+            const bool firstWriter = flushRequested.compare_exchange_strong(expected, true, std::memory_order_release, std::memory_order_relaxed);
 
-            return movedGameObject;
+            if (firstWriter)
+                boost::asio::post(ServerNetwork::GetInstance().GetIoContext(), [] { FlushDirty(); });
         }
 
-        static void DestroyGameObject(const std::shared_ptr<GameObject>& go)
+        static void FlushDirty()
         {
-            GameObjectManager::GetInstance().Unregister(go->GetName());
+            if (!flushRequested.exchange(false, std::memory_order_acq_rel))
+                return;
 
-            std::vector<std::uint8_t> buffer(go->GetName().begin(), go->GetName().end());
+            if (dirty.empty())
+                return;
 
-            BroadcastPayload(PacketType::S2C_DestroyGameObject, buffer);
-        }
+            Snapshot snapshot = {};
 
-        static std::shared_ptr<Component> AddComponent(const std::shared_ptr<GameObject>& gameObject, const std::shared_ptr<Component>& component, const std::optional<NetworkId> except = std::nullopt)
-        {
-            auto result = gameObject->AddComponentDynamic(component);
+            snapshot.header.sequence = nextSeq++;
+            snapshot.header.opCount = 0;
 
-            if (!result)
-                return nullptr;
-
-            auto componentBuffer = NetworkSerialize::ObjectToBytes(component);
-
-            const std::string& name = gameObject->GetName();
-
-            std::vector<std::uint8_t> buffer(name.begin(), name.end());
-            buffer.push_back('\0');
-
-            auto type = component->GetTypeName();
-
-            buffer.insert(buffer.end(), type.begin(), type.end());
-            buffer.push_back('\0');
-            buffer.insert(buffer.end(), componentBuffer.begin(), componentBuffer.end());
-
-            BroadcastPayload(PacketType::S2C_AddComponent, buffer, except);
-
-            return result;
-        }
-
-        static void RemoveComponent(const std::shared_ptr<GameObject>& gameObject, const std::string_view typeName)
-        {
-            gameObject->RemoveComponentDynamic(std::string(typeName));
-
-            const std::string& name = gameObject->GetName();
-
-            std::vector<std::uint8_t> buffer(name.begin(), name.end());
-
-            buffer.push_back('\0');
-            buffer.insert(buffer.end(), typeName.begin(), typeName.end());
-
-            BroadcastPayload(PacketType::S2C_RemoveComponent, buffer);
-        }
-
-        static std::shared_ptr<GameObject> AddChild(const std::shared_ptr<GameObject>& parent, const std::shared_ptr<GameObject>& child, const std::optional<NetworkId> except = std::nullopt)
-        {
-            auto result = parent->AddChild(child);
-
-            if (!result)
-                return nullptr;
-
-            const std::string& parentName = parent->GetName();
-
-            std::vector<std::uint8_t> buffer(parentName.begin(), parentName.end());
-
-            buffer.push_back('\0');
-
-            const std::string& childName = child->GetName();
-
-            buffer.insert(buffer.end(), childName.begin(), childName.end());
-
-            BroadcastPayload(PacketType::S2C_AddChild, buffer, except);
-
-            return result;
-        }
-
-        static void RemoveChild(const std::shared_ptr<GameObject>& parent, const std::string_view childName)
-        {
-            parent->RemoveChild(std::string(childName));
-
-            const std::string& parentName = parent->GetName();
-
-            std::vector<std::uint8_t> buffer(parentName.begin(), parentName.end());
-
-            buffer.push_back('\0');
-
-            buffer.insert(buffer.end(), childName.begin(), childName.end());
-
-            BroadcastPayload(PacketType::S2C_RemoveChild, buffer);
-        }
-
-        static void SendGameObject(const std::optional<NetworkId> recipient, const std::shared_ptr<GameObject>& node, const std::optional<NetworkId>& except, std::string_view parentPath = {})
-        {
-            std::string absPath;
-
-            if (parentPath.empty())
-                absPath = BuildPath(node);
-            else
+            for (auto& gameObject : dirty)
             {
-                absPath.reserve(parentPath.size() + 1 + node->GetName().size());
-                absPath.append(parentPath).push_back('.');
-                absPath.append(node->GetName());
-            }
-
-            const auto transformBlob = NetworkSerialize::ObjectToBytes(node->GetTransform());
-
-            const std::uint32_t owner = node->GetOwningClient().value_or(4096);
-
-            std::array<std::uint8_t,4> ownerBytes{};
-            std::memcpy(ownerBytes.data(), &owner, sizeof owner);
-
-            std::vector<std::uint8_t> payload;
-            payload.reserve(absPath.size() + 1 + ownerBytes.size() + transformBlob.size());
-
-            payload.insert(payload.end(), absPath.begin(), absPath.end());
-            payload.push_back('\0');
-            payload.insert(payload.end(), ownerBytes.begin(), ownerBytes.end());
-            payload.insert(payload.end(), transformBlob.begin(), transformBlob.end());
-
-            const auto sendCreate = [&](const NetworkId id)
-            {
-                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CreateGameObject, payload);
-            };
-
-            if (recipient && !except)
-                sendCreate(*recipient);
-            else if (except)
-            {
-                for (const auto id : ServerNetwork::GetInstance().GetConnectedClients())
+                if (gameObject->IsDestroyed())
                 {
-                    if (id != *except)
-                        sendCreate(id);
+                    PushOp(snapshot.opBlob, OpDestroy { gameObject->GetAbsolutePath() });
+
+                    ++snapshot.header.opCount;
+                    continue;
+                }
+
+                if (gameObject->WasJustCreated())
+                {
+                    PushOp(snapshot.opBlob, OpCreate { gameObject->GetAbsolutePath(), gameObject->GetTypeName() });
+
+                    ++snapshot.header.opCount;
+                }
+
+                for (auto& [tid, component] : gameObject->GetComponentMap())
+                {
+                    if (component->WasAdded())
+                    {
+                        PushOp(snapshot.opBlob, OpAddComponent { gameObject->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+
+                        ++snapshot.header.opCount;
+                        continue;
+                    }
+
+                    if (component->WasRemoved())
+                    {
+                        lastHashMap.erase(component.get());
+
+                        PushOp(snapshot.opBlob, OpRemoveComponent { gameObject->GetAbsolutePath(), component->GetTypeName() });
+
+                        ++snapshot.header.opCount;
+                        continue;
+                    }
+
+                    const std::uint64_t current = ComponentStateHash(*component);
+
+                    const auto hit = lastHashMap.find(component.get());
+                    const bool changed = hit == lastHashMap.end() || hit->second != current;
+
+                    if (changed)
+                    {
+                        const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
+
+                        PushOp(snapshot.opBlob, OpSetField{ gameObject->GetAbsolutePath(), component->GetTypeName(), "ALL", blob });
+
+                        ++snapshot.header.opCount;
+                    }
+
+                    lastHashMap[component.get()] = current;
                 }
             }
-            else
-                ServerNetwork::GetInstance().Broadcast(PacketType::S2C_CreateGameObject, payload);
 
-            for (auto&& [idx, component] : node->GetComponentMap())
+            dirty.clear();
+
+            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
+
+            for (auto iterator = lastHashMap.begin(); iterator != lastHashMap.end(); )
             {
-                if (idx == typeid(Transform))
-                    continue;
-
-                const auto blob = NetworkSerialize::ObjectToBytes(component);
-
-                std::vector<std::uint8_t> buffer;
-
-                buffer.reserve(absPath.size() + 1 + component->GetTypeName().size() + 1 + blob.size());
-
-                buffer.insert(buffer.end(), absPath.begin(), absPath.end());
-                buffer.push_back('\0');
-
-                const auto& typeName = component->GetTypeName();
-
-                buffer.insert(buffer.end(), typeName.begin(), typeName.end());
-                buffer.push_back('\0');
-                buffer.insert(buffer.end(), blob.begin(), blob.end());
-
-                const auto sendAdd = [&](NetworkId id)
+                if (iterator->first == nullptr)
                 {
-                    ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_AddComponent, buffer);
-                };
-
-                if (recipient && !except)
-                    sendAdd(*recipient);
-                else if (except)
-                {
-                    for (const auto id : ServerNetwork::GetInstance().GetConnectedClients())
-                    {
-                        if (id != *except)
-                            sendAdd(id);
-                    }
+                    std::cerr << "Items in the lastHashMap variable in ServerSynchronization had null keys. This shouldn't happen!" << std::endl;
+                    iterator = lastHashMap.erase(iterator);
                 }
                 else
-                    ServerNetwork::GetInstance().Broadcast(PacketType::S2C_AddComponent, buffer);
+                    ++iterator;
             }
-
-            for (const auto& child: node->GetChildMap() | std::views::values)
-                SendGameObject(recipient, child, except, absPath);
         }
 
-        static void SynchronizeFullTree(const NetworkId recipient)
+        static void SynchronizeFullTree(NetworkId targetClient, std::vector<std::shared_ptr<GameObject>> gameObjectList)
         {
-            for (auto& root : GameObjectManager::GetInstance().GetAll())
-                SendSubtree(recipient, root, std::nullopt);
+            Snapshot snapshot;
+
+            snapshot.header.sequence = 0;
+            snapshot.header.opCount = 0;
+
+            for (const auto& root : gameObjectList)
+                SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(root), snapshot);
+
+            ServerNetwork::GetInstance().SendTo(targetClient, PacketType::S2C_Snapshot, snapshot);
         }
 
     private:
 
         ServerSynchronization() = default;
 
-        static std::string BuildPath(const std::shared_ptr<GameObject>& node)
+        static void SerializeSubTree(const std::shared_ptr<IGameObjectSynchronization>& node, Snapshot& snap)
         {
-            std::vector<std::string_view> segments;
+            PushOp(snap.opBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName() });
+            ++snap.header.opCount;
 
-            for (auto current = node; current;)
+            for (const auto& component : node->GetComponentMap() | std::views::values)
             {
-                segments.emplace_back(current->GetName());
+                const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                if (const auto parent = current->GetParent(); parent && !parent->expired())
-                    current = parent->lock();
-                else
-                    current.reset();
+                PushOp(snap.opBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), blob });
+
+                ++snap.header.opCount;
             }
 
-            std::string full;
-
-            for (auto& segment : std::ranges::reverse_view(segments))
-            {
-                if (!full.empty())
-                    full.push_back('.');
-
-                full.append(segment.data(), segment.size());
-            }
-
-            return full;
+            for (const auto& [name, child] : node->GetChildMap())
+                SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(child), snap);
         }
 
-        static void SendSubtree(const std::optional<NetworkId> recipient, const std::shared_ptr<GameObject>& node, const std::optional<NetworkId>& except)
+        template <typename Op>
+        static void PushOp(std::vector<std::uint8_t>& destination, const Op& operation)
         {
-            SendGameObject(recipient, node, except);
+            std::vector<std::uint8_t> temporary;
+            DataConversion<Op>::Encode(operation, temporary);
 
-            for (const auto &child: node->GetChildMap() | std::views::values)
-                SendSubtree(recipient, child, except);
+            CommonNetwork::WriteTrivial(destination, static_cast<std::uint8_t>(Op::Code));
+
+            const std::uint32_t length = static_cast<std::uint32_t>(temporary.size());
+            CommonNetwork::WriteTrivial(destination, length);
+
+            CommonNetwork::WriteRaw(destination, temporary.data(), temporary.size());
         }
 
-        static void BroadcastGameObject(const std::shared_ptr<GameObject>& gameObject)
+        template <typename Value>
+        static std::vector<std::uint8_t> SerializeToBlob(const Value& value)
         {
-            BroadcastGameObject(gameObject, std::nullopt);
+            std::ostringstream oss;
+            boost::archive::text_oarchive oa(oss);
+
+            oa << value;
+
+            const std::string& text = oss.str();
+
+            return std::vector<std::uint8_t>(text.begin(), text.end());
         }
 
-        static void BroadcastGameObject(const std::shared_ptr<GameObject>& gameObject, const std::optional<NetworkId>& except)
+        template <typename T>
+        static std::string ToArchiveString(const T& value)
         {
-            SendGameObject(std::nullopt, gameObject, except);
+            std::ostringstream oss;
+            boost::archive::text_oarchive oa(oss);
+
+            oa << value;
+
+            return oss.str();
         }
 
-        static void BroadcastPayload(const PacketType type, const std::span<const std::uint8_t> payload, const std::optional<NetworkId> except = std::nullopt)
+        static std::uint64_t HashString(const std::string& s)
         {
-            ServerNetwork::GetInstance().Broadcast(type, payload, except);
+            std::uint64_t hash = 14695981039346656037ull;
+
+            for (unsigned char c : s) 
+                hash = (hash ^ c) * 1099511628211ull;
+
+            return hash;
         }
 
+        template <typename C>
+        static std::uint64_t ComponentStateHash(const C& comp)
+        {
+            return HashString(ToArchiveString(comp));
+        }
+
+        inline static std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirty;
+        inline static std::atomic<bool> flushRequested = false;
+        inline static std::atomic<std::uint64_t> nextSeq = 1;
+
+        inline static std::unordered_map<const Component*, std::uint64_t> lastHashMap;
     };
 }

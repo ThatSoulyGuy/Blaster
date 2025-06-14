@@ -8,21 +8,20 @@
 #include <unordered_map>
 #include "Client/Network/ClientNetwork.hpp"
 #include "Independent/ECS/Component.hpp"
+#include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
+#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace Blaster::Client::Network;
 using namespace Blaster::Independent::Math;
 using namespace Blaster::Independent::Network;
 
-namespace Blaster::Server::Network
-{
-    class ServerSynchronization;
-}
-
 namespace Blaster::Independent::ECS
 {
-    class GameObject final : public std::enable_shared_from_this<GameObject>
+    class GameObjectManager;
+
+    class GameObject final : public std::enable_shared_from_this<GameObject>, public IGameObjectSynchronization
     {
 
     public:
@@ -46,6 +45,12 @@ namespace Blaster::Independent::ECS
 
             componentMap.insert({ typeid(T), std::move(component) });
 
+            componentMap[typeid(T)]->wasAdded = true;
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
+
             return std::static_pointer_cast<T>(componentMap[typeid(T)]);
         }
 
@@ -63,6 +68,12 @@ namespace Blaster::Independent::ECS
             component->Initialize();
 
             componentMap.insert({ type, std::move(component) });
+
+            componentMap[type]->wasAdded = true;
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
 
             return componentMap[type];
         }
@@ -132,6 +143,12 @@ namespace Blaster::Independent::ECS
                 return;
             }
 
+            componentMap[typeid(T)]->wasRemoved = true;
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
+
             componentMap.erase(typeid(T));
         }
 
@@ -141,54 +158,16 @@ namespace Blaster::Independent::ECS
             {
                 if (iterator->second->GetTypeName() == typeName)
                 {
+                    iterator->second->wasRemoved = true;
+
                     componentMap.erase(iterator);
                     return;
                 }
             }
-        }
 
-        std::shared_ptr<GameObject> AddChild(std::shared_ptr<GameObject> child)
-        {
-            if (childMap.contains(child->GetName()))
-            {
-                std::cout << "Child map for game object '" << name << "' already contains child '" << child->GetName() << "'!" << std::endl;
-                return nullptr;
-            }
-
-            child->SetParent(shared_from_this());
-
-            std::string childName = child->GetName();
-
-            childMap.insert({ childName, std::move(child) });
-
-            return childMap[childName];
-        }
-
-        bool HasChild(const std::string& childName) const
-        {
-            return childMap.contains(childName);
-        }
-
-        std::optional<std::shared_ptr<GameObject>> GetChild(const std::string& childName)
-        {
-            if (!childMap.contains(childName))
-            {
-                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
-                return std::nullopt;
-            }
-
-            return std::make_optional(childMap[childName]);
-        }
-
-        void RemoveChild(const std::string& childName)
-        {
-            if (!childMap.contains(childName))
-            {
-                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
-                return;
-            }
-
-            childMap.erase(childName);
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
         }
 
         void SetParent(std::shared_ptr<GameObject> parent)
@@ -211,12 +190,12 @@ namespace Blaster::Independent::ECS
             }
         }
 
-        auto& GetComponentMap() const
+        const std::unordered_map<std::type_index, std::shared_ptr<Component>>& GetComponentMap() const override
         {
             return componentMap;
         }
 
-        auto& GetChildMap() const
+        const std::unordered_map<std::string, std::shared_ptr<GameObject>>& GetChildMap() const override
         {
             return childMap;
         }
@@ -227,7 +206,7 @@ namespace Blaster::Independent::ECS
         }
 
         [[nodiscard]]
-        std::string GetAbsolutePath() const
+        std::string GetAbsolutePath() const override
         {
             std::vector<std::string_view> segments;
 
@@ -282,6 +261,29 @@ namespace Blaster::Independent::ECS
             return !IsAuthoritative() && GetOwningClient().has_value() && GetOwningClient().value() == ClientNetwork::GetInstance().GetNetworkId();
         }
 
+        [[nodiscard]]
+        bool WasJustCreated() const noexcept override
+        {
+            return justCreated;
+        }
+
+        [[nodiscard]]
+        bool IsDestroyed() const noexcept override
+        {
+            return destroyed;
+        }
+
+        [[nodiscard]]
+        std::string GetTypeName() const override
+        {
+            return typeid(*this).name();
+        }
+
+        void MarkDestroyed() noexcept override
+        {
+            destroyed = true;
+        }
+
         void Update()
         {
             if (!IsAuthoritative() && owningClient.has_value() && owningClient.value() != ClientNetwork::GetInstance().GetNetworkId())
@@ -292,6 +294,11 @@ namespace Blaster::Independent::ECS
 
             for (const auto& child : childMap | std::views::values)
                 child->Update();
+
+            justCreated = false;
+
+            for (const auto& component : componentMap | std::views::values)
+                component->ClearTransientFlags();
         }
 
         void Render(const std::shared_ptr<Client::Render::Camera>& camera)
@@ -319,10 +326,67 @@ namespace Blaster::Independent::ECS
         GameObject() = default;
 
         friend class Blaster::Server::Network::ServerSynchronization;
+        friend class Blaster::Independent::ECS::GameObjectManager;
+
+        std::shared_ptr<GameObject> AddChild(std::shared_ptr<GameObject> child)
+        {
+            if (childMap.contains(child->GetName()))
+            {
+                std::cout << "Child map for game object '" << name << "' already contains child '" << child->GetName() << "'!" << std::endl;
+                return nullptr;
+            }
+
+            child->SetParent(shared_from_this());
+
+            std::string childName = child->GetName();
+
+            childMap.insert({ childName, std::move(child) });
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
+
+            return childMap[childName];
+        }
+
+        bool HasChild(const std::string& childName) const
+        {
+            return childMap.contains(childName);
+        }
+
+        std::optional<std::shared_ptr<GameObject>> GetChild(const std::string& childName)
+        {
+            if (!childMap.contains(childName))
+            {
+                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
+                return std::nullopt;
+            }
+
+            return std::make_optional(childMap[childName]);
+        }
+
+        void RemoveChild(const std::string& childName)
+        {
+            if (!childMap.contains(childName))
+            {
+                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
+                return;
+            }
+
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
+#endif
+
+            childMap.erase(childName);
+        }
 
         std::string name;
 
         bool authoritative = false;
+
+        bool justCreated = true;
+        bool destroyed = false;
+
         std::optional<NetworkId> owningClient = std::nullopt;
 
         std::optional<std::weak_ptr<GameObject>> parent;

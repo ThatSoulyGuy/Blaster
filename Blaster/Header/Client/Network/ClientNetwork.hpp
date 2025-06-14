@@ -59,13 +59,14 @@ namespace Blaster::Client::Network
                 });
         }
 
-        void Send(const PacketType type, const std::span<const std::uint8_t> payload)
+        template <typename... Args> requires DataConvertible<Args...>
+        void Send(const PacketType type, Args&&... args)
         {
-            auto buf = std::make_shared<std::vector<std::uint8_t>>(CreatePacket(type, networkId, payload));
+            auto buffer = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(type, networkId, std::forward<Args>(args)...));
 
-            boost::asio::post(strand, [this, buf]
+            boost::asio::post(strand, [this, buffer]
                 {
-                    writeQueue.push_back(buf);
+                    writeQueue.push_back(buffer);
 
                     if (writeQueue.size() == 1)
                         StartWrite();
@@ -162,17 +163,16 @@ namespace Blaster::Client::Network
         {
             if (header.type == PacketType::S2C_RequestStringId)
             {
-                Send(PacketType::C2S_StringId, std::span(reinterpret_cast<const std::uint8_t*>(stringId.data()), stringId.size()));
+                Send(PacketType::C2S_StringId, stringId);
+
                 return;
             }
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
-                NetworkId id = 0;
+                NetworkId id = std::any_cast<std::uint32_t>(CommonNetwork::DisassembleData(data)[0]);
 
-                std::memcpy(&id, data.data(), sizeof(NetworkId));
-
-                networkId = id;
+                std::cout << "Received NetworkId ('" << id << "') from the server." << std::endl;
 
                 return;
             }

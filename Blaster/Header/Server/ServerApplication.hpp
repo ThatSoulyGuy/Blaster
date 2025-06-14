@@ -2,15 +2,16 @@
 
 #include <memory>
 #include <mutex>
-#include <iostream>
+#include <iostream> 
 #include <random>
+#include "Independent/Network/CommonNetwork.hpp"
 #include "Independent/Utility/Time.hpp"
-#include "Server/Entity/Entities/EntityPlayer.hpp"
+//#include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
-#include "Server/Network/ServerRpc.hpp"
-#include "Server/Network/ServerSynchronization.hpp"
+//#include "Server/Network/ServerRpc.hpp"
+//#include "Server/Network/ServerSynchronization.hpp"
 
-using namespace Blaster::Server::Entity::Entities;
+//using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
@@ -27,7 +28,7 @@ namespace Blaster::Server
 
         void PreInitialize()
         {
-
+            
         }
 
         void Initialize()
@@ -40,21 +41,27 @@ namespace Blaster::Server
             ServerNetwork::GetInstance().Initialize(port);
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    const std::string name(reinterpret_cast<char*>(data.data()), data.size());
+                    const std::string name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
 
-                    std::cout << "Client " << who << " is '" << name << "'\n";
+                    std::cout << "Client " << who << " is '" << name << "'." << std::endl;
 
-                    const auto playerObject = ServerSynchronization::SpawnGameObject("player-" + name, who);
+                    ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
-                    ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
+                    //const auto playerObject = ServerSynchronization::SpawnGameObject("player-" + name, who);
 
-                    ServerSynchronization::SynchronizeFullTree(who);
+                    //ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
+
+                    ServerSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rpc, [](const NetworkId who, std::vector<std::uint8_t> pk)
                 {
-                    ServerRpc::HandleRequest(who, std::move(pk));
+                    //ServerRpc::HandleRequest(who, std::move(pk));
                 });
+
+            auto myGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("someGameObject"));
+
+            myGameObject->GetTransform()->Translate({ 80.0f, 0.0f, 4.0f });
         }
 
         bool IsRunning()
@@ -91,7 +98,7 @@ namespace Blaster::Server
         static std::once_flag initializationFlag;
         static std::unique_ptr<ServerApplication> instance;
 
-    }; 
+    };
 
     std::once_flag ServerApplication::initializationFlag;
     std::unique_ptr<ServerApplication> ServerApplication::instance;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Client/Core/InputManager.hpp"
-#include "Client/Network/ClientRpc.hpp"
+//#include "Client/Network/ClientRpc.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/ShaderManager.hpp"
@@ -11,7 +11,7 @@
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Utility/Time.hpp"
 #include "Server/Entity/EntityBase.hpp"
-#include "Server/Network/ServerSynchronization.hpp"
+//#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Network;
@@ -22,6 +22,7 @@ using namespace Blaster::Server::Network;
 
 namespace Blaster::Server::Entity::Entities
 {
+    /*
     class EntityPlayer final : public EntityBase<EntityPlayer>
     {
 
@@ -197,7 +198,7 @@ namespace Blaster::Server::Entity::Entities
 
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)
 
-    };
+    };*/
 }
 
-REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer)
+//REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer)

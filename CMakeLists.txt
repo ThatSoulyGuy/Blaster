@@ -761,9 +761,12 @@ foreach(tgt Client Server)
             COMPILE_DEFINITIONS GLFW_STATIC)
 endforeach()
 
-if (WIN32)
+if (WIN32 AND NOT MSVC)
     target_compile_options(Client PRIVATE "-Wa,-mbig-obj")
     target_compile_options(Server PRIVATE "-Wa,-mbig-obj")
+elseif (WIN32 AND MSVC)
+    target_compile_options(Client PRIVATE "/bigobj")
+    target_compile_options(Server PRIVATE "/bigobj")
 endif()
 
 add_link_options(-static-libstdc++ -static-libgcc)

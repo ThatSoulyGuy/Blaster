@@ -42,11 +42,9 @@ namespace Blaster::Independent::Math
 	{
 		static const boost::archive::detail::extra_detail::guid_initializer<Concrete>& GetInstance()
 		{
-			static const auto& result =
-				boost::serialization::singleton<boost::archive::detail::extra_detail::guid_initializer<Concrete>>::get_mutable_instance()
-				.export_guid( boost::core::demangle(typeid(Concrete).name()).c_str() );
+			static const auto& instance = boost::serialization::singleton<boost::archive::detail::extra_detail::guid_initializer<Concrete>>::get_mutable_instance().export_guid();
 
-			return result;
+			return instance;
 		}
 
 		static inline const bool touched = (GetInstance(), true);
@@ -616,21 +614,21 @@ namespace Blaster::Independent::Math
 	};
 
 	template <Arithmetic T, size_t N>
-	std::ostream& operator<<(std::ostream& os, const Vector<T, N>& vec)
+	std::ostream& operator<<(std::ostream& stream, const Vector<T, N>& vector)
 	{
-		os << "[ ";
+		stream << std::string("[ ");
 
 		for (size_t i = 0; i < N; ++i)
 		{
-			os << vec.begin()[i];
+			stream << vector.begin()[i];
 
 			if (i < N - 1)
-				os << ", ";
+				stream << std::string(", ");
 		}
 
-		os << " ]";
+		stream << std::string(" ]");
 
-		return os;
+		return stream;
 	}
 }
 

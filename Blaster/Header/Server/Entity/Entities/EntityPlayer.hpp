@@ -6,19 +6,18 @@
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
-#include "Client/Thread/MainThreadExecutor.hpp"
 #include "Independent/ComponentRegistry.hpp"
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Utility/Time.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Server/Entity/EntityBase.hpp"
 //#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Network;
-using namespace Blaster::Client::Render;
 using namespace Blaster::Client::Render::Vertices;
-using namespace Blaster::Client::Thread;
-using namespace Blaster::Server::Network;
+using namespace Blaster::Client::Render;
+using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Server::Entity::Entities
 {

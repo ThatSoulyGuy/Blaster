@@ -1,34 +1,25 @@
 #pragma once
 
 #include <unordered_set>
+#include <queue>
 #include <boost/archive/text_iarchive.hpp>
+#include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
-#include "Independent/Network/CommonSynchronization.hpp"
 
 using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Network;
 
-namespace Blaster::Client::Network
+namespace Blaster::Independent::ECS::Synchronization
 {
-    template <typename Value>
-    void DeserializeInto(std::shared_ptr<Value>& value, const std::vector<std::uint8_t>& blob)
-    {
-        std::string txt(blob.begin(), blob.end());
-        std::istringstream ss(txt);
-        boost::archive::text_iarchive ia(ss);
-
-        ia >> value;
-    }
-
-    class ClientSynchronization final
+    class ReceiverSynchronization final
     {
 
     public:
 
-        ClientSynchronization(const ClientSynchronization&) = delete;
-        ClientSynchronization(ClientSynchronization&&) = delete;
-        ClientSynchronization& operator=(const ClientSynchronization&) = delete;
-        ClientSynchronization& operator=(ClientSynchronization&&) = delete;
+        ReceiverSynchronization(const ReceiverSynchronization&) = delete;
+        ReceiverSynchronization(ReceiverSynchronization&&) = delete;
+        ReceiverSynchronization& operator=(const ReceiverSynchronization&) = delete;
+        ReceiverSynchronization& operator=(ReceiverSynchronization&&) = delete;
 
         static void HandleSnapshotPayload(std::vector<std::uint8_t> payload)
         {
@@ -44,11 +35,11 @@ namespace Blaster::Client::Network
             if (snap.header.sequence == 0)
                 GameObjectManager::GetInstance().Clear();
 
-            std::span<const std::uint8_t> blob(snap.opBlob.data(), snap.opBlob.size());
+            std::span<const std::uint8_t> blob(snap.operationBlob.data(), snap.operationBlob.size());
 
             std::size_t offset = 0;
 
-            for (std::uint32_t i = 0; i < snap.header.opCount; ++i)
+            for (std::uint32_t i = 0; i < snap.header.operationCount; ++i)
             {
                 if (offset + 5 > blob.size())
                     break;
@@ -60,7 +51,7 @@ namespace Blaster::Client::Network
 
                 if (length == 0)
                 {
-                    std::cerr << "Zero-length op payload, code '" << static_cast<int>(code) << "' in ClientSynchronization::HandleSnapshotPayload!";
+                    std::cerr << "Zero-length op payload, code '" << static_cast<int>(code) << "' in ReceiverSynchronization::HandleSnapshotPayload!";
                     continue;
                 }
 
@@ -77,7 +68,7 @@ namespace Blaster::Client::Network
 
     private:
 
-        ClientSynchronization() = default;
+        ReceiverSynchronization() = default;
 
         static void ApplyOperation(OpCode code, std::span<const std::uint8_t> slice)
         {
@@ -105,7 +96,7 @@ namespace Blaster::Client::Network
                 break;
 
             default:
-                std::cerr << "Invalid opCode '" << (int)code << "' at ClientSynchronization::ApplyOperation." << std::endl;
+                std::cerr << "Invalid opCode '" << (int)code << "' at ReceiverSynchronization::ApplyOperation." << std::endl;
                 break;
             }
         }
@@ -153,15 +144,15 @@ namespace Blaster::Client::Network
             if (!gameObjectOptional.has_value())
                 return;
 
-            std::shared_ptr<Component> component = ComponentFactory::Instantiate(operation.compType);
+            std::shared_ptr<Component> component = ComponentFactory::Instantiate(operation.componentType);
 
             if (component == nullptr)
                 return;
 
             DeserializeInto(component, operation.blob);
 
-            if (gameObjectOptional.value()->HasComponentDynamic(operation.compType))
-                gameObjectOptional.value()->RemoveComponentDynamic(operation.compType);
+            if (gameObjectOptional.value()->HasComponentDynamic(operation.componentType))
+                gameObjectOptional.value()->RemoveComponentDynamic(operation.componentType);
 
             gameObjectOptional.value()->AddComponentDynamic(component);
         }
@@ -175,7 +166,7 @@ namespace Blaster::Client::Network
             if (!gameObjectOptional.has_value())
                 return;
 
-            gameObjectOptional.value()->RemoveComponentDynamic(operation.compType);
+            gameObjectOptional.value()->RemoveComponentDynamic(operation.componentType);
         }
 
         static void HandleSetField(std::span<const std::uint8_t> slice)
@@ -187,12 +178,22 @@ namespace Blaster::Client::Network
             if (!gameObjectOptional.has_value())
                 return;
 
-            auto componentOptional = gameObjectOptional.value()->GetComponentDynamic(operation.compType);
+            auto componentOptional = gameObjectOptional.value()->GetComponentDynamic(operation.componentType);
 
             if (!componentOptional.has_value())
                 return;
 
             DeserializeInto(componentOptional.value(), operation.blob);
+        }
+
+        template <typename Value>
+        static void DeserializeInto(std::shared_ptr<Value>& value, const std::vector<std::uint8_t>& blob)
+        {
+            std::string text(blob.begin(), blob.end());
+            std::istringstream stream(text);
+            boost::archive::text_iarchive archive(stream);
+
+            archive >> value;
         }
     };
 }

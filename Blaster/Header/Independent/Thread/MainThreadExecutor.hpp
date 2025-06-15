@@ -6,7 +6,7 @@
 #include <memory>
 #include <unordered_set>
 
-namespace Blaster::Client::Thread
+namespace Blaster::Independent::Thread
 {
     class MainThreadExecutor final
     {

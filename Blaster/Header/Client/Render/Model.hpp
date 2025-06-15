@@ -9,12 +9,12 @@
 #include "Client/Render/Vertices/ModelVertex.hpp"
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Texture.hpp"
-#include "Client/Thread/MainThreadExecutor.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Render::Vertices;
-using namespace Blaster::Client::Thread;
+using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client::Render
 {

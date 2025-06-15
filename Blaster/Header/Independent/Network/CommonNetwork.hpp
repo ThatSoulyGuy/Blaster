@@ -17,9 +17,8 @@ namespace Blaster::Independent::Network
         C2S_StringId = 2,
         S2C_AssignNetworkId = 3,
         S2C_Snapshot = 4,
-        S2C_TranslateTo = 5,
-        S2C_Rpc = 6,
-        C2S_Rpc = 7
+        C2S_Snapshot = 5,
+        S2C_TranslateTo = 6,
     };
 
     struct PacketHeader

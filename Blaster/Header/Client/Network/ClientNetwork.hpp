@@ -83,6 +83,11 @@ namespace Blaster::Client::Network
             return networkId;
         }
 
+        auto& GetIoContext()
+        {
+            return ioContext;
+        }
+
         void Uninitialize()
         {
             if (!running)

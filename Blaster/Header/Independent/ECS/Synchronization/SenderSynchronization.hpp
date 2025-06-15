@@ -1,30 +1,37 @@
 #pragma once
 
 #include <unordered_set>
+#include <queue>
 #include <boost/archive/text_oarchive.hpp>
+#include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
-#include "Independent/Network/CommonSynchronization.hpp"
-#include "Server/Network/ServerNetwork.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
+
+#ifdef IS_SERVER
+#include "Server/Network/ServerNetwork.hpp" 
+#else
+#include "Client/Network/ClientNetwork.hpp"
+#endif
 
 namespace Blaster::Independent::ECS
 {
     class GameObject;
 }
 
-using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Network;
+using namespace Blaster::Independent::Thread;
 
-namespace Blaster::Server::Network
+namespace Blaster::Independent::ECS::Synchronization
 {
-    class ServerSynchronization final
+    class SenderSynchronization final
     {
 
     public:
 
-        ServerSynchronization(const ServerSynchronization&) = delete;
-        ServerSynchronization(ServerSynchronization&&) = delete;
-        ServerSynchronization& operator=(const ServerSynchronization&) = delete;
-        ServerSynchronization& operator=(ServerSynchronization&&) = delete;
+        SenderSynchronization(const SenderSynchronization&) = delete;
+        SenderSynchronization(SenderSynchronization&&) = delete;
+        SenderSynchronization& operator=(const SenderSynchronization&) = delete;
+        SenderSynchronization& operator=(SenderSynchronization&&) = delete;
 
         static void MarkDirty(const std::shared_ptr<GameObject>& rawGameObject)
         {
@@ -40,7 +47,25 @@ namespace Blaster::Server::Network
             const bool firstWriter = flushRequested.compare_exchange_strong(expected, true, std::memory_order_release, std::memory_order_relaxed);
 
             if (firstWriter)
-                boost::asio::post(ServerNetwork::GetInstance().GetIoContext(), [] { FlushDirty(); });
+            {
+#ifdef IS_SERVER
+                boost::asio::post(Blaster::Server::Network::ServerNetwork::GetInstance().GetIoContext(), []
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                        {
+                            FlushDirty();
+                        });
+                    });
+#else
+                boost::asio::post(Blaster::Client::Network::ClientNetwork::GetInstance().GetIoContext(), []
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                        {
+                            FlushDirty();
+                        });
+                    });
+#endif
+            }
         }
 
         static void FlushDirty()
@@ -54,32 +79,34 @@ namespace Blaster::Server::Network
             Snapshot snapshot = {};
 
             snapshot.header.sequence = nextSeq++;
-            snapshot.header.opCount = 0;
+            snapshot.header.operationCount = 0;
 
             for (auto& gameObject : dirty)
             {
                 if (gameObject->IsDestroyed())
                 {
-                    PushOp(snapshot.opBlob, OpDestroy { gameObject->GetAbsolutePath() });
+                    PushOp(snapshot.operationBlob, OpDestroy { gameObject->GetAbsolutePath() });
 
-                    ++snapshot.header.opCount;
+                    ++snapshot.header.operationCount;
                     continue;
                 }
 
                 if (gameObject->WasJustCreated())
                 {
-                    PushOp(snapshot.opBlob, OpCreate { gameObject->GetAbsolutePath(), gameObject->GetTypeName() });
+                    PushOp(snapshot.operationBlob, OpCreate { gameObject->GetAbsolutePath(), gameObject->GetTypeName() });
 
-                    ++snapshot.header.opCount;
+                    ++snapshot.header.operationCount;
                 }
+                
+                std::shared_lock lock(gameObject->GetMutex());
 
-                for (auto& [tid, component] : gameObject->GetComponentMap())
+                for (auto& component : gameObject->GetComponentMap() | std::views::values)
                 {
                     if (component->WasAdded())
                     {
-                        PushOp(snapshot.opBlob, OpAddComponent { gameObject->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+                        PushOp(snapshot.operationBlob, OpAddComponent { gameObject->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
 
-                        ++snapshot.header.opCount;
+                        ++snapshot.header.operationCount;
                         continue;
                     }
 
@@ -87,9 +114,9 @@ namespace Blaster::Server::Network
                     {
                         lastHashMap.erase(component.get());
 
-                        PushOp(snapshot.opBlob, OpRemoveComponent { gameObject->GetAbsolutePath(), component->GetTypeName() });
+                        PushOp(snapshot.operationBlob, OpRemoveComponent { gameObject->GetAbsolutePath(), component->GetTypeName() });
 
-                        ++snapshot.header.opCount;
+                        ++snapshot.header.operationCount;
                         continue;
                     }
 
@@ -102,9 +129,9 @@ namespace Blaster::Server::Network
                     {
                         const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                        PushOp(snapshot.opBlob, OpSetField{ gameObject->GetAbsolutePath(), component->GetTypeName(), "ALL", blob });
+                        PushOp(snapshot.operationBlob, OpSetField{ gameObject->GetAbsolutePath(), component->GetTypeName(), "ALL", blob });
 
-                        ++snapshot.header.opCount;
+                        ++snapshot.header.operationCount;
                     }
 
                     lastHashMap[component.get()] = current;
@@ -113,14 +140,18 @@ namespace Blaster::Server::Network
 
             dirty.clear();
 
-            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
-                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
+#ifdef IS_SERVER
+            for (NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
+                Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
+#else
+            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
+#endif
 
             for (auto iterator = lastHashMap.begin(); iterator != lastHashMap.end(); )
             {
                 if (iterator->first == nullptr)
                 {
-                    std::cerr << "Items in the lastHashMap variable in ServerSynchronization had null keys. This shouldn't happen!" << std::endl;
+                    std::cerr << "Items in the lastHashMap variable in SenderSynchronization had null keys. This shouldn't happen!" << std::endl;
                     iterator = lastHashMap.erase(iterator);
                 }
                 else
@@ -133,30 +164,34 @@ namespace Blaster::Server::Network
             Snapshot snapshot;
 
             snapshot.header.sequence = 0;
-            snapshot.header.opCount = 0;
+            snapshot.header.operationCount = 0;
 
             for (const auto& root : gameObjectList)
                 SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(root), snapshot);
 
-            ServerNetwork::GetInstance().SendTo(targetClient, PacketType::S2C_Snapshot, snapshot);
+#ifdef IS_SERVER
+            Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(targetClient, PacketType::S2C_Snapshot, snapshot);
+#else
+            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
+#endif
         }
 
     private:
 
-        ServerSynchronization() = default;
+        SenderSynchronization() = default;
 
         static void SerializeSubTree(const std::shared_ptr<IGameObjectSynchronization>& node, Snapshot& snap)
         {
-            PushOp(snap.opBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName() });
-            ++snap.header.opCount;
+            PushOp(snap.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName() });
+            ++snap.header.operationCount;
 
             for (const auto& component : node->GetComponentMap() | std::views::values)
             {
                 const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                PushOp(snap.opBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), blob });
+                PushOp(snap.operationBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), blob });
 
-                ++snap.header.opCount;
+                ++snap.header.operationCount;
             }
 
             for (const auto& [name, child] : node->GetChildMap())
@@ -180,12 +215,12 @@ namespace Blaster::Server::Network
         template <typename Value>
         static std::vector<std::uint8_t> SerializeToBlob(const Value& value)
         {
-            std::ostringstream oss;
-            boost::archive::text_oarchive oa(oss);
+            std::ostringstream stream;
+            boost::archive::text_oarchive archive(stream);
 
-            oa << value;
+            archive << value;
 
-            const std::string& text = oss.str();
+            const std::string& text = stream.str();
 
             return std::vector<std::uint8_t>(text.begin(), text.end());
         }
@@ -193,12 +228,12 @@ namespace Blaster::Server::Network
         template <typename T>
         static std::string ToArchiveString(const T& value)
         {
-            std::ostringstream oss;
-            boost::archive::text_oarchive oa(oss);
+            std::ostringstream stream;
+            boost::archive::text_oarchive archive(stream);
 
-            oa << value;
+            archive << value;
 
-            return oss.str();
+            return stream.str();
         }
 
         static std::uint64_t HashString(const std::string& s)

@@ -12,25 +12,26 @@
 #include "Client/Core/InputManager.hpp"
 //#include "Client/Network/TranslationBuffer.hpp"
 #include "Client/Network/ClientNetwork.hpp"
-#include "Client/Network/ClientSynchronization.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
-#include "Client/Thread/MainThreadExecutor.hpp"
+#include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Network/NetworkSerialize.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
-using namespace Blaster::Client::Render;
 using namespace Blaster::Client::Render::Vertices;
-using namespace Blaster::Client::Thread;
+using namespace Blaster::Client::Render;
+using namespace Blaster::Independent::ECS::Synchronization;
+using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client
 {
@@ -45,10 +46,11 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.22.17", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.23.18", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
+            ShaderManager::GetInstance().Register(Shader::Create("blaster.simple", { "Blaster", "Shader/Simple" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.wood", { "Blaster", "Texture/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.stone", { "Blaster", "Texture/Stone.png" }));
 
@@ -78,22 +80,57 @@ namespace Blaster::Client
 
             ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
 
-            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Rpc, [](std::vector<std::uint8_t> messageIn)
-            {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
-                        {
-
-                        });
-            });
-
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Snapshot, [](std::vector<std::uint8_t> messageIn)
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
                         {
-                            ClientSynchronization::HandleSnapshotPayload(message);
+                            ReceiverSynchronization::HandleSnapshotPayload(message);
                         });
                 });
 
+            std::thread([]() mutable
+            {
+                std::this_thread::sleep_for(2s);
+
+                if (!GameObjectManager::GetInstance().Has("mesh"))
+                {
+                    auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh"));
+
+                    gameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.simple").value());
+
+                    auto mesh = gameObject->AddComponent(Mesh<FatVertex>::Create(
+                    {
+                        { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { -1.0f, -1.0f, -1.0f }, { 0.0f, 0.0f } },
+                        { {  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  1.0f, -1.0f, -1.0f }, { 1.0f, 0.0f } },
+                        { {  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, {  1.0f,  1.0f, -1.0f }, { 1.0f, 1.0f } },
+                        { { -0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f }, { -1.0f,  1.0f, -1.0f }, { 0.0f, 1.0f } },
+                        { { -0.5f, -0.5f,  0.5f }, { 1.0f, 0.0f, 1.0f }, { -1.0f, -1.0f,  1.0f }, { 0.0f, 0.0f } },
+                        { {  0.5f, -0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f }, {  1.0f, -1.0f,  1.0f }, { 1.0f, 0.0f } },
+                        { {  0.5f,  0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, {  1.0f,  1.0f,  1.0f }, { 1.0f, 1.0f } },
+                        { { -0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f, 0.0f }, { -1.0f,  1.0f,  1.0f }, { 0.0f, 1.0f } }
+                    },
+                    {
+                        0, 1, 2,
+                        0, 2, 3,
+                        4, 6, 5,
+                        4, 7, 6,
+                        4, 0, 3,
+                        4, 3, 7,
+                        1, 5, 6,
+                        1, 6, 2,
+                        4, 5, 1,
+                        4, 1, 0,
+                        3, 2, 6,
+                        3, 6, 7
+                    }));
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [mesh]
+                    {
+                        mesh->Generate();
+                    });
+                }
+            }).detach();
+            
             /*
             if (!GameObjectManager::GetInstance().Has("mesh"))
             {
@@ -170,7 +207,7 @@ namespace Blaster::Client
         {
             Window::Clear();
 
-            //GameObjectManager::GetInstance().Render(camera);
+            GameObjectManager::GetInstance().Render(camera);
 
             Window::GetInstance().Present();
 

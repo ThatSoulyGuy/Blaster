@@ -7,11 +7,11 @@
 #include <ranges>
 #include <unordered_map>
 #include "Client/Network/ClientNetwork.hpp"
+#include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
-#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace Blaster::Client::Network;
 using namespace Blaster::Independent::Math;
@@ -34,6 +34,8 @@ namespace Blaster::Independent::ECS
         template <typename T> requires (std::is_base_of_v<Component, T>)
         std::shared_ptr<T> AddComponent(std::shared_ptr<T> component)
         {
+            std::shared_lock lock(mutex);
+
             if (componentMap.contains(typeid(T)))
             {
                 std::cout << "Component map for game object '" << name << "' already contains component '" << typeid(T).name() << "'!" << std::endl;
@@ -47,9 +49,7 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasAdded = true;
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
 
             return std::static_pointer_cast<T>(componentMap[typeid(T)]);
         }
@@ -57,6 +57,8 @@ namespace Blaster::Independent::ECS
         std::shared_ptr<Component> AddComponentDynamic(std::shared_ptr<Component> component)
         {
             const auto type = std::type_index(typeid(*component));
+
+            std::shared_lock lock(mutex);
 
             if (componentMap.contains(type))
             {
@@ -71,9 +73,7 @@ namespace Blaster::Independent::ECS
 
             componentMap[type]->wasAdded = true;
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
 
             return componentMap[type];
         }
@@ -137,6 +137,8 @@ namespace Blaster::Independent::ECS
         template <typename T> requires (std::is_base_of_v<Component, T>)
         void RemoveComponent()
         {
+            std::shared_lock lock(mutex);
+
             if (!componentMap.contains(typeid(T)))
             {
                 std::cout << "Component map for game object '" << name << "' doesn't contain component '" << typeid(T).name() << "'!" << std::endl;
@@ -145,15 +147,15 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasRemoved = true;
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
 
             componentMap.erase(typeid(T));
         }
 
         void RemoveComponentDynamic(const std::string& typeName)
         {
+            std::shared_lock lock(mutex);
+
             for (auto iterator = componentMap.begin(); iterator != componentMap.end(); ++iterator)
             {
                 if (iterator->second->GetTypeName() == typeName)
@@ -165,9 +167,7 @@ namespace Blaster::Independent::ECS
                 }
             }
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
         }
 
         void SetParent(std::shared_ptr<GameObject> parent)
@@ -279,6 +279,12 @@ namespace Blaster::Independent::ECS
             return typeid(*this).name();
         }
 
+        [[nodiscard]]
+        std::shared_mutex& GetMutex() noexcept override
+        {
+            return mutex;
+        }
+
         void MarkDestroyed() noexcept override
         {
             destroyed = true;
@@ -288,6 +294,8 @@ namespace Blaster::Independent::ECS
         {
             if (!IsAuthoritative() && owningClient.has_value() && owningClient.value() != ClientNetwork::GetInstance().GetNetworkId())
                 return;
+
+            std::shared_lock lock(mutex);
 
             for (const auto& component : componentMap | std::views::values)
                 component->Update();
@@ -303,6 +311,8 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::shared_ptr<Client::Render::Camera>& camera)
         {
+            std::shared_lock lock(mutex);
+
             for (const auto& component : componentMap | std::views::values)
                 component->Render(camera);
 
@@ -325,7 +335,7 @@ namespace Blaster::Independent::ECS
 
         GameObject() = default;
 
-        friend class Blaster::Server::Network::ServerSynchronization;
+        friend class Blaster::Independent::ECS::Synchronization::SenderSynchronization;
         friend class Blaster::Independent::ECS::GameObjectManager;
 
         std::shared_ptr<GameObject> AddChild(std::shared_ptr<GameObject> child)
@@ -342,9 +352,7 @@ namespace Blaster::Independent::ECS
 
             childMap.insert({ childName, std::move(child) });
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
 
             return childMap[childName];
         }
@@ -373,14 +381,14 @@ namespace Blaster::Independent::ECS
                 return;
             }
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(shared_from_this());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
 
             childMap.erase(childName);
         }
 
         std::string name;
+
+        mutable std::shared_mutex mutex;
 
         bool authoritative = false;
 

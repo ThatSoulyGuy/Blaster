@@ -4,7 +4,9 @@
 #include <mutex>
 #include <iostream> 
 #include <random>
-#include "Independent/Network/CommonNetwork.hpp"
+#include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
+#include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 //#include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
@@ -12,6 +14,8 @@
 //#include "Server/Network/ServerSynchronization.hpp"
 
 //using namespace Blaster::Server::Entity::Entities;
+using namespace Blaster::Independent::ECS::Synchronization;
+using namespace Blaster::Independent::Thread;
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
@@ -51,12 +55,15 @@ namespace Blaster::Server
 
                     //ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
 
-                    ServerSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+                    SenderSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rpc, [](const NetworkId who, std::vector<std::uint8_t> pk)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
                 {
-                    //ServerRpc::HandleRequest(who, std::move(pk));
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
+                        {
+                            ReceiverSynchronization::HandleSnapshotPayload(message);
+                        });
                 });
 
             auto myGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("someGameObject"));

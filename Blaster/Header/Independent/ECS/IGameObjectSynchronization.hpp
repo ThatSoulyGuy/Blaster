@@ -3,11 +3,13 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <shared_mutex>
 #include <typeindex>
 
 namespace Blaster::Independent::ECS
 {
     class Component;
+    class GameObject;
 
     struct IGameObjectSynchronization //TODO: I don't like this, feels hacky
     {
@@ -27,6 +29,9 @@ namespace Blaster::Independent::ECS
 
         [[nodiscard]]
         virtual void MarkDestroyed() noexcept = 0;
+
+        [[nodiscard]]
+        virtual std::shared_mutex& GetMutex() noexcept = 0;
 
         [[nodiscard]]
         virtual const std::unordered_map<std::type_index, std::shared_ptr<Component>>& GetComponentMap() const = 0;

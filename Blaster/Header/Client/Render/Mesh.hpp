@@ -110,9 +110,9 @@ namespace Blaster::Client::Render
                 CommitIfDirty();
 
                 shader.value()->Bind();
-                shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
-                shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
-                shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
+                //shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
+                //shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
+                //shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
 
                 for (const auto& [name, value] : shaderCallDeque)
                     std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);

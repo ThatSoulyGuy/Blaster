@@ -8,15 +8,12 @@
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/export.hpp>
-#include "Independent/ComponentRegistry.hpp"
+#include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/Math/Matrix.hpp"
 #include "Independent/Math/Vector.hpp"
-
-#ifdef IS_SERVER
-#include "Server/Network/ServerSynchronization.hpp"
-#endif
+#include "Independent/ComponentRegistry.hpp"
 
 using namespace Blaster::Independent::ECS;
 
@@ -34,9 +31,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onPositionUpdated)
                 function(localPosition);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         void Rotate(const Vector<float, 3>& rotationDeg)
@@ -54,9 +49,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onRotationUpdated)
                 function(localRotation);
             
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         void Scale(const Vector<float, 3>& scale)
@@ -66,9 +59,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onScaleUpdated)
                 function(localScale);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -87,9 +78,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onPositionUpdated)
                 function(localPosition);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -116,9 +105,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onRotationUpdated)
                 function(localRotation);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -137,9 +124,7 @@ namespace Blaster::Independent::Math
             for (auto& function : onScaleUpdated)
                 function(localScale);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(GetGameObject());
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]

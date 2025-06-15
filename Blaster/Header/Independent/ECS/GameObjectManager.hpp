@@ -49,9 +49,7 @@ namespace Blaster::Independent::ECS
                 return nullptr;
             }
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(parentOptional.value_or(gameObject));
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(parentOptional.value_or(gameObject));
 
             return parentOptional.value()->AddChild(std::move(gameObject));
         }
@@ -91,9 +89,7 @@ namespace Blaster::Independent::ECS
 
             parentOptional.value()->RemoveChild(childName);
 
-#ifdef IS_SERVER
-            Blaster::Server::Network::ServerSynchronization::MarkDirty(parentOptional.value_or(gameObject));
-#endif
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(parentOptional.value_or(gameObject));
         }
 
         bool Has(const std::string& path) const override
@@ -124,14 +120,14 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
         {
-            if (!camera.has_value())
-            {
-                std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
-                return;
-            }
+            //if (!camera.has_value())
+            //{
+            //    std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
+            //    return;
+            //}
 
             for (const auto& gameObject : rootGameObjectMap | std::views::values)
-                gameObject->Render(camera.value());
+                gameObject->Render(nullptr);
         }
 
         void Clear()

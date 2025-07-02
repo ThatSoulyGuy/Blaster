@@ -92,65 +92,15 @@ namespace Blaster::Client
             {
                 std::this_thread::sleep_for(2s);
 
-                if (!GameObjectManager::GetInstance().Has("mesh"))
+                if (!GameObjectManager::GetInstance().Has("mod"))
                 {
-                    auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh"));
+                    auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mod"));
 
-                    gameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.simple").value());
-
-                    auto mesh = gameObject->AddComponent(Mesh<FatVertex>::Create(
-                    {
-                        { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { -1.0f, -1.0f, -1.0f }, { 0.0f, 0.0f } },
-                        { {  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  1.0f, -1.0f, -1.0f }, { 1.0f, 0.0f } },
-                        { {  0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, {  1.0f,  1.0f, -1.0f }, { 1.0f, 1.0f } },
-                        { { -0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f }, { -1.0f,  1.0f, -1.0f }, { 0.0f, 1.0f } },
-                        { { -0.5f, -0.5f,  0.5f }, { 1.0f, 0.0f, 1.0f }, { -1.0f, -1.0f,  1.0f }, { 0.0f, 0.0f } },
-                        { {  0.5f, -0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f }, {  1.0f, -1.0f,  1.0f }, { 1.0f, 0.0f } },
-                        { {  0.5f,  0.5f,  0.5f }, { 1.0f, 1.0f, 1.0f }, {  1.0f,  1.0f,  1.0f }, { 1.0f, 1.0f } },
-                        { { -0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f, 0.0f }, { -1.0f,  1.0f,  1.0f }, { 0.0f, 1.0f } }
-                    },
-                    {
-                        0, 1, 2,
-                        0, 2, 3,
-                        4, 6, 5,
-                        4, 7, 6,
-                        4, 0, 3,
-                        4, 3, 7,
-                        1, 5, 6,
-                        1, 6, 2,
-                        4, 5, 1,
-                        4, 1, 0,
-                        3, 2, 6,
-                        3, 6, 7
-                    }));
-
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [mesh]
-                    {
-                        mesh->Generate();
-                    });
+                    gameObject->AddComponent(TextureManager::GetInstance().Get("blaster.stone").value());
+                    gameObject->AddComponent(Model::Create({ "Blaster", "Model/Test.fbx" }));
                 }
             }).detach();
             
-            /*
-            if (!GameObjectManager::GetInstance().Has("mesh"))
-            {
-                auto meshGameObjectFuture = ClientRpc::CreateGameObject("mesh");
-
-                std::this_thread::sleep_for(20ms);
-
-                std::thread([future = std::move(meshGameObjectFuture), this]() mutable
-                {
-                    if (const auto gameObject = future.get())
-                    {
-                        ClientRpc::AddComponent(gameObject->GetName(), Model::Create({ "Blaster", "Model/Test.fbx" }));
-
-                        std::this_thread::sleep_for(20ms);
-
-                        ClientRpc::AddComponent(gameObject->GetName(), TextureManager::GetInstance().Get("blaster.stone").value());
-                    }
-                }).detach();
-            }
-
             std::thread([this]() mutable
             {
                 std::this_thread::sleep_for(4s);
@@ -167,7 +117,7 @@ namespace Blaster::Client
 
                 std::this_thread::sleep_for(20ms);
 
-                const auto optionalCamera = player->GetChild("camera");
+                const auto optionalCamera = GameObjectManager::GetInstance().Get(player->GetAbsolutePath() + ".camera");
 
                 if (!optionalCamera.has_value())
                 {
@@ -184,7 +134,7 @@ namespace Blaster::Client
                 }
 
                 this->camera = camera->GetComponent<Camera>();
-            }).detach();*/
+            }).detach();
         }
 
         bool IsRunning()
@@ -194,9 +144,9 @@ namespace Blaster::Client
 
         void Update()
         {
-            GameObjectManager::GetInstance().Update();
-
             MainThreadExecutor::GetInstance().Execute();
+
+            GameObjectManager::GetInstance().Update();
 
             Time::GetInstance().Update();
 

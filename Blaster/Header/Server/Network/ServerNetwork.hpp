@@ -7,6 +7,7 @@
 #include <queue>
 #include <ranges>
 #include <thread>
+#include <iostream>
 #include <boost/asio.hpp>
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
@@ -75,6 +76,7 @@ namespace Blaster::Server::Network
             boost::asio::post(hit->second->strand, [this, client = hit->second, buf]()
             {
                 client->writeQueue.push_back(buf);
+
                 if (client->writeQueue.size() == 1)
                     StartWrite(client);
             });
@@ -243,9 +245,9 @@ namespace Blaster::Server::Network
 
         void HandleDisconnect(const std::shared_ptr<ClientReference>& client)
         {
-            clientMap.erase(client->id);
             CleanupOwnedObjects(client);
             ReleaseId(client->id);
+            clientMap.erase(client->id);
 
             std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!" << std::endl;
         }
@@ -297,7 +299,7 @@ namespace Blaster::Server::Network
 
         void ReleaseId(NetworkId id)
         {
-            std::scoped_lock lk(idMutex);
+            std::scoped_lock guard(idMutex);
             freeIds.push(id);
         }
 

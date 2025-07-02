@@ -2,8 +2,10 @@
 
 #include <unordered_set>
 #include <queue>
+#include <string_view >
 #include <boost/archive/text_oarchive.hpp>
 #include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
+#include "Independent/ECS/Synchronization/SyncTracker.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 
@@ -23,6 +25,33 @@ using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Independent::ECS::Synchronization
 {
+    struct DirtyCompKey
+    {
+        std::weak_ptr<IGameObjectSynchronization> gameObject;
+        std::type_index componentType;
+    };
+
+    struct DirtyCompHash
+    {
+        std::size_t operator()(const DirtyCompKey& k) const noexcept
+        {
+            auto sp = k.gameObject.lock();
+
+            std::size_t h1 = std::hash<void*>{}(sp.get());
+            std::size_t h2 = k.componentType.hash_code();
+
+            return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6) + (h1 >> 2));
+        }
+    };
+
+    struct DirtyCompEqual
+    {
+        bool operator()(const DirtyCompKey& a, const DirtyCompKey& b) const noexcept
+        {
+            return a.componentType == b.componentType && a.gameObject.lock().get() == b.gameObject.lock().get();
+        }
+    };
+
     class SenderSynchronization final
     {
 
@@ -33,39 +62,50 @@ namespace Blaster::Independent::ECS::Synchronization
         SenderSynchronization& operator=(const SenderSynchronization&) = delete;
         SenderSynchronization& operator=(SenderSynchronization&&) = delete;
 
-        static void MarkDirty(const std::shared_ptr<GameObject>& rawGameObject)
+        static void MarkDirty(const std::shared_ptr<GameObject>& gameObject)
         {
-            auto gameObject = std::static_pointer_cast<IGameObjectSynchronization>(rawGameObject);
-
-            if (gameObject == nullptr)
+            if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
                 return;
 
-            dirty.insert(gameObject);
+#ifndef IS_SERVER
+            auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);
 
-            bool expected = false;
-
-            const bool firstWriter = flushRequested.compare_exchange_strong(expected, true, std::memory_order_release, std::memory_order_relaxed);
-
-            if (firstWriter)
-            {
-#ifdef IS_SERVER
-                boost::asio::post(Blaster::Server::Network::ServerNetwork::GetInstance().GetIoContext(), []
-                    {
-                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
-                        {
-                            FlushDirty();
-                        });
-                    });
-#else
-                boost::asio::post(Blaster::Client::Network::ClientNetwork::GetInstance().GetIoContext(), []
-                    {
-                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
-                        {
-                            FlushDirty();
-                        });
-                    });
+            if (sync->GetOwningClient().has_value() && sync->GetOwningClient().value() != Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId())
+                return;
 #endif
+
+            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal())
+                return;
+
+            {
+                std::unique_lock guard(dirtyMutex);
+                dirtyGameObjectSet.insert(std::static_pointer_cast<IGameObjectSynchronization>(gameObject));
             }
+
+            WakeFlusher();
+        }
+
+        static void MarkDirty(const std::shared_ptr<GameObject>& gameObject, const std::type_index& component)
+        {
+            if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
+                return;
+
+#ifndef IS_SERVER
+            auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);
+
+            if (sync->GetOwningClient().has_value() && sync->GetOwningClient().value() != Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId())
+                return;
+#endif
+
+            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal())
+                return;
+
+            {
+                std::unique_lock guard(dirtyMutex);
+                dirtyComponentSet.emplace(DirtyCompKey{ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), component });
+            }
+
+            WakeFlusher();
         }
 
         static void FlushDirty()
@@ -73,80 +113,133 @@ namespace Blaster::Independent::ECS::Synchronization
             if (!flushRequested.exchange(false, std::memory_order_acq_rel))
                 return;
 
-            if (dirty.empty())
-                return;
+            Snapshot templateSnapshot{};
 
-            Snapshot snapshot = {};
+            templateSnapshot.header.operationCount = 0;
 
-            snapshot.header.sequence = nextSeq++;
-            snapshot.header.operationCount = 0;
+#ifdef IS_SERVER
+            templateSnapshot.header.route = Route::ServerBroadcast;
+            templateSnapshot.header.origin = 0;
+#else
+            templateSnapshot.header.route = Route::RelayOnce;
+            templateSnapshot.header.origin = Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId();
+#endif
 
-            for (auto& gameObject : dirty)
             {
-                if (gameObject->IsDestroyed())
-                {
-                    PushOp(snapshot.operationBlob, OpDestroy { gameObject->GetAbsolutePath() });
+                std::unique_lock guard(dirtyMutex);
 
-                    ++snapshot.header.operationCount;
-                    continue;
+                for (auto const& node : dirtyGameObjectSet)
+                {
+                    if (node->IsDestroyed())
+                    {
+                        for (const auto& component : node->GetComponentMap() | std::views::values)
+                            ForgetHash(component);
+
+                        PushOp(templateSnapshot.operationBlob, OpDestroy{ node->GetAbsolutePath() });
+
+                        ++templateSnapshot.header.operationCount;
+
+                        continue;
+                    }
+
+                    if (node->WasJustCreated())
+                    {
+                        PushOp(templateSnapshot.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName(), node->GetOwningClient() });
+                        ++templateSnapshot.header.operationCount;
+
+                        for (auto& component : node->GetComponentMap() | std::views::values)
+                        {
+                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+
+                            ++templateSnapshot.header.operationCount;
+
+                            component->ClearWasAdded();
+
+                            RememberHash(component);
+                        }
+
+                        node->ClearJustCreated();
+                    }
                 }
 
-                if (gameObject->WasJustCreated())
+                for (auto iterator = dirtyComponentSet.begin(); iterator != dirtyComponentSet.end(); ++iterator)
                 {
-                    PushOp(snapshot.operationBlob, OpCreate { gameObject->GetAbsolutePath(), gameObject->GetTypeName() });
+                    auto gameObjectPointer = iterator->gameObject.lock();
 
-                    ++snapshot.header.operationCount;
-                }
-                
-                std::shared_lock lock(gameObject->GetMutex());
+                    if (!gameObjectPointer)
+                        continue;
 
-                for (auto& component : gameObject->GetComponentMap() | std::views::values)
-                {
+                    const auto componentIterator = gameObjectPointer->GetComponentMap().find(iterator->componentType);
+
+                    if (componentIterator == gameObjectPointer->GetComponentMap().end())
+                    {
+                        PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), iterator->componentType.name() });
+
+                        ++templateSnapshot.header.operationCount;
+
+                        ForgetHash(componentIterator->second);
+
+                        continue;
+                    }
+
+                    const auto& component = componentIterator->second;
+
                     if (component->WasAdded())
                     {
-                        PushOp(snapshot.operationBlob, OpAddComponent { gameObject->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+                        if (HasStateChanged(component))
+                        {
+                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ gameObjectPointer->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+                            component->ClearWasAdded();
 
-                        ++snapshot.header.operationCount;
-                        continue;
+                            ++templateSnapshot.header.operationCount;
+                        }
                     }
-
-                    if (component->WasRemoved())
+                    else
                     {
-                        lastHashMap.erase(component.get());
+                        if (HasStateChanged(component))
+                        {
+                            std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                        PushOp(snapshot.operationBlob, OpRemoveComponent { gameObject->GetAbsolutePath(), component->GetTypeName() });
-
-                        ++snapshot.header.operationCount;
-                        continue;
+                            PushOp(templateSnapshot.operationBlob, OpSetField{ gameObjectPointer->GetAbsolutePath(),  component->GetTypeName(), "ALL", blob });
+                            
+                            ++templateSnapshot.header.operationCount;
+                        }
                     }
-
-                    const std::uint64_t current = ComponentStateHash(*component);
-
-                    const auto hit = lastHashMap.find(component.get());
-                    const bool changed = hit == lastHashMap.end() || hit->second != current;
-
-                    if (changed)
-                    {
-                        const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
-
-                        PushOp(snapshot.operationBlob, OpSetField{ gameObject->GetAbsolutePath(), component->GetTypeName(), "ALL", blob });
-
-                        ++snapshot.header.operationCount;
-                    }
-
-                    lastHashMap[component.get()] = current;
                 }
+
+                dirtyComponentSet.clear();
+                dirtyGameObjectSet.clear();
             }
 
-            dirty.clear();
+            if (templateSnapshot.header.operationCount == 0)
+                return;
 
 #ifdef IS_SERVER
             for (NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
-                Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
-#else
-            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
-#endif
+            {
+                Snapshot snapshot = templateSnapshot;
+                snapshot.header.sequence = SyncTracker::AllocateSequence(id);
+                snapshot.header.ack = SyncTracker::GetLastIncoming(id);
 
+                Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
+
+                std::cout << "Sent snapshot to client '" << id << "' with seqence '" << snapshot.header.sequence << "' and ack '" << snapshot.header.ack << "' ('" << snapshot.header.operationCount << "' operations)!" << std::endl;
+            }
+#else
+            {
+                constexpr NetworkId ServerId = 0;
+
+                Snapshot snapshot = templateSnapshot;
+
+                snapshot.header.sequence = SyncTracker::AllocateSequence(ServerId);
+                snapshot.header.ack = SyncTracker::GetLastIncoming(ServerId);
+
+                Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
+
+                std::cout << "Sent snapshot to server with seqence '" << snapshot.header.sequence << "' and ack '" << snapshot.header.ack << "' ('" << snapshot.header.operationCount << "' operations)!" << std::endl;
+            }
+#endif
+             
             for (auto iterator = lastHashMap.begin(); iterator != lastHashMap.end(); )
             {
                 if (iterator->first == nullptr)
@@ -163,8 +256,17 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             Snapshot snapshot;
 
-            snapshot.header.sequence = 0;
             snapshot.header.operationCount = 0;
+            snapshot.header.sequence = SyncTracker::AllocateSequence(targetClient);
+            snapshot.header.ack = SyncTracker::GetLastIncoming(targetClient);
+
+#ifdef IS_SERVER
+            snapshot.header.route = Route::ServerBroadcast;
+            snapshot.header.origin = 0;
+#else
+            snapshot.header.route = Route::RelayOnce;
+            snapshot.header.origin = Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId();
+#endif
 
             for (const auto& root : gameObjectList)
                 SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(root), snapshot);
@@ -176,13 +278,53 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
+        static void RememberHash(const std::shared_ptr<Component>& comp)
+        {
+            const uint64_t handle = ComponentStateHash(*comp);
+
+            lastHashMap[comp.get()] = handle;
+        }
+
+        static void ForgetHash(const std::shared_ptr<Component>& comp)
+        {
+            lastHashMap.erase(comp.get());
+        }
+
     private:
 
         SenderSynchronization() = default;
 
+        static void WakeFlusher()
+        {
+            bool expected = false;
+
+            const bool firstWriter = flushRequested.compare_exchange_strong(expected, true, std::memory_order_release, std::memory_order_relaxed);
+
+            if (firstWriter)
+            {
+#ifdef IS_SERVER
+                boost::asio::post(Blaster::Server::Network::ServerNetwork::GetInstance().GetIoContext(), []
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                            {
+                                FlushDirty();
+                            });
+                    });
+#else
+                boost::asio::post(Blaster::Client::Network::ClientNetwork::GetInstance().GetIoContext(), []
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                            {
+                                FlushDirty();
+                            });
+                    });
+#endif
+            }
+        }
+
         static void SerializeSubTree(const std::shared_ptr<IGameObjectSynchronization>& node, Snapshot& snap)
         {
-            PushOp(snap.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName() });
+            PushOp(snap.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName(), node->GetOwningClient() });
             ++snap.header.operationCount;
 
             for (const auto& component : node->GetComponentMap() | std::views::values)
@@ -240,7 +382,7 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             std::uint64_t hash = 14695981039346656037ull;
 
-            for (unsigned char c : s) 
+            for (unsigned char c : s)
                 hash = (hash ^ c) * 1099511628211ull;
 
             return hash;
@@ -252,10 +394,27 @@ namespace Blaster::Independent::ECS::Synchronization
             return HashString(ToArchiveString(comp));
         }
 
-        inline static std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirty;
+        static bool HasStateChanged(const std::shared_ptr<Component>& comp)
+        {
+            const uint64_t h = ComponentStateHash(comp);
+
+            auto it = lastHashMap.find(comp.get());
+            const bool dirty = (it == lastHashMap.end()) || (it->second != h);
+
+            if (dirty)
+                lastHashMap[comp.get()] = h;
+
+            return dirty;
+        }
+
+        inline static std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirtyGameObjectSet;
+        inline static std::unordered_set<DirtyCompKey, DirtyCompHash, DirtyCompEqual> dirtyComponentSet;
+
         inline static std::atomic<bool> flushRequested = false;
         inline static std::atomic<std::uint64_t> nextSeq = 1;
 
         inline static std::unordered_map<const Component*, std::uint64_t> lastHashMap;
+
+        inline static std::shared_mutex dirtyMutex;
     };
 }

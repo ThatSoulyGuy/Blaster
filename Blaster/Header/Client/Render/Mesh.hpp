@@ -20,6 +20,18 @@ namespace Blaster::Client::Render
     {
         std::string name;
         UniformValue value;
+
+        [[nodiscard]]
+        bool operator==(const ShaderCall& other) const
+        {
+            return OPERATOR_CHECK(name, value);
+        }
+
+        [[nodiscard]]
+        bool operator!=(const ShaderCall& other) const
+        {
+            return !(*this == other);
+        }
     };
 
     template <typename T>
@@ -110,9 +122,9 @@ namespace Blaster::Client::Render
                 CommitIfDirty();
 
                 shader.value()->Bind();
-                //shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
-                //shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
-                //shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
+                shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
+                shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
+                shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
 
                 for (const auto& [name, value] : shaderCallDeque)
                     std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);
@@ -125,7 +137,7 @@ namespace Blaster::Client::Render
                 renderCallDeque.clear();
 
                 glBindVertexArray(VAO);
-                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT,nullptr);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
                 glBindVertexArray(0);
             }
         }
@@ -141,9 +153,15 @@ namespace Blaster::Client::Render
         }
 
         [[nodiscard]]
-        std::string GetTypeName() const override
+        bool operator==(const Mesh& other) const
         {
-            return typeid(Mesh<T>).name();
+            return OPERATOR_CHECK(vertices, indices, VAO, VBO, EBO);
+        }
+
+        [[nodiscard]]
+        bool operator!=(const Mesh& other) const
+        {
+            return !(*this == other);
         }
 
         static std::shared_ptr<Mesh> Create(const std::vector<T>& vertices, const std::vector<uint32_t>& indices, const bool shouldRegenerate = true)
@@ -280,5 +298,7 @@ namespace Blaster::Client::Render
 
         size_t firstVerticeDirty = std::numeric_limits<size_t>::max(), lastVerticeDirty = 0;
         size_t firstIndiceDirty = std::numeric_limits<size_t>::max(), lastIndiceDirty = 0;
+
+        DESCRIBE_AND_REGISTER(Mesh<T>, (Component), (), (), (shouldRegenerate, areVerticesDirty, areIndicesDirty, areVerticesResized, areIndicesResized, firstVerticeDirty, lastVerticeDirty, firstIndiceDirty, lastIndiceDirty))
     };
 }

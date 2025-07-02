@@ -26,6 +26,18 @@ namespace Blaster::Client::Render::Vertices
             return layout;
         }
 
+        [[nodiscard]]
+        bool operator==(const FatVertex& other)
+        {
+            return OPERATOR_CHECK(position, color, normal, uvs);
+        }
+
+        [[nodiscard]]
+        bool operator!=(const FatVertex& other)
+        {
+            return !(*this == other);
+        }
+
         template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {

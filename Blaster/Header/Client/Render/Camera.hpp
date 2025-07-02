@@ -29,12 +29,6 @@ namespace Blaster::Client::Render
             return Matrix<float, 4, 4>::LookAt(GetGameObject()->GetTransform()->GetWorldPosition(), GetGameObject()->GetTransform()->GetWorldPosition() + GetGameObject()->GetTransform()->GetForward(), { 0.0f, 1.0f, 0.0f });
         }
 
-        [[nodiscard]]
-        std::string GetTypeName() const override
-        {
-            return typeid(Camera).name();
-        }
-
         static std::shared_ptr<Camera> Create(const float fieldOfView, const float nearPlane, const float farPlane)
         {
             std::shared_ptr<Camera> result(new Camera());
@@ -66,6 +60,8 @@ namespace Blaster::Client::Render
         float fieldOfView = 0;
         float nearPlane = 0;
         float farPlane = 0;
+
+        BOOST_DESCRIBE_CLASS(Blaster::Client::Render::Camera, (Blaster::Independent::ECS::Component), (), (), (fieldOfView, nearPlane, farPlane))
 
     };
 }

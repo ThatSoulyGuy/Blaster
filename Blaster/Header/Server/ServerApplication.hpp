@@ -8,12 +8,10 @@
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
-//#include "Server/Entity/Entities/EntityPlayer.hpp"
+#include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
-//#include "Server/Network/ServerRpc.hpp"
-//#include "Server/Network/ServerSynchronization.hpp"
 
-//using namespace Blaster::Server::Entity::Entities;
+using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Thread;
 using namespace Blaster::Server::Network;
@@ -51,24 +49,32 @@ namespace Blaster::Server
 
                     ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
-                    //const auto playerObject = ServerSynchronization::SpawnGameObject("player-" + name, who);
+                    auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
-                    //ServerSynchronization::AddComponent(playerObject, EntityPlayer::Create());
+                    player->AddComponent(EntityPlayer::Create());
 
                     SenderSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
-
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
                 {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = messageIn]
+                    {
+                        ReceiverSynchronization::HandleSnapshotPayload(message);
+                    });
+                    
+                    auto any = CommonNetwork::DisassembleData(messageIn);
+                    
+                    auto& snapshot = std::any_cast<Snapshot&>(any[0]);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [snapshot = std::move(snapshot), who = whoIn, message = messageIn]
+                    {
+                        for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
                         {
-                            ReceiverSynchronization::HandleSnapshotPayload(message);
-                        });
+                            if (id != who)
+                                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
+                        }
+                    });
                 });
-
-            auto myGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("someGameObject"));
-
-            myGameObject->GetTransform()->Translate({ 80.0f, 0.0f, 4.0f });
         }
 
         bool IsRunning()
@@ -78,6 +84,8 @@ namespace Blaster::Server
 
         void Update()
         {
+            MainThreadExecutor::GetInstance().Execute();
+
             GameObjectManager::GetInstance().Update();
 
             Time::GetInstance().Update();

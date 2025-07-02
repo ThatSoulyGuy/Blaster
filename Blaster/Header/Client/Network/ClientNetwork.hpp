@@ -48,7 +48,7 @@ namespace Blaster::Client::Network
             BeginRead();
 
             ioThread = std::thread([this]{ ioContext.run(); });
-            running  = true;
+            running = true;
         }
 
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
@@ -178,6 +178,8 @@ namespace Blaster::Client::Network
                 NetworkId id = std::any_cast<std::uint32_t>(CommonNetwork::DisassembleData(data)[0]);
 
                 std::cout << "Received NetworkId ('" << id << "') from the server." << std::endl;
+
+                this->networkId = id;
 
                 return;
             }

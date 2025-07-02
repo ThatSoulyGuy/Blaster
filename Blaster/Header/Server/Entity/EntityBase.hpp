@@ -84,5 +84,7 @@ namespace Blaster::Server::Entity
         BUILDABLE_PROPERTY(JumpHeight, float, EntityBase)
         BUILDABLE_PROPERTY(CanJump, bool, EntityBase)
 
+        DESCRIBE_AND_REGISTER(EntityBase<T>, (Component), (), (), (RegistryName, CurrentHealth, MaximumHealth, MovementSpeed, RunningMultiplier, JumpHeight, CanJump))
+
     };
 }

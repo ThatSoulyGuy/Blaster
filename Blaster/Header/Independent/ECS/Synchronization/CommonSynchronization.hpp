@@ -6,6 +6,15 @@ using namespace Blaster::Independent::Network;
 
 namespace Blaster::Independent::ECS::Synchronization
 {
+    inline std::atomic_uint32_t gSnapshotApplyDepth{ 0 };
+
+    enum class Route : std::uint8_t
+    {
+        ServerBroadcast = 0,
+        ToServerOnly = 1,
+        RelayOnce = 2,
+    };
+
 	enum class OpCode : std::uint8_t
 	{
 		Create = 1,
@@ -21,6 +30,8 @@ namespace Blaster::Independent::ECS::Synchronization
 
         std::string path;
         std::string className;
+
+        std::optional<NetworkId> owner;
     };
 
     struct OpDestroy
@@ -59,23 +70,23 @@ namespace Blaster::Independent::ECS::Synchronization
 
 #if defined(_MSC_VER)
 #pragma pack(push, 1)
+#endif
     struct SnapshotHeader
     {
         std::uint64_t sequence;
         std::uint32_t operationCount;
-    };
+        std::uint64_t ack;
+        Route route;
+        Blaster::Independent::Network::NetworkId origin; 
+    }
+#if defined(_MSC_VER)
+    ;
 #pragma pack(pop)
 #elif defined(__clang__) || defined(__GNUC__)
-    struct __attribute__((packed)) SnapshotHeader
-    {
-        std::uint64_t sequence;
-        std::uint32_t opCount;
-    };
+    __attribute__((packed));
 #else
 #error "Unknown compiler – please add packing directives"
 #endif
-
-    static_assert(sizeof(SnapshotHeader) == 12, "SnapshotHeader must be 12 bytes");
 
     struct Snapshot
     {
@@ -93,6 +104,9 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
     {
         CommonNetwork::WriteTrivial(buffer, value.sequence);
         CommonNetwork::WriteTrivial(buffer, value.operationCount);
+        CommonNetwork::WriteTrivial(buffer, value.ack);
+        CommonNetwork::WriteTrivial(buffer, value.route);
+        CommonNetwork::WriteTrivial(buffer, value.origin);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -103,6 +117,9 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
         header.sequence = CommonNetwork::ReadTrivial<std::uint64_t>(bytes, offset);
         header.operationCount = CommonNetwork::ReadTrivial<std::uint32_t>(bytes, offset);
+        header.ack = CommonNetwork::ReadTrivial<std::uint64_t>(bytes, offset);
+        header.route = (Blaster::Independent::ECS::Synchronization::Route) CommonNetwork::ReadTrivial<std::uint8_t>(bytes, offset);
+        header.origin = CommonNetwork::ReadTrivial<std::uint32_t>(bytes, offset);
 
         return header;
     }
@@ -113,11 +130,11 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::Snapshot;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::Synchronization::SnapshotHeader>::Encode(type.header, buffer);
+        Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::Synchronization::SnapshotHeader>::Encode(operation.header, buffer);
 
-        CommonNetwork::WriteRaw(buffer, type.operationBlob.data(), type.operationBlob.size());
+        CommonNetwork::WriteRaw(buffer, operation.operationBlob.data(), operation.operationBlob.size());
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -141,10 +158,17 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::OpCreate;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, type.path);
-        CommonNetwork::EncodeString(buffer, type.className);
+        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.className);
+
+        const bool hasOwner = operation.owner.has_value();
+
+        CommonNetwork::WriteTrivial(buffer, static_cast<std::uint8_t>(hasOwner));
+
+        if (hasOwner)
+            CommonNetwork::WriteTrivial(buffer, operation.owner.value());
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -156,6 +180,11 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
         out.path = CommonNetwork::DecodeString(bytes, offset);
         out.className = CommonNetwork::DecodeString(bytes, offset);
 
+        const bool hasOwner = CommonNetwork::ReadTrivial<std::uint8_t>(bytes, offset);
+
+        if (hasOwner)
+            out.owner = CommonNetwork::ReadTrivial<NetworkId>(bytes, offset);
+
         return out;
     }
 };
@@ -165,9 +194,9 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::OpDestroy;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, type.path);
+        CommonNetwork::EncodeString(buffer, operation.path);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -183,15 +212,15 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::OpAddComponent;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, type.path);
-        CommonNetwork::EncodeString(buffer, type.componentType);
+        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.componentType);
 
-        const std::uint32_t length = static_cast<std::uint32_t>(type.blob.size());
+        const std::uint32_t length = static_cast<std::uint32_t>(operation.blob.size());
 
         CommonNetwork::WriteTrivial(buffer, length);
-        CommonNetwork::WriteRaw(buffer, type.blob.data(), length);
+        CommonNetwork::WriteRaw(buffer, operation.blob.data(), length);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -217,10 +246,10 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::OpRemoveComponent;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, type.path);
-        CommonNetwork::EncodeString(buffer, type.componentType);
+        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.componentType);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -241,12 +270,12 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 {
     using Type = Blaster::Independent::ECS::Synchronization::OpSetField;
 
-    static void Encode(const Type& type, std::vector<std::uint8_t>& buffer)
+    static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, type.path);
-        CommonNetwork::EncodeString(buffer, type.componentType);
-        CommonNetwork::EncodeString(buffer, type.field);
-        CommonNetwork::EncodeBlob(buffer, type.blob);
+        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.componentType);
+        CommonNetwork::EncodeString(buffer, operation.field);
+        CommonNetwork::EncodeBlob(buffer, operation.blob);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)

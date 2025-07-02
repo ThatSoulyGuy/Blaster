@@ -14,6 +14,7 @@
 #include <boost/serialization/access.hpp>
 #include "boost/core/demangle.hpp"
 #include "boost/serialization/export.hpp"
+#include "boost/describe.hpp"
 
 namespace Blaster::Independent::Math
 {

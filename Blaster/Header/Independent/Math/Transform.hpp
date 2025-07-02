@@ -8,6 +8,7 @@
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/export.hpp>
+#include <boost/describe/class.hpp>
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
@@ -26,12 +27,15 @@ namespace Blaster::Independent::Math
 
         void Translate(const Vector<float, 3>& translation)
         {
+            auto lastLocalPosition = localPosition;
+
             localPosition += translation;
 
             for (auto& function : onPositionUpdated)
                 function(localPosition);
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
+            if (lastLocalPosition != localPosition)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
         }
 
         void Rotate(const Vector<float, 3>& rotationDeg)
@@ -48,8 +52,6 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onRotationUpdated)
                 function(localRotation);
-            
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         void Scale(const Vector<float, 3>& scale)
@@ -58,8 +60,6 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onScaleUpdated)
                 function(localScale);
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -70,15 +70,18 @@ namespace Blaster::Independent::Math
 
         void SetLocalPosition(const Vector<float, 3>& value, const bool update = true)
         {
+            auto lastLocalPosition = localPosition;
+
             localPosition = value;
+            
+            if (lastLocalPosition != localPosition)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
 
             if (!update)
                 return;
 
             for (auto& function : onPositionUpdated)
                 function(localPosition);
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -104,8 +107,6 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onRotationUpdated)
                 function(localRotation);
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -123,8 +124,6 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onScaleUpdated)
                 function(localScale);
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject());
         }
 
         [[nodiscard]]
@@ -269,12 +268,6 @@ namespace Blaster::Independent::Math
             return localMatrix;
         }
 
-        [[nodiscard]]
-        std::string GetTypeName() const override
-        {
-            return typeid(Transform).name();
-        }
-
         static std::shared_ptr<Transform> Create(const Vector<float, 3>& position, const Vector<float, 3>& rotation, const Vector<float, 3>& scale)
         {
             std::shared_ptr<Transform> result(new Transform());
@@ -298,9 +291,9 @@ namespace Blaster::Independent::Math
         {
             archive & boost::serialization::base_object<Component>(*this);
 
-            archive & boost::serialization::make_nvp("localPosition", localPosition);
-            archive & boost::serialization::make_nvp("localRotation", localRotation);
-            archive & boost::serialization::make_nvp("localScale", localScale);
+            archive & BOOST_SERIALIZATION_NVP(localPosition);
+            archive & BOOST_SERIALIZATION_NVP(localRotation);
+            archive & BOOST_SERIALIZATION_NVP(localScale);
         }
 
         std::optional<std::weak_ptr<Transform>> parent;
@@ -312,7 +305,9 @@ namespace Blaster::Independent::Math
         Vector<float, 3> localPosition = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localRotation = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localScale = { 1.0f, 1.0f, 1.0f };
+        
+        DESCRIBE_AND_REGISTER(Transform, (Component), (), (), (parent, localPosition, localRotation, localScale))
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Math::Transform)
+REGISTER_COMPONENT(Blaster::Independent::Math::Transform);

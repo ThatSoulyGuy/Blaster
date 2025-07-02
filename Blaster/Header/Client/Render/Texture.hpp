@@ -53,11 +53,6 @@ namespace Blaster::Client::Render
             glDeleteTextures(1, &id);
         }
 
-        std::string GetTypeName() const override
-        {
-            return typeid(Texture).name();
-        }
-
         static std::shared_ptr<Texture> Create(const std::string& name, const AssetPath& path)
         {
             std::shared_ptr<Texture> result(new Texture());
@@ -150,6 +145,8 @@ namespace Blaster::Client::Render
         std::string name;
         AssetPath path;
         unsigned int id = 0;
+
+        DESCRIBE_AND_REGISTER(Texture, (Component), (), (), (isRegistered, name, path, id))
     };
 }
 

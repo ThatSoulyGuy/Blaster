@@ -64,6 +64,18 @@ namespace Blaster::Independent::Utility
             return std::format("{}Assets/{}/{}", GetExecutableDirectory(), domain, localPath);
         }
 
+        [[nodiscard]]
+        bool operator==(const AssetPath& other)
+        {
+            return OPERATOR_CHECK(domain, localPath);
+        }
+
+        [[nodiscard]]
+        bool operator!=(const AssetPath& other)
+        {
+            return !(*this == other);
+        }
+
         template <typename Archive>
         void serialize(Archive& archive)
         {

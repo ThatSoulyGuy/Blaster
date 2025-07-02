@@ -23,7 +23,7 @@ namespace Blaster::Independent::ECS
             return Register(gameObject, ".");
         }
 
-        std::shared_ptr<GameObject> Register(std::shared_ptr<GameObject> gameObject, const std::string& path)
+        std::shared_ptr<GameObject> Register(std::shared_ptr<GameObject> gameObject, const std::string& path, bool markDirty = true)
         {
             assert(gameObject != nullptr && "Cannot register a null GameObject");
 
@@ -38,6 +38,10 @@ namespace Blaster::Independent::ECS
                 }
 
                 rootGameObjectMap.insert({ gameObject->GetName(), std::move(gameObject) });
+
+                if (markDirty)
+                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(rootGameObjectMap[name]);
+
                 return rootGameObjectMap[name];
             }
 
@@ -49,7 +53,8 @@ namespace Blaster::Independent::ECS
                 return nullptr;
             }
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(parentOptional.value_or(gameObject));
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(gameObject);
 
             return parentOptional.value()->AddChild(std::move(gameObject));
         }
@@ -89,7 +94,7 @@ namespace Blaster::Independent::ECS
 
             parentOptional.value()->RemoveChild(childName);
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(parentOptional.value_or(gameObject));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(gameObject);
         }
 
         bool Has(const std::string& path) const override
@@ -120,14 +125,14 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
         {
-            //if (!camera.has_value())
-            //{
-            //    std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
-            //    return;
-            //}
+            if (!camera.has_value())
+            {
+                std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
+                return;
+            }
 
             for (const auto& gameObject : rootGameObjectMap | std::views::values)
-                gameObject->Render(nullptr);
+                gameObject->Render(camera.value());
         }
 
         void Clear()

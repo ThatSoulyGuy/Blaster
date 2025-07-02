@@ -51,12 +51,6 @@ namespace Blaster::Client::Render
             }
         }
 
-        [[nodiscard]]
-        std::string GetTypeName() const override
-        {
-            return typeid(Model).name();
-        }
-
         static std::shared_ptr<Model> Create(const AssetPath& path)
         {
             std::shared_ptr<Model> result(new Model());
@@ -83,6 +77,8 @@ namespace Blaster::Client::Render
 
         void LoadModel()
         {
+            std::cout << "Loading model '" << path.GetFullPath() << "' for game object '" << GetGameObject()->GetAbsolutePath() << "'!" << std::endl;
+
             Assimp::Importer importer;
 
             constexpr unsigned flags = aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs | aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_ImproveCacheLocality | aiProcess_OptimizeMeshes;
@@ -136,28 +132,24 @@ namespace Blaster::Client::Render
 
             std::vector<uint32_t> indices;
 
-            indices.reserve(aMesh->mNumFaces * 3);
+            indices.reserve(static_cast<std::uint64_t>(aMesh->mNumFaces) * 3);
 
             for (unsigned f = 0; f < aMesh->mNumFaces; ++f)
             {
                 for (unsigned j = 0; j < aMesh->mFaces[f].mNumIndices; ++j)
                     indices.push_back(aMesh->mFaces[f].mIndices[j]);
             }
+            
+            auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(localIdx), true), GetGameObject()->GetAbsolutePath());
+            
+            meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
 
-            const std::string gameObjectName = owner->GetName() + ".mesh" + std::to_string(localIdx);
-
-            const auto meshGameObject = GameObject::Create(gameObjectName);
-
-            const auto component = meshGameObject->AddComponent(Mesh<ModelVertex>::Create(vertices, indices, false));
+            const auto component = meshGameObject->AddComponent(Mesh<ModelVertex>::Create(vertices, indices));
 
             MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [component]
             {
                 component->Generate();
             });
-
-            meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
-
-            GameObjectManager::GetInstance().Register(meshGameObject, GetGameObject()->GetAbsolutePath());
         }
 
         static Vector<float, 3> ToVector(const aiVector3D& v)
@@ -165,7 +157,7 @@ namespace Blaster::Client::Render
             return {v.x, v.y, v.z};
         }
 
-        static Vector<float, 4> ToVector(const aiColor4D&  v)
+        static Vector<float, 4> ToVector(const aiColor4D& v)
         {
             return {v.r, v.g, v.b, v.a};
         }
@@ -189,6 +181,8 @@ namespace Blaster::Client::Render
         }
 
         AssetPath path;
+
+        DESCRIBE_AND_REGISTER(Model, (Component), (), (), (path))
 
     };
 }

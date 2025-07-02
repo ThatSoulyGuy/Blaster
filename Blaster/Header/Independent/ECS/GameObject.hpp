@@ -49,12 +49,12 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasAdded = true;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), typeid(T));
 
             return std::static_pointer_cast<T>(componentMap[typeid(T)]);
         }
 
-        std::shared_ptr<Component> AddComponentDynamic(std::shared_ptr<Component> component)
+        std::shared_ptr<Component> AddComponentDynamic(std::shared_ptr<Component> component, bool markDirty = true)
         {
             const auto type = std::type_index(typeid(*component));
 
@@ -71,9 +71,10 @@ namespace Blaster::Independent::ECS
 
             componentMap.insert({ type, std::move(component) });
 
-            componentMap[type]->wasAdded = true;
+            componentMap[type]->wasAdded = markDirty;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), type);
 
             return componentMap[type];
         }
@@ -129,6 +130,15 @@ namespace Blaster::Independent::ECS
             return std::make_optional(componentMap[typeIndex.value()]);
         }
 
+        std::shared_ptr<Component>* UnsafeFindComponentPointer(const std::string& typeName)
+        {
+            for (auto& [type, comp] : componentMap)
+                if (comp->GetTypeName() == typeName)
+                    return &comp;
+
+            return nullptr;
+        }
+
         std::shared_ptr<Transform> GetTransform()
         {
             return std::static_pointer_cast<Transform>(componentMap[typeid(Transform)]);
@@ -147,12 +157,12 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasRemoved = true;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), typeid(T));
 
             componentMap.erase(typeid(T));
         }
 
-        void RemoveComponentDynamic(const std::string& typeName)
+        void RemoveComponentDynamic(const std::string& typeName, bool markDirty = true)
         {
             std::shared_lock lock(mutex);
 
@@ -160,14 +170,15 @@ namespace Blaster::Independent::ECS
             {
                 if (iterator->second->GetTypeName() == typeName)
                 {
+                    if (markDirty)
+                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), iterator->first);
+
                     iterator->second->wasRemoved = true;
 
                     componentMap.erase(iterator);
                     return;
                 }
             }
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
         }
 
         void SetParent(std::shared_ptr<GameObject> parent)
@@ -241,7 +252,7 @@ namespace Blaster::Independent::ECS
             return name;
         }
 
-        std::optional<NetworkId> GetOwningClient() const
+        std::optional<NetworkId> GetOwningClient() const override
         {
             return owningClient;
         }
@@ -253,10 +264,10 @@ namespace Blaster::Independent::ECS
 
         bool IsAuthoritative() const noexcept
         {
-            return authoritative;
+            return isAuthoritative;
         }
 
-        bool IsLocallyControlled() const noexcept
+        bool IsLocallyControlled() const noexcept override
         {
             return !IsAuthoritative() && GetOwningClient().has_value() && GetOwningClient().value() == ClientNetwork::GetInstance().GetNetworkId();
         }
@@ -267,10 +278,21 @@ namespace Blaster::Independent::ECS
             return justCreated;
         }
 
+        void ClearJustCreated() override
+        {
+            justCreated = false;
+        }
+
         [[nodiscard]]
         bool IsDestroyed() const noexcept override
         {
             return destroyed;
+        }
+
+        [[nodiscard]]
+        bool IsLocal() const noexcept override
+        {
+            return isLocal;
         }
 
         [[nodiscard]]
@@ -302,11 +324,6 @@ namespace Blaster::Independent::ECS
 
             for (const auto& child : childMap | std::views::values)
                 child->Update();
-
-            justCreated = false;
-
-            for (const auto& component : componentMap | std::views::values)
-                component->ClearTransientFlags();
         }
 
         void Render(const std::shared_ptr<Client::Render::Camera>& camera)
@@ -318,14 +335,19 @@ namespace Blaster::Independent::ECS
 
             for (const auto& child : childMap | std::views::values)
                 child->Render(camera);
-        }
+        } 
 
-        static std::shared_ptr<GameObject> Create(const std::string& name, const std::optional<NetworkId>& owningClient = std::nullopt)
+        static std::shared_ptr<GameObject> Create(const std::string& name, bool isLocal = false, const std::optional<NetworkId>& owningClient = std::nullopt)
         {
             std::shared_ptr<GameObject> result(new GameObject());
 
             result->name = name;
+            result->isLocal = isLocal;
             result->owningClient = owningClient;
+#ifdef IS_SERVER
+            result->isAuthoritative = true;
+#endif
+
             result->AddComponent(Transform::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
 
             return result;
@@ -352,7 +374,7 @@ namespace Blaster::Independent::ECS
 
             childMap.insert({ childName, std::move(child) });
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(childMap[childName]);
 
             return childMap[childName];
         }
@@ -390,7 +412,8 @@ namespace Blaster::Independent::ECS
 
         mutable std::shared_mutex mutex;
 
-        bool authoritative = false;
+        bool isLocal = false;
+        bool isAuthoritative = false;
 
         bool justCreated = true;
         bool destroyed = false;

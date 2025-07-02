@@ -69,12 +69,6 @@ namespace Blaster::Client::Render
 		}
 
 		[[nodiscard]]
-		std::string GetTypeName() const override
-		{
-			return typeid(Shader).name();
-		}
-
-		[[nodiscard]]
 		std::string GetName() const
 		{
 			return name;
@@ -209,6 +203,8 @@ namespace Blaster::Client::Render
 
 		AssetPath vertexPath, fragmentPath;
 		std::string vertexData, fragmentData;
+
+		DESCRIBE_AND_REGISTER(Shader, (Component), (), (), (id, name, localPath, isGenerated, vertexPath, fragmentPath, vertexData, fragmentData))
 
 	};
 }

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Client/Core/InputManager.hpp"
-//#include "Client/Network/ClientRpc.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Render/Camera.hpp"
+#include "Client/Render/Model.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
 #include "Independent/ComponentRegistry.hpp"
@@ -11,7 +11,6 @@
 #include "Independent/Utility/Time.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Server/Entity/EntityBase.hpp"
-//#include "Server/Network/ServerSynchronization.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Network;
@@ -21,7 +20,6 @@ using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Server::Entity::Entities
 {
-    /*
     class EntityPlayer final : public EntityBase<EntityPlayer>
     {
 
@@ -34,48 +32,36 @@ namespace Blaster::Server::Entity::Entities
 
         void Initialize() override
         {
-            if (!GetGameObject()->IsLocallyControlled())
-                return;
-
-            ClientRpc::CreateGameObject(GetGameObject()->GetName() + ".camera");
-
-            std::this_thread::sleep_for(20ms);
-
-            auto cameraComponentFuture = ClientRpc::AddComponent(GetGameObject()->GetName() + ".camera", Camera::Create(45.0f, 0.01f, 1000.0f));
-
-            std::this_thread::sleep_for(20ms);
-
-            std::thread([future = std::move(cameraComponentFuture), this]() mutable
+            if (GetGameObject()->IsLocallyControlled())
             {
-                camera = std::static_pointer_cast<Camera>(future.get());
+                auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
-                std::this_thread::sleep_for(20ms);
+                camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 1000.0f));
+
+                auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+
+                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
+
+                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Player.fbx" }));
 
                 InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
+            }
+#ifndef IS_SERVER
+            else
+            {
+                auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                std::this_thread::sleep_for(20ms);
+                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
 
-                ClientRpc::AddComponent(GetGameObject()->GetName() + ".camera", Model::Create({ "Blaster", "Model/Player.fbx" }));
-
-                std::this_thread::sleep_for(20ms);
-
-                ClientRpc::AddComponent(GetGameObject()->GetName() + ".camera", TextureManager::GetInstance().Get("blaster.wood").value());
-
-                std::cout << "Initialized EntityPlayer" << std::endl;
-
-            }).detach();
+                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Player.fbx" }));
+            }
+#endif
         }
 
         void Update() override
         {
             UpdateMouselook();
             UpdateMovement();
-        }
-
-        [[nodiscard]]
-        std::string GetTypeName() const override
-        {
-            return typeid(EntityPlayer).name();
         }
 
         static std::shared_ptr<EntityPlayer> Create()
@@ -124,14 +110,6 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
-            if (!camera)
-            {
-                if (GetGameObject()->HasChild("camera") && GetGameObject()->GetChild("camera").value()->HasComponent<Camera>())
-                    camera = GetGameObject()->GetChild("camera").value()->GetComponent<Camera>().value();
-
-                return;
-            }
-
             if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
                 InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
 
@@ -151,53 +129,43 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
-            if (!camera)
-            {
-                if (GetGameObject()->HasChild("camera") && GetGameObject()->GetChild("camera").value()->HasComponent<Camera>())
-                    camera = GetGameObject()->GetChild("camera").value()->GetComponent<Camera>().value();
-
-                return;
-            }
-
-            Vector<float, 3> movement = { 0.0f, 0.0f, 0.0f };
+            Vector<float, 3> direction = { 0.0f, 0.0f, 0.0f };
 
             const Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
             const Vector<float, 3> right = camera->GetGameObject()->GetTransform()->GetRight();
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
-                movement += forward * MovementSpeed;
+                direction += forward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD))
-                movement -= forward * MovementSpeed;
+                direction -= forward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
-                movement += right * MovementSpeed;
+                direction += right;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD))
-                movement -= right * MovementSpeed;
+                direction -= right;
 
             const auto transform = GetGameObject()->GetTransform();
 
-            transform->Translate(movement);
+            float length = direction.Length();
 
-            syncAccumulator += Time::GetInstance().GetDeltaTime();
-
-            if (syncAccumulator >= syncPeriod)
+            if (length > 1e-4f)
             {
-                syncAccumulator = 0.0f;
+                direction /= length;
+                direction *= MovementSpeed;
 
-                ClientRpc::TranslateTo(GetGameObject()->GetName(), transform->GetLocalPosition(), 0.0f);
+                GetGameObject()->GetTransform()->Translate(direction);
             }
         }
 
         std::shared_ptr<Camera> camera;
 
-        static constexpr float syncPeriod = 0.10f;
-        float syncAccumulator = 0.0f;
-
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)
 
-    };*/
+        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase<EntityPlayer>), (), (), (camera, MouseSensitivity))
+
+    };
 }
 
-//REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer)
+REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer)

@@ -23,6 +23,18 @@ namespace Blaster::Client::Render::Vertices
             return result;
         }
 
+        [[nodiscard]]
+        bool operator==(const ModelVertex& other)
+        {
+            return OPERATOR_CHECK(position, color, uv0, boneIds, weights);
+        }
+
+        [[nodiscard]]
+        bool operator!=(const ModelVertex& other)
+        {
+            return !(*this == other);
+        }
+
         template <typename Archive>
         void serialize(Archive &archive, const unsigned)
         {

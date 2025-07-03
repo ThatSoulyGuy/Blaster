@@ -27,11 +27,13 @@ namespace Blaster::Client::Render
         Texture& operator=(const Texture&) = delete;
         Texture& operator=(Texture&&) = delete;
 
+        [[nodiscard]]
         std::string GetName() const
         {
             return name;
         }
 
+        [[nodiscard]]
         AssetPath GetPath() const
         {
             return path;
@@ -103,11 +105,19 @@ namespace Blaster::Client::Render
 
         BOOST_SERIALIZATION_SPLIT_MEMBER()
 
+        static void FreeImageErrorHandler(const FREE_IMAGE_FORMAT format, const char* message)
+        {
+            fprintf(stderr, "FreeImage-error (%s): %s\n",
+                    format != FIF_UNKNOWN ? FreeImage_GetFormatFromFIF(format) : "Unknown",
+                    message);
+        }
+
         void Generate()
         {
             const std::string fullPath = path.GetFullPath();
 
             FreeImage_Initialise();
+            FreeImage_SetOutputMessage(FreeImageErrorHandler);
             FIBITMAP* bitmap = FreeImage_Load(FIF_PNG, fullPath.c_str(), PNG_DEFAULT);
 
             if (!bitmap)

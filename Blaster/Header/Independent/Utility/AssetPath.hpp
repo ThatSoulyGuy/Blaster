@@ -30,8 +30,8 @@ inline std::string GetExecutableDirectory()
     }
 
     throw std::runtime_error("Failed to get exe path");
-#else
-    return "";
+#elif defined(__unix__)
+    return "./";
 #endif
 }
 

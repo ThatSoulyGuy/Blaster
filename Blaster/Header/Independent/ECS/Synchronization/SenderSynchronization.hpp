@@ -2,7 +2,7 @@
 
 #include <unordered_set>
 #include <queue>
-#include <string_view >
+#include <string_view>
 #include <boost/archive/text_oarchive.hpp>
 #include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SyncTracker.hpp"

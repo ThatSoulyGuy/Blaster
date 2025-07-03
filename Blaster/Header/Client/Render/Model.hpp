@@ -3,7 +3,6 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-#include <assimp/Matrix4x4.h>
 #include <assimp/vector3.h>
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/Vertices/ModelVertex.hpp"

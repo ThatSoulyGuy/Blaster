@@ -280,7 +280,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
         static void RememberHash(const std::shared_ptr<Component>& comp)
         {
-            const uint64_t handle = ComponentStateHash(*comp);
+            const uint64_t handle = ComponentStateHash(comp);
 
             lastHashMap[comp.get()] = handle;
         }

@@ -33,9 +33,6 @@ namespace Blaster::Independent::Math
 
             for (auto& function : onPositionUpdated)
                 function(localPosition);
-
-            if (lastLocalPosition != localPosition)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
         }
 
         void Rotate(const Vector<float, 3>& rotationDeg)
@@ -73,9 +70,6 @@ namespace Blaster::Independent::Math
             auto lastLocalPosition = localPosition;
 
             localPosition = value;
-            
-            if (lastLocalPosition != localPosition)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
 
             if (!update)
                 return;
@@ -234,6 +228,32 @@ namespace Blaster::Independent::Math
             onScaleUpdated.push_back(function);
         }
 
+        void Update() override
+        {
+            using Clock = std::chrono::steady_clock;
+
+            const bool positionChanged = (localPosition != lastSyncedPosition);
+
+            if (positionChanged)
+                pendingSync = true;
+            
+            lastSyncedPosition = localPosition;
+
+            if (!pendingSync)
+                return;
+            
+            pendingSync = false;
+
+            const Clock::time_point now = Clock::now();
+
+            if (now - lastSentTime < kSyncPeriod)
+                return;
+
+            lastSentTime = now;
+            
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
+        }
+
         [[nodiscard]]
         std::optional<std::weak_ptr<Transform>> GetParent() const
         {
@@ -289,11 +309,11 @@ namespace Blaster::Independent::Math
         template <class Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive & boost::serialization::base_object<Component>(*this);
+            archive& boost::serialization::base_object<Component>(*this);
 
-            archive & BOOST_SERIALIZATION_NVP(localPosition);
-            archive & BOOST_SERIALIZATION_NVP(localRotation);
-            archive & BOOST_SERIALIZATION_NVP(localScale);
+            archive& BOOST_SERIALIZATION_NVP(localPosition);
+            archive& BOOST_SERIALIZATION_NVP(localRotation);
+            archive& BOOST_SERIALIZATION_NVP(localScale);
         }
 
         std::optional<std::weak_ptr<Transform>> parent;
@@ -305,7 +325,14 @@ namespace Blaster::Independent::Math
         Vector<float, 3> localPosition = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localRotation = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localScale = { 1.0f, 1.0f, 1.0f };
-        
+
+        Vector<float, 3> lastSyncedPosition = localPosition;
+
+        bool pendingSync = false;
+        std::chrono::steady_clock::time_point lastSentTime = std::chrono::steady_clock::now();
+
+        inline static constexpr std::chrono::milliseconds kSyncPeriod{ 100 };
+
         DESCRIBE_AND_REGISTER(Transform, (Component), (), (), (parent, localPosition, localRotation, localScale))
     };
 }

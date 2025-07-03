@@ -46,7 +46,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.23.18", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.73.18", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -150,7 +150,7 @@ namespace Blaster::Client
 
             Time::GetInstance().Update();
 
-            //TranslationBuffer::GetInstance().Update();
+            TranslationBuffer::GetInstance().Update();
         }
 
         void Render()

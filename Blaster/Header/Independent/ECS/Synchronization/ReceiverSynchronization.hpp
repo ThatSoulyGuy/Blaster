@@ -8,6 +8,7 @@
 #include <boost/mp11.hpp>
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SyncTracker.hpp"
+#include "Independent/ECS/Synchronization/TranslationBuffer.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 
 using namespace Blaster::Independent::ECS;
@@ -252,6 +253,24 @@ namespace Blaster::Independent::ECS::Synchronization
         static void HandleSetField(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpSetField operation = std::any_cast<OpSetField>(DataConversion<OpSetField>::Decode(slice));
+            
+#ifndef IS_SERVER
+            if (operation.componentType == Component::CachedName(typeid(Blaster::Independent::Math::Transform)))
+            {
+                std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(operation.componentType);
+
+                DeserializeInto(fresh, operation.blob);
+
+                std::shared_ptr<Transform> temporary = std::static_pointer_cast<Transform>(fresh);
+
+                auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
+
+                if (gameObjectOptional)
+                    TranslationBuffer::GetInstance().Enqueue(std::static_pointer_cast<Transform>(*gameObjectOptional.value()->UnsafeFindComponentPointer(operation.componentType)), temporary->GetLocalPosition(), temporary->GetLocalRotation(), temporary->GetLocalScale());
+                
+                return;
+            }
+#endif
 
             auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
 
@@ -307,7 +326,7 @@ namespace Blaster::Independent::ECS::Synchronization
             if (!incoming)
                 return;
 
-            MergeComponents(destination, incoming);
+            MergeSupport::MergeComponents(destination, incoming);
         }
     };
 }

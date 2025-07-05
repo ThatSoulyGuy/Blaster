@@ -111,7 +111,7 @@ namespace Blaster::Independent::ECS
             if (typeid(*destination) != typeid(*incoming))
                 return;
 
-            auto iterator = Table().find(typeid(*destination));
+            const auto iterator = Table().find(typeid(*destination));
 
             if (iterator == Table().end())
                 return;

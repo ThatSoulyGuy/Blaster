@@ -4,15 +4,20 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/vector3.h>
+#include "Client/Render/Animator.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/Vertices/ModelVertex.hpp"
 #include "Client/Render/Mesh.hpp"
+#include "Client/Render/Skeleton.hpp"
 #include "Client/Render/Texture.hpp"
+#include "Independent/Collider/Colliders/ColliderMesh.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
+#include "Independent/Math/Rigidbody.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Render::Vertices;
+using namespace Blaster::Independent::Collider::Colliders;
 using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client::Render
@@ -47,14 +52,32 @@ namespace Blaster::Client::Render
                         });
 
                 }
+
+                if (hasBones)
+                {
+                    std::array<Matrix<float, 4, 4>, 128> matrices{};
+                    const std::size_t count = std::min<std::size_t>(128, skeleton.bones.size());
+
+                    for (std::size_t i = 0; i < count;++i)
+                        matrices[i] = skeleton.bones[i].finalPose * skeleton.bones[i].offset;
+
+                    for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
+                    {
+                        const auto mesh = child->GetComponent<Mesh<ModelVertex>>().value();
+
+                        mesh->QueueShaderCall<int>("uUseSkinning", 1);
+                        mesh->QueueShaderCall<std::vector<Matrix<float, 4, 4>>>("uBoneMatrices", { matrices.begin(), matrices.end() });
+                    }
+                }
             }
         }
 
-        static std::shared_ptr<Model> Create(const AssetPath& path)
+        static std::shared_ptr<Model> Create(const AssetPath& path, bool buildCollider = false)
         {
             std::shared_ptr<Model> result(new Model());
 
             result->path = path;
+            result->buildCollider = buildCollider;
 
             return result;
         }
@@ -72,6 +95,7 @@ namespace Blaster::Client::Render
             archive & boost::serialization::base_object<Component>(*this);
 
             archive & BOOST_SERIALIZATION_NVP(path);
+            archive & BOOST_SERIALIZATION_NVP(buildCollider);
         }
 
         void LoadModel()
@@ -92,13 +116,25 @@ namespace Blaster::Client::Render
             }
 
             ProcessNode(scene->mRootNode, scene, GetGameObject(), aiMatrix4x4());
+
+            if (buildCollider && !colliderVertices.empty())
+            {
+                const auto rootGameObject = GetGameObject();
+
+                rootGameObject->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
+
+                rootGameObject->AddComponent(Rigidbody::Create(false));
+            }
+
+            if (hasBones)
+                GetGameObject()->AddComponent(Animator::Create(&skeleton));
         }
 
         void ProcessNode(const aiNode* node, const aiScene* scene, const std::shared_ptr<GameObject>& parentGO, const aiMatrix4x4& parentTransform)
         {
             const aiMatrix4x4 globalTransform = parentTransform * node->mTransformation;
 
-            const std::shared_ptr<GameObject> current = parentGO;
+            const std::shared_ptr<GameObject>& current = parentGO;
 
             for (unsigned i = 0; i < node->mNumMeshes; ++i)
                 BuildMesh(scene->mMeshes[node->mMeshes[i]], current, i, globalTransform);
@@ -107,7 +143,7 @@ namespace Blaster::Client::Render
                 ProcessNode(node->mChildren[c], scene, current, globalTransform);
         }
 
-        void BuildMesh(const aiMesh* aMesh, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform) const
+        void BuildMesh(const aiMesh* aMesh, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform)
         {
             std::vector<ModelVertex> vertices;
             vertices.reserve(aMesh->mNumVertices);
@@ -126,7 +162,8 @@ namespace Blaster::Client::Render
                     aiVector3D t = aMesh->mTextureCoords[0][v];
                     vertex.uv0 = {t.x, t.y};
                 }
-                vertices.emplace_back(std::move(vertex));
+
+                vertices.emplace_back(vertex);
             }
 
             std::vector<uint32_t> indices;
@@ -138,8 +175,52 @@ namespace Blaster::Client::Render
                 for (unsigned j = 0; j < aMesh->mFaces[f].mNumIndices; ++j)
                     indices.push_back(aMesh->mFaces[f].mIndices[j]);
             }
-            
-            auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(localIdx), true), GetGameObject()->GetAbsolutePath());
+
+            std::vector<Vector<uint32_t,4>> boneIds(aMesh->mNumVertices, { 0, 0, 0,0 });
+            std::vector<Vector<float,4>> weights(aMesh->mNumVertices, { 0, 0, 0,0 });
+
+            if (buildCollider)
+            {
+                const auto base = static_cast<std::uint32_t>(colliderVertices.size());
+
+                for (const auto& vertex : vertices)
+                    colliderVertices.push_back(vertex.position);
+
+                for (const auto index : indices)
+                    colliderIndices.push_back(base + index);
+            }
+
+            if (aMesh->HasBones())
+            {
+                hasBones = true;
+
+                for (unsigned b = 0; b < aMesh->mNumBones; ++b)
+                {
+                    const aiBone* bone = aMesh->mBones[b];
+                    const std::size_t boneIndex = skeleton.GetOrAdd(bone->mName.C_Str(), bone->mOffsetMatrix);
+
+                    for (unsigned w = 0; w < bone->mNumWeights; ++w)
+                    {
+                        const aiVertexWeight& vertexWeight = bone->mWeights[w];
+
+                        auto& idList = boneIds [vertexWeight.mVertexId];
+                        auto& weightList = weights [vertexWeight.mVertexId];
+
+                        for (int slot = 0; slot < 4; ++slot)
+                        {
+                            if (weightList[slot] == 0.0f)
+                            {
+                                idList[slot] = static_cast<uint32_t>(boneIndex);
+                                weightList[slot] = vertexWeight.mWeight;
+
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            const auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(localIdx), true), GetGameObject()->GetAbsolutePath());
             
             meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
 
@@ -153,19 +234,19 @@ namespace Blaster::Client::Render
 
         static Vector<float, 3> ToVector(const aiVector3D& v)
         {
-            return {v.x, v.y, v.z};
+            return { v.x, v.y, v.z };
         }
 
         static Vector<float, 4> ToVector(const aiColor4D& v)
         {
-            return {v.r, v.g, v.b, v.a};
+            return { v.r, v.g, v.b, v.a };
         }
 
         static Vector<float, 3> TransformPosition(const aiMatrix4x4& m, const aiVector3D& v)
         {
             aiVector3D tmp = m * v;
 
-            return {tmp.x, tmp.y, tmp.z};
+            return { tmp.x, tmp.y, tmp.z };
         }
 
         static Vector<float, 3> TransformDirection(const aiMatrix4x4& m, const aiVector3D& v)
@@ -180,8 +261,14 @@ namespace Blaster::Client::Render
         }
 
         AssetPath path;
+        bool buildCollider = false;
 
-        DESCRIBE_AND_REGISTER(Model, (Component), (), (), (path))
+        std::vector<Vector<float,3>> colliderVertices;
+        std::vector<std::uint32_t> colliderIndices;
+        Skeleton skeleton;
+        bool hasBones = false;
+
+        DESCRIBE_AND_REGISTER(Model, (Component), (), (), (path, buildCollider, hasBones))
 
     };
 }

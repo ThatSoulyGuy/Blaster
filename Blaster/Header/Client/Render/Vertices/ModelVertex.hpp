@@ -24,13 +24,13 @@ namespace Blaster::Client::Render::Vertices
         }
 
         [[nodiscard]]
-        bool operator==(const ModelVertex& other)
+        bool operator==(const ModelVertex& other) const
         {
             return OPERATOR_CHECK(position, color, uv0, boneIds, weights);
         }
 
         [[nodiscard]]
-        bool operator!=(const ModelVertex& other)
+        bool operator!=(const ModelVertex& other) const
         {
             return !(*this == other);
         }

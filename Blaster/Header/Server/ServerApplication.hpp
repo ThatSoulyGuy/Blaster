@@ -43,15 +43,19 @@ namespace Blaster::Server
             ServerNetwork::GetInstance().Initialize(port);
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    const std::string name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
+                    const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
 
                     std::cout << "Client " << who << " is '" << name << "'." << std::endl;
 
                     ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
-                    auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
+                    const auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
                     player->AddComponent(EntityPlayer::Create());
+                    player->AddComponent(ColliderCapsule::Create(10.0f, 10.0f));
+                    player->AddComponent(Rigidbody::Create(true, 10.0f));
+                    player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Z);
+                    player->GetTransform()->SetLocalPosition({ 0.0f, 20.0f, 0.0f });
 
                     SenderSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });

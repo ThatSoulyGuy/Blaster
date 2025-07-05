@@ -8,9 +8,10 @@
 #include <ranges>
 #include <vector>
 #include <spanstream>
+
+#include "BulletInverseDynamics/details/MultiBodyTreeImpl.hpp"
 #include "Client/Core/Window.hpp"
 #include "Client/Core/InputManager.hpp"
-//#include "Client/Network/TranslationBuffer.hpp"
 #include "Client/Network/ClientNetwork.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
@@ -18,10 +19,9 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
+#include "Independent/Collider/PhysicsWorld.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
-#include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
-#include "Independent/Network/NetworkSerialize.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 
@@ -30,6 +30,7 @@ using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
+using namespace Blaster::Independent::Collider;
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Thread;
 
@@ -37,6 +38,7 @@ namespace Blaster::Client
 {
     class ClientApplication final
     {
+
     public:
 
         ClientApplication(const ClientApplication&) = delete;
@@ -88,22 +90,19 @@ namespace Blaster::Client
                         });
                 });
 
-            std::thread([]() mutable
+            if (!GameObjectManager::GetInstance().Has("mod"))
             {
-                std::this_thread::sleep_for(2s);
+                const auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mod"));
 
-                if (!GameObjectManager::GetInstance().Has("mod"))
-                {
-                    auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mod"));
+                gameObject->AddComponent(TextureManager::GetInstance().Get("blaster.stone").value());
+                gameObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
 
-                    gameObject->AddComponent(TextureManager::GetInstance().Get("blaster.stone").value());
-                    gameObject->AddComponent(Model::Create({ "Blaster", "Model/Test.fbx" }));
-                }
-            }).detach();
-            
+                gameObject->GetComponent<Rigidbody>().value()->SetStaticTransform({ 0.0f, -150.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+            }
+
             std::thread([this]() mutable
             {
-                std::this_thread::sleep_for(4s);
+                std::this_thread::sleep_for(100ms);
 
                 const auto optionalPlayer = GameObjectManager::GetInstance().Get("player-" + ClientNetwork::GetInstance().GetStringId());
 
@@ -148,9 +147,11 @@ namespace Blaster::Client
 
             GameObjectManager::GetInstance().Update();
 
-            Time::GetInstance().Update();
-
             TranslationBuffer::GetInstance().Update();
+
+            PhysicsWorld::GetInstance().Update();
+
+            Time::GetInstance().Update();
         }
 
         void Render()

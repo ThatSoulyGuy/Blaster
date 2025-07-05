@@ -68,6 +68,22 @@ namespace Blaster::Client::Render
 			glUniformMatrix4fv(location, 1, GL_FALSE, &value[0][0]);
 		}
 
+		void SetUniform(const std::string& name, const std::vector<Matrix<float,4,4>>& value) const
+		{
+			const auto data = value.data();
+			const auto count = value.size();
+
+			if (!data || count <= 0)
+				return;
+
+			const GLint location = glGetUniformLocation(id, name.c_str());
+
+			if (location == -1)
+				return;
+
+			glUniformMatrix4fv(location, count, GL_FALSE, reinterpret_cast<const GLfloat*>( &data[0][0] ));
+		}
+
 		[[nodiscard]]
 		std::string GetName() const
 		{

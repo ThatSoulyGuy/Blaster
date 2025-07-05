@@ -14,7 +14,7 @@
 
 namespace Blaster::Client::Render
 {
-    using UniformValue = std::variant<int, float, Vector<float, 2>, Vector<float, 3>, Matrix<float, 4, 4>>;
+    using UniformValue = std::variant<int, float, Vector<float, 2>, Vector<float, 3>, Matrix<float, 4, 4>, std::vector<Matrix<float, 4, 4>>>;
 
     struct ShaderCall final
     {

@@ -15,6 +15,7 @@
 #include "Independent/Math/Matrix.hpp"
 #include "Independent/Math/Vector.hpp"
 #include "Independent/ComponentRegistry.hpp"
+#include "Independent/ECS/GameObject.hpp"
 
 using namespace Blaster::Independent::ECS;
 
@@ -232,9 +233,7 @@ namespace Blaster::Independent::Math
         {
             using Clock = std::chrono::steady_clock;
 
-            const bool positionChanged = (localPosition != lastSyncedPosition);
-
-            if (positionChanged)
+            if (const bool positionChanged = (localPosition != lastSyncedPosition))
                 pendingSync = true;
             
             lastSyncedPosition = localPosition;
@@ -250,6 +249,8 @@ namespace Blaster::Independent::Math
                 return;
 
             lastSentTime = now;
+
+            std::cout << "Position of game object '" << std::static_pointer_cast<IGameObjectSynchronization>(GetGameObject())->GetAbsolutePath() << "' is now '" << localPosition << "'" << std::endl;
             
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
         }

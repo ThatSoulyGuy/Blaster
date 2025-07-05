@@ -162,18 +162,18 @@ namespace Blaster::Independent::ECS::Synchronization
                     }
                 }
 
-                for (auto iterator = dirtyComponentSet.begin(); iterator != dirtyComponentSet.end(); ++iterator)
+                for (const auto& [gameObject, componentType] : dirtyComponentSet)
                 {
-                    auto gameObjectPointer = iterator->gameObject.lock();
+                    const auto gameObjectPointer = gameObject.lock();
 
                     if (!gameObjectPointer)
                         continue;
 
-                    const auto componentIterator = gameObjectPointer->GetComponentMap().find(iterator->componentType);
+                    const auto componentIterator = gameObjectPointer->GetComponentMap().find(componentType);
 
                     if (componentIterator == gameObjectPointer->GetComponentMap().end())
                     {
-                        PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), iterator->componentType.name() });
+                        PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), componentType.name() });
 
                         ++templateSnapshot.header.operationCount;
 
@@ -182,9 +182,7 @@ namespace Blaster::Independent::ECS::Synchronization
                         continue;
                     }
 
-                    const auto& component = componentIterator->second;
-
-                    if (component->WasAdded())
+                    if (const auto& component = componentIterator->second; component->WasAdded())
                     {
                         if (HasStateChanged(component))
                         {
@@ -215,7 +213,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
 
 #ifdef IS_SERVER
-            for (NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
+            for (const NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
             {
                 Snapshot snapshot = templateSnapshot;
                 snapshot.header.sequence = SyncTracker::AllocateSequence(id);
@@ -252,7 +250,7 @@ namespace Blaster::Independent::ECS::Synchronization
             }
         }
 
-        static void SynchronizeFullTree(NetworkId targetClient, std::vector<std::shared_ptr<GameObject>> gameObjectList)
+        static void SynchronizeFullTree(const NetworkId targetClient, const std::vector<std::shared_ptr<GameObject>>& gameObjectList)
         {
             Snapshot snapshot;
 
@@ -336,7 +334,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 ++snap.header.operationCount;
             }
 
-            for (const auto& [name, child] : node->GetChildMap())
+            for (const auto& child: node->GetChildMap() | std::views::values)
                 SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(child), snap);
         }
 
@@ -348,7 +346,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
             CommonNetwork::WriteTrivial(destination, static_cast<std::uint8_t>(Op::Code));
 
-            const std::uint32_t length = static_cast<std::uint32_t>(temporary.size());
+            const auto length = static_cast<std::uint32_t>(temporary.size());
             CommonNetwork::WriteTrivial(destination, length);
 
             CommonNetwork::WriteRaw(destination, temporary.data(), temporary.size());
@@ -364,7 +362,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
             const std::string& text = stream.str();
 
-            return std::vector<std::uint8_t>(text.begin(), text.end());
+            return { text.begin(), text.end() };
         }
 
         template <typename T>

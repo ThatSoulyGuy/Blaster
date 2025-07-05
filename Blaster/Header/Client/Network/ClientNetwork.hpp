@@ -175,7 +175,7 @@ namespace Blaster::Client::Network
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
-                NetworkId id = std::any_cast<std::uint32_t>(CommonNetwork::DisassembleData(data)[0]);
+                const NetworkId id = std::any_cast<NetworkId>(CommonNetwork::DisassembleData(data)[0]);
 
                 std::cout << "Received NetworkId ('" << id << "') from the server." << std::endl;
 

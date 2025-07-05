@@ -34,11 +34,12 @@ namespace Blaster::Server::Entity::Entities
         {
             if (GetGameObject()->IsLocallyControlled())
             {
-                auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
+                const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
-                camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 1000.0f));
+                cameraGameObject->GetTransform()->SetLocalPosition({ 0.0f, 0.0f, 0.0f });
+                camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
 
-                auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+                const auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
                 modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
 
@@ -49,7 +50,7 @@ namespace Blaster::Server::Entity::Entities
 #ifndef IS_SERVER
             else
             {
-                auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+                const auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
                 modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
 
@@ -148,14 +149,19 @@ namespace Blaster::Server::Entity::Entities
 
             const auto transform = GetGameObject()->GetTransform();
 
-            float length = direction.Length();
-
-            if (length > 1e-4f)
+            if (const float length = Vector<float, 3>::Magnitude(direction); length > 1e-4f)
             {
                 direction /= length;
-                direction *= MovementSpeed;
 
-                GetGameObject()->GetTransform()->Translate(direction);
+                constexpr float targetSpeed = 6.0f;
+                Vector<float,3> desiredVel = direction * targetSpeed;
+
+                const auto body = GetGameObject()->GetComponent<Rigidbody>().value()->GetNativeBody();
+                const btVector3 linearVelocity = body->getLinearVelocity();
+
+                const btVector3 deltaV(desiredVel.x() - linearVelocity.x(),0.0f, desiredVel.z() - linearVelocity.z());
+
+                GetGameObject()->GetComponent<Rigidbody>().value()->AddImpulse(Vector<float, 3>{ deltaV.x(), 0, deltaV.z() } * body->getMass());
             }
         }
 

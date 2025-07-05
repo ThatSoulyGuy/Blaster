@@ -265,7 +265,7 @@ namespace Blaster::Server::Network
         {
             for (auto& weak : client->ownedGameObjectList)
             {
-                if (auto gameObject = weak.lock())
+                if (const auto gameObject = weak.lock())
                     gameObject->MarkDestroyed();
             }
 

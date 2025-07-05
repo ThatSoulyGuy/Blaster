@@ -1,3 +1,4 @@
+#include "Client/Render/Animator.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Render/Vertices/ModelVertex.hpp"
 #include "Client/Render/Camera.hpp"
@@ -6,5 +7,8 @@
 #include "Client/Render/Vertex.hpp"
 #include "Client/Render/Shader.hpp"
 #include "Client/Render/Texture.hpp"
+#include "Independent/Collider/Colliders/ColliderCapsule.hpp"
+#include "Independent/Collider/Colliders/ColliderMesh.hpp"
+#include "Independent/Math/Rigidbody.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Server/Entity/Entities/EntityPlayer.hpp"

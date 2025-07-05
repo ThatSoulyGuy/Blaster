@@ -60,10 +60,23 @@ namespace Blaster::Independent::Network
         }
     };
 
+    constexpr std::uint64_t FnV1a64(std::string_view text) noexcept
+    {
+        std::uint64_t hash { 0xcbf29ce484222325ULL };
+
+        for(char character : text)
+        {
+            hash ^= static_cast<std::uint64_t>(character);
+            hash *= 0x100000001b3ULL;
+        }
+
+        return hash;
+    }
+
     template <typename Derived, typename Type>
     struct DataConversionBase
     {
-        inline static const std::uint64_t TypeHash = static_cast<std::uint64_t>(typeid(Type).hash_code());
+        inline static const std::uint64_t TypeHash = static_cast<std::uint64_t>(FnV1a64(typeid(Type).name()));
 
     private:
 
@@ -72,12 +85,19 @@ namespace Blaster::Independent::Network
             return Derived::Decode(bytes);
         }
 
+#ifndef _MSC_VER
+        inline static const bool registered [[gnu::used]] = []()
+        {
+            ConversionRegistry::Register(TypeHash, &Bridge);
+            return true;
+        }();
+#else
         inline static const bool registered = []()
         {
             ConversionRegistry::Register(TypeHash, &Bridge);
-                
             return true;
         }();
+#endif
     };
 
     template <typename T>

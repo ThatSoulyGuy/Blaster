@@ -488,7 +488,7 @@ namespace Blaster::Independent::Math
 			return data.end();
 		}
 
-		static constexpr size_t Length()
+		static constexpr size_t Dimensions()
 		{
 			return N;
 		}

@@ -5,8 +5,11 @@
 template<class T>
 struct _AutoComponentRegister
 {
-    static inline const bool value =
-        []{ Blaster::Independent::ECS::ComponentFactory::Register<T>(); return true; }();
+#ifndef _MSC_VER
+    static inline const bool value [[gnu::used]] = []{ Blaster::Independent::ECS::ComponentFactory::Register<T>(); return true; }();
+#else
+    static inline const bool value = []{ Blaster::Independent::ECS::ComponentFactory::Register<T>(); return true; }();
+#endif
 };
 
 #define AUTO_REG_NAME BOOST_PP_CAT(_autoReg_, __COUNTER__)

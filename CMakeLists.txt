@@ -729,6 +729,7 @@ function(blaster_add_executable target source_glob)
             "${boost_serialization_SOURCE_DIR}/include"
             "${FreeImage_SOURCE_DIR}/Source"
             "${Assimp_SOURCE_DIR}/include"
+            "${bullet_SOURCE_DIR}/src"
             ${BLASTER_HEADERS_DIR}
             ${LIBRARY_HEADERS_DIR}
     )

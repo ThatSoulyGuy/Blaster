@@ -39,7 +39,6 @@ namespace Blaster::Independent::ECS
         [[nodiscard]]
         virtual std::optional<NetworkId> GetOwningClient() const = 0;
 
-        [[nodiscard]]
         virtual void MarkDestroyed() noexcept = 0;
 
         [[nodiscard]]

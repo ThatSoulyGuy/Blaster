@@ -269,7 +269,11 @@ namespace Blaster::Independent::ECS
 
         bool IsLocallyControlled() const noexcept override
         {
-            return !IsAuthoritative() && GetOwningClient().has_value() && GetOwningClient().value() == ClientNetwork::GetInstance().GetNetworkId();
+#ifdef IS_SERVER
+            return !owningClient.has_value();
+#else
+            return owningClient.has_value() && owningClient.value() == ClientNetwork::GetInstance().GetNetworkId();
+#endif
         }
 
         [[nodiscard]]

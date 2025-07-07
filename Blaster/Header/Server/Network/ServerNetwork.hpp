@@ -81,6 +81,24 @@ namespace Blaster::Server::Network
                     StartWrite(client);
             });
         }
+        
+        void ForwardTo(const NetworkId id, const PacketType type, std::vector<std::uint8_t> dataIn)
+        {
+            const auto hit = clientMap.find(id);
+
+            if (hit == clientMap.end())
+                return;
+
+            auto data = std::make_shared<std::vector<std::uint8_t>>(dataIn);
+
+            boost::asio::post(hit->second->strand, [this, client = hit->second, data]()
+                {
+                    client->writeQueue.push_back(data);
+
+                    if (client->writeQueue.size() == 1)
+                        StartWrite(client);
+                });
+        }
 
         template <typename... Args> requires DataConvertible<Args...>
         void Broadcast(const PacketType type, const std::optional<NetworkId> except, Args&&... args)

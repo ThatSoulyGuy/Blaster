@@ -4,6 +4,9 @@
 #include <mutex>
 #include <iostream> 
 #include <random>
+#include "Client/Render/Model.hpp"
+#include "Client/Render/TextureFuture.hpp"
+#include "Independent/Collider/Colliders/ColliderBox.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
@@ -52,9 +55,9 @@ namespace Blaster::Server
                     const auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
                     player->AddComponent(EntityPlayer::Create());
-                    player->AddComponent(ColliderCapsule::Create(10.0f, 10.0f));
-                    player->AddComponent(Rigidbody::Create(true, 10.0f));
-                    player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Z);
+                    player->AddComponent(ColliderCapsule::Create(8.0f, 8.0f));
+                    player->AddComponent(Rigidbody::Create(true, 8.0f));
+                    player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
                     player->GetTransform()->SetLocalPosition({ 0.0f, 20.0f, 0.0f });
 
                     SenderSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
@@ -79,6 +82,52 @@ namespace Blaster::Server
                         }
                     });
                 });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_AddForce, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
+                {
+                    OpRigidbodyOperation operation = std::any_cast<OpRigidbodyOperation>(CommonNetwork::DisassembleData(messageIn)[0]);
+
+                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
+
+                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
+                        gameObject.value()->GetComponent<Rigidbody>().value()->AddForce(operation.value);
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_AddImpulse, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
+                {
+                    OpRigidbodyOperation operation = std::any_cast<OpRigidbodyOperation>(CommonNetwork::DisassembleData(messageIn)[0]);
+
+                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
+
+                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
+                        gameObject.value()->GetComponent<Rigidbody>().value()->AddImpulse(operation.value);
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_SetStaticTransform, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
+                {
+                    OpRigidbodySetTransform operation = std::any_cast<OpRigidbodySetTransform>(CommonNetwork::DisassembleData(messageIn)[0]);
+
+                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
+
+                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
+                        gameObject.value()->GetComponent<Rigidbody>().value()->SetStaticTransform(operation.position, operation.rotation);
+                });
+
+            const auto crateObject = GameObjectManager::GetInstance().Register(GameObject::Create("crate"));
+
+            crateObject->AddComponent(TextureFuture::Create("blaster.container"));
+            crateObject->AddComponent(Model::Create({ "Blaster", "Model/Crate.fbx" }, false));
+            crateObject->AddComponent(ColliderBox::Create({ 10, 10, 10 }));
+            crateObject->AddComponent(Rigidbody::Create(true, 3.0f));
+
+            crateObject->GetTransform()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
+
+            const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
+
+            platformObject->AddComponent(TextureFuture::Create("blaster.stone"));
+            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
+
+            platformObject->GetComponent<Rigidbody>().value()->SetStaticTransform({ 0.0f, -250.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
         }
 
         bool IsRunning()
@@ -91,6 +140,8 @@ namespace Blaster::Server
             MainThreadExecutor::GetInstance().Execute();
 
             GameObjectManager::GetInstance().Update();
+
+            PhysicsWorld::GetInstance().Update();
 
             Time::GetInstance().Update();
         }

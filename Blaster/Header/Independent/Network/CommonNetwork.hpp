@@ -19,6 +19,9 @@ namespace Blaster::Independent::Network
         S2C_Snapshot = 4,
         C2S_Snapshot = 5,
         S2C_TranslateTo = 6,
+        C2S_Rigidbody_AddForce = 7,
+        C2S_Rigidbody_AddImpulse = 8,
+        C2S_Rigidbody_SetStaticTransform = 9
     };
 
     struct PacketHeader
@@ -60,15 +63,62 @@ namespace Blaster::Independent::Network
         }
     };
 
-    constexpr std::uint64_t FnV1a64(std::string_view text) noexcept
-    {
-        std::uint64_t hash { 0xcbf29ce484222325ULL };
+    constexpr std::uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037ull;
+    constexpr std::uint64_t FNV_PRIME_64 = 1099511628211ull;
 
-        for(char character : text)
+    constexpr std::uint64_t HashString(std::string_view text) noexcept
+    {
+        std::uint64_t hashValue = FNV_OFFSET_BASIS_64;
+
+        for (char chr : text)
         {
-            hash ^= static_cast<std::uint64_t>(character);
-            hash *= 0x100000001b3ULL;
+            hashValue ^= static_cast<std::uint64_t>(static_cast<unsigned char>(chr));
+            hashValue *= FNV_PRIME_64;
         }
+        return hashValue;
+    }
+
+    template<typename T>
+    consteval std::string_view GetTypeName() noexcept
+    {
+#if defined(__clang__)
+        constexpr std::string_view fn = __PRETTY_FUNCTION__;
+        constexpr std::string_view prefix = "[T = ";
+        constexpr std::string_view suffix = "]";
+#elif defined(__GNUC__)
+        constexpr std::string_view fn = __PRETTY_FUNCTION__;
+        constexpr std::string_view prefix = "[with T = ";
+        constexpr std::string_view suffix = "]";
+#elif defined(_MSC_VER)
+        constexpr std::string_view fn = __FUNCSIG__;
+        constexpr std::string_view prefix = "GetTypeName<";
+        constexpr std::string_view suffix = ">(void)";
+#else
+#error Unsupported compiler – add the correct prefix/suffix here.
+#endif
+        constexpr std::size_t start = fn.find(prefix) + prefix.size();
+        constexpr std::size_t end = fn.rfind(suffix);
+
+        return fn.substr(start, end - start);
+    }
+
+    template<std::uint64_t HashValue, typename = void>
+    struct HashGuard
+    {
+        using Alias = void;
+    };
+
+    template <typename T>
+    consteval std::uint64_t HashConstexpr() noexcept
+    {
+        using Decayed = std::remove_cvref_t<T>;
+        constexpr std::string_view name = GetTypeName<Decayed>();
+        constexpr std::uint64_t hash = HashString(name);
+
+#ifndef _MSC_VER
+        [[maybe_unused]]
+#endif
+        using Guard = typename HashGuard<hash>::Alias;
 
         return hash;
     }
@@ -76,7 +126,7 @@ namespace Blaster::Independent::Network
     template <typename Derived, typename Type>
     struct DataConversionBase
     {
-        inline static const std::uint64_t TypeHash = static_cast<std::uint64_t>(FnV1a64(typeid(Type).name()));
+        inline static constexpr std::uint64_t TypeHash = HashConstexpr<Type>();
 
     private:
 
@@ -104,7 +154,7 @@ namespace Blaster::Independent::Network
     struct DataConversion;
 
     template <typename... Args>
-    concept DataConvertible = (requires(Args&&... values, std::vector<std::uint8_t>&buffer)
+    concept DataConvertible = (requires(Args&&... values, std::vector<std::uint8_t>& buffer)
     {
         (DataConversion<std::decay_t<Args>>::Encode(values, buffer), ...);
     });

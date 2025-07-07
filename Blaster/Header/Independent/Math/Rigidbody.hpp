@@ -1,12 +1,87 @@
 #pragma once
 
+#include "Independent/Math/Vector.hpp"
+#include "Independent/Network/CommonNetwork.hpp"
 #include "Independent/Collider/ColliderBase.hpp"
 #include "Independent/Collider/PhysicsWorld.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Math/Transform.hpp"
+#include "Client/Network/ClientNetwork.hpp"
 
 using namespace Blaster::Independent::Collider;
+
+namespace Blaster::Independent::Math
+{
+    struct OpRigidbodyOperation
+    {
+        std::string path;
+        Vector<float, 3> value;
+    };
+
+    struct OpRigidbodySetTransform
+    {
+        std::string path;
+        Vector<float, 3> position;
+        Vector<float, 3> rotation;
+    };
+}
+
+namespace Blaster::Independent::Network
+{
+    template <>
+    struct DataConversion<Blaster::Independent::Math::OpRigidbodyOperation> : DataConversionBase<DataConversion<Blaster::Independent::Math::OpRigidbodyOperation>, Blaster::Independent::Math::OpRigidbodyOperation>
+    {
+        using Type = Blaster::Independent::Math::OpRigidbodyOperation;
+
+        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
+        {
+            CommonNetwork::EncodeString(buffer, operation.path);
+            DataConversion<Vector<float, 3>>::Encode(operation.value, buffer);
+        }
+
+        static std::any Decode(std::span<const std::uint8_t> bytes)
+        {
+            std::size_t offset = 0;
+
+            Type out;
+
+            out.path = CommonNetwork::DecodeString(bytes, offset);
+            out.value = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
+
+            return out;
+        }
+    };
+
+    template <>
+    struct DataConversion<Blaster::Independent::Math::OpRigidbodySetTransform> : DataConversionBase<DataConversion<Blaster::Independent::Math::OpRigidbodySetTransform>, Blaster::Independent::Math::OpRigidbodySetTransform>
+    {
+        using Type = Blaster::Independent::Math::OpRigidbodySetTransform;
+
+        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
+        {
+            CommonNetwork::EncodeString(buffer, operation.path);
+            DataConversion<Vector<float, 3>>::Encode(operation.position, buffer);
+            DataConversion<Vector<float, 3>>::Encode(operation.rotation, buffer);
+        }
+
+        static std::any Decode(std::span<const std::uint8_t> bytes)
+        {
+            std::size_t offset = 0;
+
+            Type out;
+
+            out.path = CommonNetwork::DecodeString(bytes, offset);
+            out.position = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
+            
+            offset += DataConversion<Vector<float, 3>>::kWireSize;
+
+            out.rotation = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
+
+            return out;
+        }
+    };
+}
 
 namespace Blaster::Independent::Math
 {
@@ -31,12 +106,6 @@ namespace Blaster::Independent::Math
 
         void Initialize() override
         {
-#ifdef IS_SERVER //TODO: Server should simulate game objects nobody owns
-            return;
-#else
-            if (isDynamic && !GetGameObject()->IsLocallyControlled())
-                    return;
-#endif
             const auto gameObject = GetGameObject();
 
             if (!gameObject)
@@ -73,7 +142,7 @@ namespace Blaster::Independent::Math
 
             shape = collider->GetShape();
 
-            btVector3 inertia(0,0,0);
+            btVector3 inertia(0, 0, 0);
 
             if (isDynamic)
                 shape->calculateLocalInertia(mass, inertia);
@@ -89,7 +158,6 @@ namespace Blaster::Independent::Math
 
         void Update() override
         {
-#ifndef IS_SERVER
             if (!isDynamic && queuedPosition && queuedRotation && body)
             {
                 SetStaticTransform(*queuedPosition, *queuedRotation);
@@ -97,11 +165,12 @@ namespace Blaster::Independent::Math
                 queuedRotation.reset();
             }
 
+#ifndef IS_SERVER
             if (isDynamic && !GetGameObject()->IsLocallyControlled())
                 return;
+#endif
 
             ApplyAngularFactor();
-#endif
         }
 
         void SetStaticTransform(const Vector<float, 3>& position, const Vector<float, 3>& rotationDegrees)
@@ -133,34 +202,48 @@ namespace Blaster::Independent::Math
             transform->SetLocalPosition(position, false);
             transform->SetLocalRotation(rotationDegrees, false);
 
+#ifndef IS_SERVER
+            ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_SetStaticTransform, OpRigidbodySetTransform{ GetGameObject()->GetAbsolutePath(), position, rotationDegrees });
+#else
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Rigidbody));
+#endif
         }
 
-        void AddForce(const Vector<float,3>& force) const
+        void AddForce(const Vector<float, 3>& force) const
         {
             if (!body || !isDynamic)
                 return;
 
             body->activate(true);
             body->applyCentralForce( { force.x(), force.y(), force.z() } );
+
+#ifndef IS_SERVER
+            ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_AddForce, OpRigidbodyOperation { GetGameObject()->GetAbsolutePath(), force });
+#endif
         }
 
-        void AddImpulse(const Vector<float,3>& impulse) const
+        void AddImpulse(const Vector<float, 3>& impulse) const
         {
             if (!body || !isDynamic)
                 return;
 
             body->activate(true);
             body->applyCentralImpulse( { impulse.x(), impulse.y(), impulse.z() } );
+
+#ifndef IS_SERVER
+            ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_AddImpulse, OpRigidbodyOperation{ GetGameObject()->GetAbsolutePath(), impulse });
+#endif
         }
 
         void LockRotation(const Axis axis)
         {
+#ifdef IS_SERVER
             lockedAxes = axis;
 
             ApplyAngularFactor();
 
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Rigidbody));
+#endif
         }
 
         [[nodiscard]]
@@ -241,7 +324,7 @@ namespace Blaster::Independent::Math
                 constexpr float rad2deg = 180.f / std::numbers::pi_v<float>;
 
                 transform->SetLocalPosition(position, false);
-                transform->SetLocalRotation( { euler[0] * rad2deg,euler[1] * rad2deg, euler[2] * rad2deg }, false );
+                transform->SetLocalRotation( { euler[0] * rad2deg,euler[1] * rad2deg, euler[2] * rad2deg }, false);
             }
 
             void getWorldTransform(btTransform& world) const override
@@ -276,10 +359,10 @@ namespace Blaster::Independent::Math
         std::unique_ptr<TransformMotionState> motionState;
         std::unique_ptr<btRigidBody> body;
 
-        DESCRIBE_AND_REGISTER(Rigidbody, (Component), (), (), (isDynamic, mass))
+        DESCRIBE_AND_REGISTER(Rigidbody, (Component), (), (), (isDynamic, mass, lockedAxes))
     };
 
-    inline Rigidbody::Axis operator|(Rigidbody::Axis a,Rigidbody::Axis b)
+    inline Rigidbody::Axis operator|(Rigidbody::Axis a, Rigidbody::Axis b)
     {
         return static_cast<Rigidbody::Axis>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
     }

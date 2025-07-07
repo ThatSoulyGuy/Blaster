@@ -14,9 +14,6 @@ namespace Blaster::Independent::Collider::Colliders
 
         void Initialize() override
         {
-            if (GetGameObject()->IsAuthoritative())
-                return;
-
             shape = std::make_unique<btCapsuleShape>(radius, height);
         }
 

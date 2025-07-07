@@ -8,8 +8,6 @@
 #include <ranges>
 #include <vector>
 #include <spanstream>
-
-#include "BulletInverseDynamics/details/MultiBodyTreeImpl.hpp"
 #include "Client/Core/Window.hpp"
 #include "Client/Core/InputManager.hpp"
 #include "Client/Network/ClientNetwork.hpp"
@@ -19,6 +17,7 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
+#include "Independent/Collider/Colliders/ColliderBox.hpp"
 #include "Independent/Collider/PhysicsWorld.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
@@ -30,7 +29,7 @@ using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
-using namespace Blaster::Independent::Collider;
+using namespace Blaster::Independent::Collider::Colliders;
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Thread;
 
@@ -55,6 +54,7 @@ namespace Blaster::Client
             ShaderManager::GetInstance().Register(Shader::Create("blaster.simple", { "Blaster", "Shader/Simple" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.wood", { "Blaster", "Texture/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.stone", { "Blaster", "Texture/Stone.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));
 
             InputManager::GetInstance().Initialize();
         }
@@ -89,16 +89,6 @@ namespace Blaster::Client
                             ReceiverSynchronization::HandleSnapshotPayload(message);
                         });
                 });
-
-            if (!GameObjectManager::GetInstance().Has("mod"))
-            {
-                const auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mod"));
-
-                gameObject->AddComponent(TextureManager::GetInstance().Get("blaster.stone").value());
-                gameObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
-
-                gameObject->GetComponent<Rigidbody>().value()->SetStaticTransform({ 0.0f, -150.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-            }
 
             std::thread([this]() mutable
             {
@@ -148,8 +138,6 @@ namespace Blaster::Client
             GameObjectManager::GetInstance().Update();
 
             TranslationBuffer::GetInstance().Update();
-
-            PhysicsWorld::GetInstance().Update();
 
             Time::GetInstance().Update();
         }

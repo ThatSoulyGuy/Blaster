@@ -22,12 +22,28 @@ namespace Blaster::Independent::Collider
         void Update() const
         {
             world->stepSimulation(Time::GetInstance().GetDeltaTime(), 10, 1.f / 120.f);
+
+            const int subSteps = world->stepSimulation(Time::GetInstance().GetDeltaTime(), 10, fixedTimestep);
+
+            stepCounter += static_cast<std::uint32_t>(subSteps);
         }
 
         [[nodiscard]]
         btDiscreteDynamicsWorld* GetWorld() const
         {
             return world.get();
+        }
+
+        [[nodiscard]]
+        std::uint32_t GetStepCounter() const noexcept
+        {
+            return stepCounter;
+        }
+
+        [[nodiscard]]
+        float GetFixedTimestep() const noexcept
+        {
+            return fixedTimestep;
         }
 
         void RegisterRigidBody(btRigidBody* rb) const
@@ -67,6 +83,9 @@ namespace Blaster::Independent::Collider
         std::unique_ptr<btCollisionDispatcher> dispatcher;
         std::unique_ptr<btSequentialImpulseConstraintSolver> solver;
         std::unique_ptr<btDiscreteDynamicsWorld> world;
+
+        mutable std::atomic_uint32_t stepCounter{ 0 };
+        const float fixedTimestep{ 1.f / 120.f };
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<PhysicsWorld> instance;

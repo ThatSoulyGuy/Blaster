@@ -1,5 +1,6 @@
 #pragma once
 
+#include <regex>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -36,6 +37,19 @@ namespace Blaster::Client::Render
         {
             if (!GetGameObject()->IsAuthoritative())
                 LoadModel();
+            else if (GetGameObject()->IsAuthoritative() && buildCollider)
+            {
+                const auto& [colliderVertices, colliderIndices] = LoadMeshBinary(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.bin");
+
+                const auto rootGameObject = GetGameObject();
+
+                rootGameObject->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
+
+                if (rootGameObject->HasComponent<Rigidbody>())
+                    rootGameObject->RemoveComponent<Rigidbody>();
+
+                rootGameObject->AddComponent(Rigidbody::Create(false));
+            }
         }
 
         void Render(const std::shared_ptr<Camera>&) override
@@ -230,6 +244,44 @@ namespace Blaster::Client::Render
             {
                 component->Generate();
             });
+        }
+
+        [[nodiscard]]
+        std::pair<std::vector<Vector<float, 3>>, std::vector<std::uint32_t>> LoadMeshBinary(const std::filesystem::path& inputPath)
+        {
+            std::ifstream stream(inputPath, std::ios::binary);
+
+            if (!stream)
+                throw std::runtime_error("LoadMeshBinary: could not open '" + inputPath.string() + '\'');
+            
+            std::uint32_t vertexCount = 0;
+            std::uint32_t indexCount = 0;
+
+            stream.read(reinterpret_cast<char*>(&vertexCount), sizeof(vertexCount));
+            stream.read(reinterpret_cast<char*>(&indexCount), sizeof(indexCount));
+
+            if (!stream)
+                throw std::runtime_error("LoadMeshBinary: header read failed or file too short");
+            
+            std::vector<Vector<float, 3>> positions(vertexCount);
+            std::vector<std::uint32_t> indices(indexCount);
+
+            stream.read(reinterpret_cast<char*>(positions.data()), static_cast<std::streamsize>(vertexCount) * sizeof(float) * 3);
+            stream.read(reinterpret_cast<char*>(indices.data()), static_cast<std::streamsize>(indexCount) * sizeof(std::uint32_t));
+
+            if (!stream)
+                throw std::runtime_error("LoadMeshBinary: payload read failed or file truncated");
+
+            for (Vector<float, 3>& p : positions)
+                p.y() = -p.y();
+
+            if (indexCount % 3 == 0)
+            {
+                for (std::size_t i = 0; i < indexCount; i += 3)
+                    std::swap(indices[i + 1], indices[i + 2]);
+            }
+            
+            return { std::move(positions), std::move(indices) }; 
         }
 
         static Vector<float, 3> ToVector(const aiVector3D& v)

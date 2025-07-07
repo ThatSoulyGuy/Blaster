@@ -12,9 +12,10 @@
 #include <numeric>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/access.hpp>
-#include "boost/core/demangle.hpp"
-#include "boost/serialization/export.hpp"
-#include "boost/describe.hpp"
+#include <boost/core/demangle.hpp>
+#include <boost/serialization/export.hpp>
+#include <boost/describe.hpp>
+#include "Independent/Network/CommonNetwork.hpp"
 
 namespace Blaster::Independent::Math
 {
@@ -500,16 +501,18 @@ namespace Blaster::Independent::Math
 
 		static Vector Normalize(const Vector& first)
 		{
-			T magnitude = Magnitude(first);
+			const T len2 = Dot(first, first);
 
-			if (magnitude == T(0))
-				return Vector{ };
+			if (len2 < T(1e-8))
+				return first;
 
-			Vector result;
+			const T invLen = T(1) / std::sqrt(len2);
 
-			std::transform(first.data.begin(), first.data.end(), result.data.begin(), [&](T value) { return value / magnitude; });
+			Vector out;
 
-			return result;
+			std::transform(first.begin(), first.end(), out.begin(), [&](T e) { return e * invLen; });
+
+			return out;
 		}
 
 		static T Dot(const Vector& first, const Vector& second)
@@ -601,6 +604,8 @@ namespace Blaster::Independent::Math
 
 		friend class boost::serialization::access;
 
+		friend class Blaster::Independent::Network::DataConversion<Blaster::Independent::Math::Vector<T, N>>;
+
 		template <class Archive>
 		void serialize(Archive& archive, const unsigned)
 		{
@@ -667,6 +672,36 @@ namespace std
 			}
 
 			out = std::format_to(out, " }}");
+
+			return out;
+		}
+	};
+}
+
+namespace Blaster::Independent::Network
+{
+	template <Blaster::Independent::Math::Arithmetic T, std::size_t N> requires (N > 1)
+	struct DataConversion<Blaster::Independent::Math::Vector<T, N>> : DataConversionBase<DataConversion<Blaster::Independent::Math::Vector<T, N>>, Blaster::Independent::Math::Vector<T, N>>
+	{
+		using Type = Blaster::Independent::Math::Vector<T, N>;
+		static constexpr std::size_t kWireSize = N * sizeof(T);
+
+		static void Encode(const Type& v, std::vector<std::uint8_t>& buf)
+		{
+			for (std::size_t i = 0; i < N; ++i)
+				CommonNetwork::WriteTrivial(buf, v[i]);
+		}
+
+		static std::any Decode(std::span<const std::uint8_t> bytes)
+		{
+			if (bytes.size() != kWireSize)
+				throw std::runtime_error("Vector decode: byte count mismatch");
+
+			Type out{};
+			std::size_t off = 0;
+
+			for (std::size_t i = 0; i < N; ++i)
+				out[i] = CommonNetwork::ReadTrivial<T>(bytes, off);
 
 			return out;
 		}

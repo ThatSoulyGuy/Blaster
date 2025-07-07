@@ -7,6 +7,7 @@
 #include "Client/Render/Vertex.hpp"
 #include "Client/Render/Shader.hpp"
 #include "Client/Render/Texture.hpp"
+#include "Client/Render/TextureFuture.hpp"
 #include "Independent/Collider/Colliders/ColliderCapsule.hpp"
 #include "Independent/Collider/Colliders/ColliderMesh.hpp"
 #include "Independent/Math/Rigidbody.hpp"

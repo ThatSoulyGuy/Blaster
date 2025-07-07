@@ -130,39 +130,34 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
-            Vector<float, 3> direction = { 0.0f, 0.0f, 0.0f };
+            Vector<float, 3> cameraForward = camera->GetGameObject()->GetTransform()->GetForward();
 
-            const Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
-            const Vector<float, 3> right = camera->GetGameObject()->GetTransform()->GetRight();
+            cameraForward.y() = 0.0f;
+
+            float cameraLength = Vector<float, 3>::Magnitude(cameraForward);
+
+            if (cameraLength < 1e-4f)
+                cameraForward = { 0.0f, 0.0f, 1.0f }, cameraLength = 1.0f;
+
+            cameraForward /= cameraLength;
+
+            Vector<float, 3> cameraRight = { -cameraForward.z(), 0.0f, cameraForward.x() };
+
+            Vector<float, 3> direction{ 0.0f, 0.0f, 0.0f };
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
-                direction += forward;
+                direction += cameraForward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD))
-                direction -= forward;
-
-            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
-                direction += right;
+                direction -= cameraForward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD))
-                direction -= right;
+                direction += cameraRight;
 
-            const auto transform = GetGameObject()->GetTransform();
+            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
+                direction -= cameraRight;
 
-            if (const float length = Vector<float, 3>::Magnitude(direction); length > 1e-4f)
-            {
-                direction /= length;
-
-                constexpr float targetSpeed = 6.0f;
-                Vector<float,3> desiredVel = direction * targetSpeed;
-
-                const auto body = GetGameObject()->GetComponent<Rigidbody>().value()->GetNativeBody();
-                const btVector3 linearVelocity = body->getLinearVelocity();
-
-                const btVector3 deltaV(desiredVel.x() - linearVelocity.x(),0.0f, desiredVel.z() - linearVelocity.z());
-
-                GetGameObject()->GetComponent<Rigidbody>().value()->AddImpulse(Vector<float, 3>{ deltaV.x(), 0, deltaV.z() } * body->getMass());
-            }
+            GetGameObject()->GetComponent<Rigidbody>().value()->AddImpulse({ direction });
         }
 
         std::shared_ptr<Camera> camera;

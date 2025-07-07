@@ -14,9 +14,6 @@ namespace Blaster::Independent::Collider::Colliders
 
         void Initialize() override
         {
-            if (GetGameObject()->IsAuthoritative())
-                return;
-
             mesh = std::make_unique<btTriangleMesh>();
 
             for (std::size_t i = 0; i < indices.size(); i += 3)

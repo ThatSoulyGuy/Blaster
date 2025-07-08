@@ -205,7 +205,7 @@ namespace Blaster::Independent::Math
 #ifndef IS_SERVER
             ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_SetStaticTransform, OpRigidbodySetTransform{ GetGameObject()->GetAbsolutePath(), position, rotationDegrees });
 #else
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Rigidbody));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Rigidbody));
 #endif
         }
 
@@ -242,7 +242,7 @@ namespace Blaster::Independent::Math
 
             ApplyAngularFactor();
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Rigidbody));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Rigidbody));
 #endif
         }
 

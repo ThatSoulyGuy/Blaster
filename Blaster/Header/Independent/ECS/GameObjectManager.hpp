@@ -40,7 +40,7 @@ namespace Blaster::Independent::ECS
                 rootGameObjectMap.insert({ gameObject->GetName(), std::move(gameObject) });
 
                 if (markDirty)
-                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(rootGameObjectMap[name]);
+                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(rootGameObjectMap[name]);
 
                 return rootGameObjectMap[name];
             }
@@ -54,7 +54,7 @@ namespace Blaster::Independent::ECS
             }
 
             if (markDirty)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(gameObject);
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
 
             return parentOptional.value()->AddChild(std::move(gameObject));
         }
@@ -94,7 +94,7 @@ namespace Blaster::Independent::ECS
 
             parentOptional.value()->RemoveChild(childName);
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(gameObject);
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
         }
 
         bool Has(const std::string& path) const override

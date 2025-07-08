@@ -31,9 +31,12 @@ namespace Blaster::Independent::ECS::Synchronization
 
     public:
 
-        SyncTracker() = delete;
+        SyncTracker(const SyncTracker&) = delete;
+        SyncTracker(SyncTracker&&) = delete;
+        SyncTracker& operator=(const SyncTracker&) = delete;
+        SyncTracker& operator=(SyncTracker&&) = delete;
 
-        static uint64_t AllocateSequence(NetworkId peer)
+        uint64_t AllocateSequence(NetworkId peer)
         {
             std::unique_lock guard(mutex);
 
@@ -45,7 +48,7 @@ namespace Blaster::Independent::ECS::Synchronization
             return next;
         }
 
-        static void MarkDelivered(NetworkId peer, uint64_t sequence)
+        void MarkDelivered(NetworkId peer, uint64_t sequence)
         {
             std::unique_lock guard(mutex);
 
@@ -53,7 +56,7 @@ namespace Blaster::Independent::ECS::Synchronization
             state.lastIncomingSequence = std::max(state.lastIncomingSequence, sequence);
         }
 
-        static void MarkAck(NetworkId peer, uint64_t ack)
+        void MarkAck(NetworkId peer, uint64_t ack)
         {
             std::unique_lock guard(mutex);
 
@@ -70,7 +73,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         [[nodiscard]]
-        static uint64_t GetLastIncoming(NetworkId peer)
+        uint64_t GetLastIncoming(NetworkId peer)
         {
             std::shared_lock guard(mutex);
 
@@ -80,7 +83,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         [[nodiscard]]
-        static uint64_t GetLastAcked(NetworkId peer)
+        uint64_t GetLastAcked(NetworkId peer)
         {
             std::shared_lock guard(mutex);
 
@@ -89,10 +92,28 @@ namespace Blaster::Independent::ECS::Synchronization
             return (it == peerStateMap.end()) ? 0 : it->second.lastAckedOutgoing;
         }
 
+        static SyncTracker& GetInstance()
+        {
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<SyncTracker>(new SyncTracker());
+            });
+
+            return *instance;
+        }
+
     private:
 
-        inline static std::unordered_map<NetworkId, PeerSyncState> peerStateMap{};
-        inline static std::shared_mutex mutex{};
+        SyncTracker() = default;
+
+        std::unordered_map<NetworkId, PeerSyncState> peerStateMap{};
+        std::shared_mutex mutex{};
+
+        static std::once_flag initializationFlag;
+        static std::unique_ptr<SyncTracker> instance;
 
     };
+
+    std::once_flag SyncTracker::initializationFlag;
+    std::unique_ptr<SyncTracker> SyncTracker::instance;
 }

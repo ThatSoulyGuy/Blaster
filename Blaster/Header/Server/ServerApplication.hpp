@@ -7,6 +7,7 @@
 #include "Client/Render/Model.hpp"
 #include "Client/Render/TextureFuture.hpp"
 #include "Independent/Collider/Colliders/ColliderBox.hpp"
+#include "Independent/Collider/Colliders/ColliderCapsule.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
@@ -60,13 +61,13 @@ namespace Blaster::Server
                     player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
                     player->GetTransform()->SetLocalPosition({ 0.0f, 20.0f, 0.0f });
 
-                    SenderSynchronization::SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+                    SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = messageIn]
                     {
-                        ReceiverSynchronization::HandleSnapshotPayload(message);
+                        ReceiverSynchronization::GetInstance().HandleSnapshotPayload(message);
                     });
                     
                     auto any = CommonNetwork::DisassembleData(messageIn);

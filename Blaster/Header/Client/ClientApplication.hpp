@@ -86,7 +86,7 @@ namespace Blaster::Client
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
                         {
-                            ReceiverSynchronization::HandleSnapshotPayload(message);
+                            ReceiverSynchronization::GetInstance().HandleSnapshotPayload(message);
                         });
                 });
 

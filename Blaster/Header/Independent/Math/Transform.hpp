@@ -252,7 +252,7 @@ namespace Blaster::Independent::Math
 
             std::cout << "Position of game object '" << std::static_pointer_cast<IGameObjectSynchronization>(GetGameObject())->GetAbsolutePath() << "' is now '" << localPosition << "'" << std::endl;
             
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(GetGameObject(), typeid(Transform));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Transform));
         }
 
         [[nodiscard]]

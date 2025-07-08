@@ -75,8 +75,12 @@ namespace Blaster::Independent::ECS::Synchronization
 
         static TranslationBuffer& GetInstance()
         {
-            static TranslationBuffer instance;
-            return instance;
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<TranslationBuffer>(new TranslationBuffer());
+            });
+
+            return *instance;
         }
 
     private:

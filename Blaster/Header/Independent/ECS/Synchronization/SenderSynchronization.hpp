@@ -62,7 +62,7 @@ namespace Blaster::Independent::ECS::Synchronization
         SenderSynchronization& operator=(const SenderSynchronization&) = delete;
         SenderSynchronization& operator=(SenderSynchronization&&) = delete;
 
-        static void MarkDirty(const std::shared_ptr<GameObject>& gameObject)
+        void MarkDirty(const std::shared_ptr<GameObject>& gameObject)
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
                 return;
@@ -85,7 +85,7 @@ namespace Blaster::Independent::ECS::Synchronization
             WakeFlusher();
         }
 
-        static void MarkDirty(const std::shared_ptr<GameObject>& gameObject, const std::type_index& component)
+        void MarkDirty(const std::shared_ptr<GameObject>& gameObject, const std::type_index& component)
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
                 return;
@@ -108,7 +108,7 @@ namespace Blaster::Independent::ECS::Synchronization
             WakeFlusher();
         }
 
-        static void FlushDirty()
+        void FlushDirty()
         {
             if (!flushRequested.exchange(false, std::memory_order_acq_rel))
                 return;
@@ -216,8 +216,8 @@ namespace Blaster::Independent::ECS::Synchronization
             for (const NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
             {
                 Snapshot snapshot = templateSnapshot;
-                snapshot.header.sequence = SyncTracker::AllocateSequence(id);
-                snapshot.header.ack = SyncTracker::GetLastIncoming(id);
+                snapshot.header.sequence = SyncTracker::GetInstance().AllocateSequence(id);
+                snapshot.header.ack = SyncTracker::GetInstance().GetLastIncoming(id);
 
                 Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
 
@@ -229,8 +229,8 @@ namespace Blaster::Independent::ECS::Synchronization
 
                 Snapshot snapshot = templateSnapshot;
 
-                snapshot.header.sequence = SyncTracker::AllocateSequence(ServerId);
-                snapshot.header.ack = SyncTracker::GetLastIncoming(ServerId);
+                snapshot.header.sequence = SyncTracker::GetInstance().AllocateSequence(ServerId);
+                snapshot.header.ack = SyncTracker::GetInstance().GetLastIncoming(ServerId);
 
                 Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
 
@@ -250,13 +250,13 @@ namespace Blaster::Independent::ECS::Synchronization
             }
         }
 
-        static void SynchronizeFullTree(const NetworkId targetClient, const std::vector<std::shared_ptr<GameObject>>& gameObjectList)
+        void SynchronizeFullTree(const NetworkId targetClient, const std::vector<std::shared_ptr<GameObject>>& gameObjectList)
         {
             Snapshot snapshot;
 
             snapshot.header.operationCount = 0;
-            snapshot.header.sequence = SyncTracker::AllocateSequence(targetClient);
-            snapshot.header.ack = SyncTracker::GetLastIncoming(targetClient);
+            snapshot.header.sequence = SyncTracker::GetInstance().AllocateSequence(targetClient);
+            snapshot.header.ack = SyncTracker::GetInstance().GetLastIncoming(targetClient);
 
 #ifdef IS_SERVER
             snapshot.header.route = Route::ServerBroadcast;
@@ -276,23 +276,33 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
-        static void RememberHash(const std::shared_ptr<Component>& comp)
+        void RememberHash(const std::shared_ptr<Component>& comp)
         {
             const uint64_t handle = ComponentStateHash(comp);
 
             lastHashMap[comp.get()] = handle;
         }
 
-        static void ForgetHash(const std::shared_ptr<Component>& comp)
+        void ForgetHash(const std::shared_ptr<Component>& comp)
         {
             lastHashMap.erase(comp.get());
+        }
+
+        static SenderSynchronization& GetInstance()
+        {
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<SenderSynchronization>(new SenderSynchronization());
+            });
+
+            return *instance;
         }
 
     private:
 
         SenderSynchronization() = default;
 
-        static void WakeFlusher()
+        void WakeFlusher()
         {
             bool expected = false;
 
@@ -301,17 +311,17 @@ namespace Blaster::Independent::ECS::Synchronization
             if (firstWriter)
             {
 #ifdef IS_SERVER
-                boost::asio::post(Blaster::Server::Network::ServerNetwork::GetInstance().GetIoContext(), []
+                boost::asio::post(Blaster::Server::Network::ServerNetwork::GetInstance().GetIoContext(), [this]
                     {
-                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this]()
                             {
                                 FlushDirty();
                             });
                     });
 #else
-                boost::asio::post(Blaster::Client::Network::ClientNetwork::GetInstance().GetIoContext(), []
+                boost::asio::post(Blaster::Client::Network::ClientNetwork::GetInstance().GetIoContext(), [this]
                     {
-                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []()
+                        MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this]()
                             {
                                 FlushDirty();
                             });
@@ -320,7 +330,7 @@ namespace Blaster::Independent::ECS::Synchronization
             }
         }
 
-        static void SerializeSubTree(const std::shared_ptr<IGameObjectSynchronization>& node, Snapshot& snap)
+        void SerializeSubTree(const std::shared_ptr<IGameObjectSynchronization>& node, Snapshot& snap)
         {
             PushOp(snap.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName(), node->GetOwningClient() });
             ++snap.header.operationCount;
@@ -339,7 +349,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         template <typename Op>
-        static void PushOp(std::vector<std::uint8_t>& destination, const Op& operation)
+        void PushOp(std::vector<std::uint8_t>& destination, const Op& operation)
         {
             std::vector<std::uint8_t> temporary;
             DataConversion<Op>::Encode(operation, temporary);
@@ -353,7 +363,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         template <typename Value>
-        static std::vector<std::uint8_t> SerializeToBlob(const Value& value)
+        std::vector<std::uint8_t> SerializeToBlob(const Value& value)
         {
             std::ostringstream stream;
             boost::archive::text_oarchive archive(stream);
@@ -366,7 +376,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         template <typename T>
-        static std::string ToArchiveString(const T& value)
+        std::string ToArchiveString(const T& value)
         {
             std::ostringstream stream;
             boost::archive::text_oarchive archive(stream);
@@ -376,7 +386,7 @@ namespace Blaster::Independent::ECS::Synchronization
             return stream.str();
         }
 
-        static std::uint64_t HashString(const std::string& s)
+        std::uint64_t HashString(const std::string& s)
         {
             std::uint64_t hash = 14695981039346656037ull;
 
@@ -387,32 +397,39 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         template <typename C>
-        static std::uint64_t ComponentStateHash(const C& comp)
+        std::uint64_t ComponentStateHash(const C& comp)
         {
             return HashString(ToArchiveString(comp));
         }
 
-        static bool HasStateChanged(const std::shared_ptr<Component>& comp)
+        bool HasStateChanged(const std::shared_ptr<Component>& comp)
         {
-            const uint64_t h = ComponentStateHash(comp);
+            const uint64_t hash = ComponentStateHash(comp);
 
-            auto it = lastHashMap.find(comp.get());
-            const bool dirty = (it == lastHashMap.end()) || (it->second != h);
+            auto iterator = lastHashMap.find(comp.get());
+            const bool dirty = (iterator == lastHashMap.end()) || (iterator->second != hash);
 
             if (dirty)
-                lastHashMap[comp.get()] = h;
+                lastHashMap[comp.get()] = hash;
 
             return dirty;
         }
 
-        inline static std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirtyGameObjectSet;
-        inline static std::unordered_set<DirtyCompKey, DirtyCompHash, DirtyCompEqual> dirtyComponentSet;
+        std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirtyGameObjectSet;
+        std::unordered_set<DirtyCompKey, DirtyCompHash, DirtyCompEqual> dirtyComponentSet;
 
-        inline static std::atomic<bool> flushRequested = false;
-        inline static std::atomic<std::uint64_t> nextSeq = 1;
+        std::atomic<bool> flushRequested = false;
+        std::atomic<std::uint64_t> nextSeq = 1;
 
-        inline static std::unordered_map<const Component*, std::uint64_t> lastHashMap;
+        std::unordered_map<const Component*, std::uint64_t> lastHashMap;
 
-        inline static std::shared_mutex dirtyMutex;
+        std::shared_mutex dirtyMutex;
+
+        static std::once_flag initializationFlag;
+        static std::unique_ptr<SenderSynchronization> instance;
+
     };
+
+    std::once_flag SenderSynchronization::initializationFlag;
+    std::unique_ptr<SenderSynchronization> SenderSynchronization::instance;
 }

@@ -49,7 +49,7 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasAdded = true;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), typeid(T));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
 
             return std::static_pointer_cast<T>(componentMap[typeid(T)]);
         }
@@ -74,7 +74,7 @@ namespace Blaster::Independent::ECS
             componentMap[type]->wasAdded = markDirty;
 
             if (markDirty)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), type);
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), type);
 
             return componentMap[type];
         }
@@ -157,7 +157,7 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasRemoved = true;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), typeid(T));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
 
             componentMap.erase(typeid(T));
         }
@@ -171,7 +171,7 @@ namespace Blaster::Independent::ECS
                 if (iterator->second->GetTypeName() == typeName)
                 {
                     if (markDirty)
-                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this(), iterator->first);
+                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), iterator->first);
 
                     iterator->second->wasRemoved = true;
 
@@ -378,7 +378,7 @@ namespace Blaster::Independent::ECS
 
             childMap.insert({ childName, std::move(child) });
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(childMap[childName]);
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(childMap[childName]);
 
             return childMap[childName];
         }
@@ -407,7 +407,7 @@ namespace Blaster::Independent::ECS
                 return;
             }
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::MarkDirty(shared_from_this());
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this());
 
             childMap.erase(childName);
         }

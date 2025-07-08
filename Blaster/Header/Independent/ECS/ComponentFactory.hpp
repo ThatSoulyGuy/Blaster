@@ -7,22 +7,7 @@
 #include <mutex>
 #include <boost/serialization/shared_ptr.hpp>
 #include "Independent/ECS/Component.hpp"
-
-#if defined(__GNUG__)
-#include <cxxabi.h>
-#elif defined(_MSC_VER)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <winsock2.h>
-#include <windows.h>
-#include <DbgHelp.h>
-#pragma comment(lib, "DbgHelp.lib")
-
-#undef min
-#undef max
-#undef ERROR
-#endif
+#include "Independent/Utility/Demangler.hpp"
 
 namespace Blaster::Independent::ECS
 {
@@ -36,7 +21,7 @@ namespace Blaster::Independent::ECS
         template<typename T>
         static void Register()
         {
-            const std::string key = Demangle(typeid(T).name());
+            const std::string key = Blaster::Independent::Utility::Demangler::Demangle(typeid(T).name());
 
             std::lock_guard guard(GetMutex());
 
@@ -73,26 +58,6 @@ namespace Blaster::Independent::ECS
             static std::mutex mutex;
 
             return mutex;
-        }
-
-        static std::string Demangle(const char* raw)
-        {
-#if defined(__GNUG__)
-            int status = 0;
-
-            std::unique_ptr<char, void(*)(void*)> p { abi::__cxa_demangle(raw, nullptr, nullptr, &status), std::free };
-
-            return status == 0 ? std::string{ p.get() } : raw;
-#elif defined(_MSC_VER)
-            char buf[1024];
-
-            if (UnDecorateSymbolName(raw, buf, sizeof(buf), UNDNAME_NAME_ONLY))
-                return buf;
-
-            return raw;
-#else
-            return raw;
-#endif
         }
     };
 }

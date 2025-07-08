@@ -106,7 +106,7 @@ namespace Blaster::Server::Entity::Entities
             archive & boost::serialization::make_nvp("canJump", CanJump);
         }
 
-        void UpdateMouselook()
+        void UpdateMouselook() const
         {
             if (!GetGameObject()->IsLocallyControlled())
                 return;
@@ -125,7 +125,7 @@ namespace Blaster::Server::Entity::Entities
             transform->SetLocalRotation(rotation);
         }
 
-        void UpdateMovement()
+        void UpdateMovement() const
         {
             if (!GetGameObject()->IsLocallyControlled())
                 return;

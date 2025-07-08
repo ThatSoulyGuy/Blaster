@@ -26,7 +26,7 @@ namespace Blaster::Independent::ECS::Synchronization
         ReceiverSynchronization& operator=(const ReceiverSynchronization&) = delete;
         ReceiverSynchronization& operator=(ReceiverSynchronization&&) = delete;
 
-        static void HandleSnapshotPayload(std::vector<std::uint8_t> payload)
+        void HandleSnapshotPayload(std::vector<std::uint8_t> payload)
         {
             std::span<std::uint8_t> packet(payload.data(), payload.size());
             std::vector<std::any> anyList = CommonNetwork::DisassembleData(packet);
@@ -36,7 +36,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
             Snapshot snapshot = std::any_cast<Snapshot>(anyList.front());
              
-            if (snapshot.header.sequence <= SyncTracker::GetLastIncoming(snapshot.header.origin))
+            if (snapshot.header.sequence <= SyncTracker::GetInstance().GetLastIncoming(snapshot.header.origin))
                 return;
 
 #ifndef IS_SERVER
@@ -48,8 +48,8 @@ namespace Blaster::Independent::ECS::Synchronization
 
             ApplySnapshot(snapshot);
 
-            SyncTracker::MarkDelivered(snapshot.header.origin, snapshot.header.sequence);
-            SyncTracker::MarkAck(snapshot.header.origin, snapshot.header.ack);
+            SyncTracker::GetInstance().MarkDelivered(snapshot.header.origin, snapshot.header.sequence);
+            SyncTracker::GetInstance().MarkAck(snapshot.header.origin, snapshot.header.ack);
 
 #ifdef IS_SERVER
             if (snapshot.header.route == Route::RelayOnce)
@@ -67,11 +67,21 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
+        static ReceiverSynchronization& GetInstance()
+        {
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<ReceiverSynchronization>(new ReceiverSynchronization());
+            });
+
+            return *instance;
+        }
+
     private:
 
         ReceiverSynchronization() = default;
 
-        static void ApplySnapshot(const Snapshot& snapshot)
+        void ApplySnapshot(const Snapshot& snapshot)
         {
             struct Guard
             {
@@ -105,7 +115,7 @@ namespace Blaster::Independent::ECS::Synchronization
             }
         }
 
-        static void ApplyOperation(OpCode code, std::span<const std::uint8_t> slice, bool fromClient)
+        void ApplyOperation(OpCode code, std::span<const std::uint8_t> slice, bool fromClient)
         {
             switch (code)
             {
@@ -138,7 +148,7 @@ namespace Blaster::Independent::ECS::Synchronization
             std::cout << "Applied opCode '" << (int)code << "', fromClient was '" << fromClient << "'!" << std::endl;
         }
 
-        static void HandleCreate(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleCreate(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpCreate operation = std::any_cast<OpCreate>(DataConversion<OpCreate>::Decode(slice));
 
@@ -174,14 +184,14 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
-        static void HandleDestroy(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleDestroy(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpDestroy operation = std::any_cast<OpDestroy>(DataConversion<OpDestroy>::Decode(slice));
 
             GameObjectManager::GetInstance().Unregister(operation.path);
         }
 
-        static void HandleAddComponent(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleAddComponent(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpAddComponent operation = std::any_cast<OpAddComponent>(DataConversion<OpAddComponent>::Decode(slice));
 
@@ -207,7 +217,7 @@ namespace Blaster::Independent::ECS::Synchronization
                     std::static_pointer_cast<Transform>(existing)->SetLocalScale(incoming->GetLocalScale(), false);
                     
                     existing->ClearWasAdded();
-                    SenderSynchronization::RememberHash(existing);
+                    SenderSynchronization::GetInstance().RememberHash(existing);
                 }
 
                 return;
@@ -222,7 +232,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
             fresh->ClearWasAdded();
 
-            SenderSynchronization::RememberHash(fresh);
+            SenderSynchronization::GetInstance().RememberHash(fresh);
 
 #ifndef IS_SERVER
             gameObjectOptional.value()->AddComponentDynamic(std::move(fresh), fromClient);
@@ -231,7 +241,7 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
-        static void HandleRemoveComponent(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleRemoveComponent(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpRemoveComponent operation = std::any_cast<OpRemoveComponent>(DataConversion<OpRemoveComponent>::Decode(slice));
 
@@ -241,7 +251,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
 
             if (gameObjectOptional.value()->HasComponentDynamic(operation.componentType))
-                SenderSynchronization::ForgetHash(*gameObjectOptional.value()->GetComponentDynamic(operation.componentType));
+                SenderSynchronization::GetInstance().ForgetHash(*gameObjectOptional.value()->GetComponentDynamic(operation.componentType));
 
 #ifndef IS_SERVER
             gameObjectOptional.value()->RemoveComponentDynamic(operation.componentType, fromClient);
@@ -250,7 +260,7 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
         }
 
-        static void HandleSetField(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleSetField(std::span<const std::uint8_t> slice, bool fromClient)
         {
             OpSetField operation = std::any_cast<OpSetField>(DataConversion<OpSetField>::Decode(slice));
             
@@ -284,11 +294,11 @@ namespace Blaster::Independent::ECS::Synchronization
 
             DeserializeIntoMerge(*componentOptional, operation.blob);
 
-            SenderSynchronization::RememberHash(*componentOptional);
+            SenderSynchronization::GetInstance().RememberHash(*componentOptional);
         }
 
         template <typename T>
-        static void DeserializeInto(std::shared_ptr<T>& destination, const std::vector<std::uint8_t>& blob)
+        void DeserializeInto(std::shared_ptr<T>& destination, const std::vector<std::uint8_t>& blob)
         {
             std::string text(blob.begin(), blob.end());
             std::istringstream stream(text);
@@ -311,7 +321,7 @@ namespace Blaster::Independent::ECS::Synchronization
         }
 
         template <typename T>
-        static void DeserializeIntoMerge(std::shared_ptr<T>& destination, std::span<const std::uint8_t> blob)
+        void DeserializeIntoMerge(std::shared_ptr<T>& destination, std::span<const std::uint8_t> blob)
         {
             std::string_view view{ reinterpret_cast<const char*>(blob.data()), blob.size() };
 
@@ -328,5 +338,12 @@ namespace Blaster::Independent::ECS::Synchronization
 
             MergeSupport::MergeComponents(destination, incoming);
         }
+
+        static std::once_flag initializationFlag;
+        static std::unique_ptr<ReceiverSynchronization> instance;
+
     };
+
+    std::once_flag ReceiverSynchronization::initializationFlag;
+    std::unique_ptr<ReceiverSynchronization> ReceiverSynchronization::instance;
 }

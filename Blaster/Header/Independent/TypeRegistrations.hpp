@@ -1,0 +1,8 @@
+//
+// Created by bkmcm on 7/11/2025.
+//
+
+#ifndef TYPEREGISTRATIONS_HPP
+#define TYPEREGISTRATIONS_HPP
+
+#endif //TYPEREGISTRATIONS_HPP

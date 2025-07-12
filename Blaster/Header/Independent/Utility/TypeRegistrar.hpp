@@ -5,9 +5,20 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <memory>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
 #include <boost/preprocessor/cat.hpp>
+
+#if defined(_MSC_VER)
+    #include <windows.h>
+    #include <dbghelp.h>
+    #pragma comment(lib, "DbgHelp.lib")
+#else
+    #include <cxxabi.h>
+    #include <cstdlib>
+#endif
 
 #if defined(__clang__) || defined(__GNUC__)
 #  define BLASTER_USED [[gnu::used]]
@@ -65,14 +76,20 @@ namespace Blaster::Independent::Utility
         return m;
     }
 
-    inline void Add(std::size_t id, std::string name)
+    inline void Add(std::size_t id, const std::string& name)
     {
         auto& [idToName, nameToId, guard] = GetMaps();
 
         std::lock_guard lk(guard);
 
-        idToName.try_emplace(id, "class " + name);
-        nameToId.try_emplace("class " + name, id);
+#ifdef _MSC_VER
+        std::string keyword = "class ";
+#else
+        std::string keyword;
+#endif
+
+        idToName.try_emplace(id, keyword + name);
+        nameToId.try_emplace(keyword + name, id);
     }
 
     template <typename T>
@@ -88,10 +105,29 @@ namespace Blaster::Independent::Utility
     template <class T>
     struct TypeIdFromType : std::integral_constant<std::size_t, CalcTypeId<T>()>
     {
+        [[nodiscard]]
+            static std::string DemangleName(const char* encodedName) noexcept
+        {
+#if defined(_MSC_VER)
+            char buffer[1024] = {};
+
+            if(UnDecorateSymbolName(encodedName, buffer, static_cast<DWORD>(std::size(buffer)), UNDNAME_COMPLETE | UNDNAME_NO_MS_KEYWORDS | UNDNAME_NO_MEMBER_TYPE | UNDNAME_NO_THISTYPE))
+                return buffer;
+
+            throw std::runtime_error("Failed to demangle name");
+#else
+            int status = 0;
+
+            const std::unique_ptr<char, void(*)(void*)> result{ abi::__cxa_demangle(encodedName, nullptr, nullptr, &status), std::free };
+
+            return status == 0 ? result.get() : throw std::runtime_error("Failed to demangle name");;
+#endif
+        }
+
         BLASTER_USED
         inline static const bool registered = []() noexcept
             {
-                Add(TypeIdFromType<T>::value, typeid(T).name());
+                Add(TypeIdFromType<T>::value, DemangleName(typeid(T).name()));
                 return true;
             }();
     };

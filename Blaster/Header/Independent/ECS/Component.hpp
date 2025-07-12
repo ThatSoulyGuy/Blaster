@@ -8,6 +8,15 @@
 #include <boost/preprocessor.hpp>
 #include "Independent/ECS/MergeSupport.hpp"
 
+#if defined(_MSC_VER)
+    #include <windows.h>
+    #include <dbghelp.h>
+    #pragma comment(lib, "DbgHelp.lib")
+#else
+    #include <cxxabi.h>
+    #include <cstdlib>
+#endif
+
 #define OPERATOR_CHECK_DETAIL(r, data, i, elem) \
     BOOST_PP_IF(i, && ,) elem == data.elem
 
@@ -24,6 +33,25 @@ namespace Blaster::Independent::ECS
     namespace Synchronization
     {
         class ReceiverSynchronization;
+    }
+
+    [[nodiscard]]
+    static std::string DemangleName(const char* encodedName) noexcept
+    {
+#if defined(_MSC_VER)
+        char buffer[1024] = {};
+
+        if(UnDecorateSymbolName(encodedName, buffer, static_cast<DWORD>(std::size(buffer)), UNDNAME_COMPLETE | UNDNAME_NO_MS_KEYWORDS | UNDNAME_NO_MEMBER_TYPE | UNDNAME_NO_THISTYPE))
+            return buffer;
+
+        throw std::runtime_error("Failed to demangle name");
+#else
+        int status = 0;
+
+        const std::unique_ptr<char, void(*)(void*)> result{ abi::__cxa_demangle(encodedName, nullptr, nullptr, &status), std::free };
+
+        return status == 0 ? result.get() : throw std::runtime_error("Failed to demangle name");;
+#endif
     }
 
     class GameObject;
@@ -70,7 +98,7 @@ namespace Blaster::Independent::ECS
         [[nodiscard]]
         std::string GetTypeName() const
         {
-            return typeid(*this).name();
+            return CachedName(typeid(*this));
         }
 
         [[nodiscard]]
@@ -92,7 +120,7 @@ namespace Blaster::Independent::ECS
             auto iterator = cache.find(key);
 
             if (iterator == cache.end())
-                iterator = cache.emplace(key, typeInformation.name()).first;
+                iterator = cache.emplace(key, DemangleName(typeInformation.name())).first;
 
             return iterator->second;
         }

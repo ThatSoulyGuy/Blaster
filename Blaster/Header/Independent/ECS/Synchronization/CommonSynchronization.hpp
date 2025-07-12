@@ -46,7 +46,7 @@ namespace Blaster::Independent::ECS::Synchronization
         static constexpr OpCode Code = OpCode::AddComponent;
 
         std::string path;
-        std::string componentType;
+        int componentType;
         std::vector<std::uint8_t> blob;
     };
 
@@ -55,7 +55,7 @@ namespace Blaster::Independent::ECS::Synchronization
         static constexpr OpCode Code = OpCode::RemoveComponent;
 
         std::string path;
-        std::string componentType;
+        int componentType;
     };
 
     struct OpSetField
@@ -63,7 +63,7 @@ namespace Blaster::Independent::ECS::Synchronization
         static constexpr OpCode Code = OpCode::SetField;
 
         std::string path;
-        std::string componentType;
+        int componentType;
         std::string field;
         std::vector<std::uint8_t> blob;
     };
@@ -85,7 +85,7 @@ namespace Blaster::Independent::ECS::Synchronization
 #elif defined(__clang__) || defined(__GNUC__)
     __attribute__((packed));
 #else
-#error "Unknown compiler – please add packing directives"
+#error "Unknown compiler - please add packing directives"
 #endif
 
     struct Snapshot
@@ -215,7 +215,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
         CommonNetwork::EncodeString(buffer, operation.path);
-        CommonNetwork::EncodeString(buffer, operation.componentType);
+        CommonNetwork::WriteTrivial(buffer, operation.componentType);
 
         const std::uint32_t length = static_cast<std::uint32_t>(operation.blob.size());
 
@@ -230,7 +230,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
         Type result;
 
         result.path = CommonNetwork::DecodeString(bytes, offset);
-        result.componentType = CommonNetwork::DecodeString(bytes, offset);
+        result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
 
         const std::uint32_t length = CommonNetwork::ReadTrivial<std::uint32_t>(bytes, offset);
 
@@ -249,7 +249,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
         CommonNetwork::EncodeString(buffer, operation.path);
-        CommonNetwork::EncodeString(buffer, operation.componentType);
+        CommonNetwork::WriteTrivial(buffer, operation.componentType);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -259,7 +259,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
         Type result;
 
         result.path = CommonNetwork::DecodeString(bytes, offset);
-        result.componentType = CommonNetwork::DecodeString(bytes, offset);
+        result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
 
         return result;
     }
@@ -273,7 +273,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
         CommonNetwork::EncodeString(buffer, operation.path);
-        CommonNetwork::EncodeString(buffer, operation.componentType);
+        CommonNetwork::WriteTrivial(buffer, operation.componentType);
         CommonNetwork::EncodeString(buffer, operation.field);
         CommonNetwork::EncodeBlob(buffer, operation.blob);
     }
@@ -285,7 +285,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
         Type result;
 
         result.path = CommonNetwork::DecodeString(bytes, offset);
-        result.componentType = CommonNetwork::DecodeString(bytes, offset);
+        result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
         result.field = CommonNetwork::DecodeString(bytes, offset);
         result.blob = CommonNetwork::DecodeBlob(bytes, offset);
 

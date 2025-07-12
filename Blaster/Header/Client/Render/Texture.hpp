@@ -160,4 +160,4 @@ namespace Blaster::Client::Render
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::Texture)
+REGISTER_COMPONENT(Blaster::Client::Render::Texture, 39842)

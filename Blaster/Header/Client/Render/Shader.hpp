@@ -225,4 +225,4 @@ namespace Blaster::Client::Render
 	};
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::Shader)
+REGISTER_COMPONENT(Blaster::Client::Render::Shader, 39247)

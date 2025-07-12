@@ -1,8 +1,15 @@
-//
-// Created by bkmcm on 7/11/2025.
-//
+#pragma once
 
-#ifndef ARITHMETIC_HPP
-#define ARITHMETIC_HPP
+#include <concepts>
 
-#endif //ARITHMETIC_HPP
+namespace Blaster::Independent::Math
+{
+    template <typename T>
+    concept Arithmetic = requires(T x, T y)
+    {
+        { x + y } -> std::convertible_to<T>;
+        { x - y } -> std::convertible_to<T>;
+        { x * y } -> std::convertible_to<T>;
+        { x / y } -> std::convertible_to<T>;
+    };
+}

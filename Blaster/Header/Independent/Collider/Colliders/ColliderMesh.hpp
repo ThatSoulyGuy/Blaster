@@ -67,4 +67,4 @@ namespace Blaster::Independent::Collider::Colliders
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderMesh)
+REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderMesh, 98397)

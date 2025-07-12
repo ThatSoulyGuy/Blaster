@@ -52,4 +52,4 @@ namespace Blaster::Client::Render
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::TextureFuture)
+REGISTER_COMPONENT(Blaster::Client::Render::TextureFuture, 29874)

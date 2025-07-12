@@ -22,8 +22,8 @@ namespace Blaster::Independent::Math
     struct OpRigidbodySetTransform
     {
         std::string path;
-        Vector<float, 3> position;
-        Vector<float, 3> rotation;
+        Vector<float, 3> position{};
+        Vector<float, 3> rotation{};
     };
 }
 
@@ -368,4 +368,4 @@ namespace Blaster::Independent::Math
     }
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Math::Rigidbody)
+REGISTER_COMPONENT(Blaster::Independent::Math::Rigidbody, 89287)

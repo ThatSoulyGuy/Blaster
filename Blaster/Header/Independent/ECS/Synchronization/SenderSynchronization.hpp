@@ -149,7 +149,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
                         for (auto& component : node->GetComponentMap() | std::views::values)
                         {
-                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ node->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), CommonNetwork::SerializePointerToBlob(component) });
 
                             ++templateSnapshot.header.operationCount;
 
@@ -173,7 +173,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
                     if (componentIterator == gameObjectPointer->GetComponentMap().end())
                     {
-                        PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), componentType.name() });
+                        PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(componentType.name()).value()) });
 
                         ++templateSnapshot.header.operationCount;
 
@@ -186,7 +186,7 @@ namespace Blaster::Independent::ECS::Synchronization
                     {
                         if (HasStateChanged(component))
                         {
-                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ gameObjectPointer->GetAbsolutePath(), component->GetTypeName(), CommonNetwork::SerializePointerToBlob(component) });
+                            PushOp(templateSnapshot.operationBlob, OpAddComponent{ gameObjectPointer->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), CommonNetwork::SerializePointerToBlob(component) });
                             component->ClearWasAdded();
 
                             ++templateSnapshot.header.operationCount;
@@ -196,9 +196,9 @@ namespace Blaster::Independent::ECS::Synchronization
                     {
                         if (HasStateChanged(component))
                         {
-                            std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
+                            const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                            PushOp(templateSnapshot.operationBlob, OpSetField{ gameObjectPointer->GetAbsolutePath(),  component->GetTypeName(), "ALL", blob });
+                            PushOp(templateSnapshot.operationBlob, OpSetField{ gameObjectPointer->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), "ALL", blob });
                             
                             ++templateSnapshot.header.operationCount;
                         }
@@ -339,7 +339,7 @@ namespace Blaster::Independent::ECS::Synchronization
             {
                 const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
-                PushOp(snap.operationBlob, OpAddComponent{ node->GetAbsolutePath(), component->GetTypeName(), blob });
+                PushOp(snap.operationBlob, OpAddComponent{ node->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), blob });
 
                 ++snap.header.operationCount;
             }

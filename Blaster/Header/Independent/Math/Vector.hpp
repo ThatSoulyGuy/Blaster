@@ -15,19 +15,11 @@
 #include <boost/core/demangle.hpp>
 #include <boost/serialization/export.hpp>
 #include <boost/describe.hpp>
+#include "Independent/Math/Arithmetic.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 
 namespace Blaster::Independent::Math
 {
-	template <typename T>
-	concept Arithmetic = requires(T x, T y)
-	{
-		{ x + y } -> std::convertible_to<T>;
-		{ x - y } -> std::convertible_to<T>;
-		{ x * y } -> std::convertible_to<T>;
-		{ x / y } -> std::convertible_to<T>;
-	};
-
 	template <typename Container>
 	concept ArrayType = requires(Container a)
 	{
@@ -692,7 +684,7 @@ namespace Blaster::Independent::Network
 				CommonNetwork::WriteTrivial(buf, v[i]);
 		}
 
-		static std::any Decode(std::span<const std::uint8_t> bytes)
+		static std::any Decode(const std::span<const std::uint8_t> bytes)
 		{
 			if (bytes.size() != kWireSize)
 				throw std::runtime_error("Vector decode: byte count mismatch");

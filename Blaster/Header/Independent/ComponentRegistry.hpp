@@ -1,6 +1,8 @@
 #pragma once
-#include <boost/preprocessor/cat.hpp>
+
 #include "Independent/ECS/ComponentFactory.hpp"
+#include "Independent/Utility/TypeRegistrar.hpp"
+#include <boost/preprocessor/cat.hpp>
 
 template<class T>
 struct _AutoComponentRegister
@@ -15,10 +17,11 @@ struct _AutoComponentRegister
 #define AUTO_REG_NAME BOOST_PP_CAT(_autoReg_, __COUNTER__)
 
 #if defined(__COUNTER__)
-#   define REGISTER_COMPONENT(TYPE)                                            \
+#   define REGISTER_COMPONENT(TYPE, ID)                                            \
 static inline const bool AUTO_REG_NAME =                      \
 _AutoComponentRegister < TYPE >::value; \
-BOOST_CLASS_EXPORT(TYPE)
+BOOST_CLASS_EXPORT(TYPE)  \
+REGISTER_TYPE(TYPE, ID)
 #else
 #   define REGISTER_COMPONENT(TYPE)                                            \
 namespace { static const bool _autoReg_ =                              \

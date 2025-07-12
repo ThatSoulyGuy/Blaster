@@ -338,4 +338,4 @@ namespace Blaster::Independent::Math
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Math::Transform);
+REGISTER_COMPONENT(Blaster::Independent::Math::Transform, 24674);

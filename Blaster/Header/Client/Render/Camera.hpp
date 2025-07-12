@@ -66,4 +66,4 @@ namespace Blaster::Client::Render
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::Camera)
+REGISTER_COMPONENT(Blaster::Client::Render::Camera, 29484)

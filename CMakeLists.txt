@@ -2,6 +2,31 @@ cmake_minimum_required(VERSION 2.4...4.0)
 
 project(Blaster LANGUAGES CXX)
 
+option(BLASTER_SMALL_DEBUGINFO
+        "Use split‑DWARF or minimal debug info to avoid 10‑MB COFF string‑table limit"
+        ON)
+
+if (BLASTER_SMALL_DEBUGINFO AND MINGW)
+    include(CheckCXXCompilerFlag)
+
+    check_cxx_compiler_flag("-gsplit-dwarf" HAS_SPLIT_DWARF)
+    if (HAS_SPLIT_DWARF)
+        message(STATUS "Enabling split‑DWARF (-gsplit-dwarf) for Debug config")
+        add_compile_options($<$<CONFIG:Debug>:-gsplit-dwarf>)
+    else()
+        check_cxx_compiler_flag("-gline-tables-only" HAS_GLINE_TABLES)
+        if (HAS_GLINE_TABLES)
+            message(STATUS "Using -gline-tables-only for Debug config")
+            add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
+        else()
+            message(STATUS "Using -g1 for Debug config")
+            add_compile_options($<$<CONFIG:Debug>:-g1>)
+        endif()
+    endif()
+endif()
+
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-dwarf2-cfi-asm")
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

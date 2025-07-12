@@ -7,7 +7,7 @@
 #include <mutex>
 #include <boost/serialization/shared_ptr.hpp>
 #include "Independent/ECS/Component.hpp"
-#include "Independent/Utility/Demangler.hpp"
+#include "Independent/Utility/TypeRegistrar.hpp"
 
 namespace Blaster::Independent::ECS
 {
@@ -18,10 +18,10 @@ namespace Blaster::Independent::ECS
 
         using Creator = std::function<std::shared_ptr<Component>()>;
 
-        template<typename T>
+        template <typename T>
         static void Register()
         {
-            const std::string key = Blaster::Independent::Utility::Demangler::Demangle(typeid(T).name());
+            const std::uint64_t key = Blaster::Independent::Utility::TypeRegistrar::GetTypeId<T>();
 
             std::lock_guard guard(GetMutex());
 
@@ -31,12 +31,12 @@ namespace Blaster::Independent::ECS
             };
         }
 
-        static std::shared_ptr<Component> Instantiate(const std::string& typeName)
+        static std::shared_ptr<Component> Instantiate(const std::uint64_t& id)
         {
             std::lock_guard guard(GetMutex());
 
             auto& registry = GetRegistry();
-            const auto iterator = registry.find(typeName);
+            const auto iterator = registry.find(id);
 
             if (iterator == registry.end())
                 return nullptr;
@@ -46,9 +46,9 @@ namespace Blaster::Independent::ECS
 
     private:
 
-        static std::unordered_map<std::string, Creator>& GetRegistry()
+        static std::unordered_map<std::uint64_t, Creator>& GetRegistry()
         {
-            static std::unordered_map<std::string, Creator> registry;
+            static std::unordered_map<std::uint64_t, Creator> registry;
 
             return registry;
         }

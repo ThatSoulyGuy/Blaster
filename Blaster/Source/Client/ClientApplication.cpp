@@ -1,3 +1,4 @@
+#include "Independent/TypeRegistrations.hpp"
 #include "Client/ClientApplication.hpp"
 #include "Independent/ComponentInclusions.hpp"
 

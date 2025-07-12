@@ -42,4 +42,4 @@ namespace Blaster::Client::Render
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::Animator)
+REGISTER_COMPONENT(Blaster::Client::Render::Animator, 32949)

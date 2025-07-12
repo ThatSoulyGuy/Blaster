@@ -4,6 +4,7 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <span>
 #include <vector>
+#include "Independent/Utility/TypeRegistrar.hpp"
 
 namespace Blaster::Independent::Network
 {
@@ -63,70 +64,10 @@ namespace Blaster::Independent::Network
         }
     };
 
-    constexpr std::uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037ull;
-    constexpr std::uint64_t FNV_PRIME_64 = 1099511628211ull;
-
-    constexpr std::uint64_t HashString(std::string_view text) noexcept
-    {
-        std::uint64_t hashValue = FNV_OFFSET_BASIS_64;
-
-        for (char chr : text)
-        {
-            hashValue ^= static_cast<std::uint64_t>(static_cast<unsigned char>(chr));
-            hashValue *= FNV_PRIME_64;
-        }
-        return hashValue;
-    }
-
-    template<typename T>
-    consteval std::string_view GetTypeName() noexcept
-    {
-#if defined(__clang__)
-        constexpr std::string_view fn = __PRETTY_FUNCTION__;
-        constexpr std::string_view prefix = "[T = ";
-        constexpr std::string_view suffix = "]";
-#elif defined(__GNUC__)
-        constexpr std::string_view fn = __PRETTY_FUNCTION__;
-        constexpr std::string_view prefix = "[with T = ";
-        constexpr std::string_view suffix = "]";
-#elif defined(_MSC_VER)
-        constexpr std::string_view fn = __FUNCSIG__;
-        constexpr std::string_view prefix = "GetTypeName<";
-        constexpr std::string_view suffix = ">(void)";
-#else
-#error Unsupported compiler – add the correct prefix/suffix here.
-#endif
-        constexpr std::size_t start = fn.find(prefix) + prefix.size();
-        constexpr std::size_t end = fn.rfind(suffix);
-
-        return fn.substr(start, end - start);
-    }
-
-    template<std::uint64_t HashValue, typename = void>
-    struct HashGuard
-    {
-        using Alias = void;
-    };
-
-    template <typename T>
-    consteval std::uint64_t HashConstexpr() noexcept
-    {
-        using Decayed = std::remove_cvref_t<T>;
-        constexpr std::string_view name = GetTypeName<Decayed>();
-        constexpr std::uint64_t hash = HashString(name);
-
-#ifndef _MSC_VER
-        [[maybe_unused]]
-#endif
-        using Guard = typename HashGuard<hash>::Alias;
-
-        return hash;
-    }
-
     template <typename Derived, typename Type>
     struct DataConversionBase
     {
-        inline static constexpr std::uint64_t TypeHash = HashConstexpr<Type>();
+        inline static constexpr std::uint64_t TypeHash = Blaster::Independent::Utility::TypeRegistrar::GetTypeId<Type>();
 
     private:
 
@@ -187,8 +128,8 @@ namespace Blaster::Independent::Network
 
             while (offset + sizeof(std::uint64_t) * 2 <= data.size())
             {
-                const std::uint64_t typeHash = ReadTrivial<std::uint64_t>(data, offset);
-                const std::uint64_t byteCount = ReadTrivial<std::uint64_t>(data, offset);
+                const auto typeHash = ReadTrivial<std::uint64_t>(data, offset);
+                const auto byteCount = ReadTrivial<std::uint64_t>(data, offset);
 
                 assert(offset + byteCount <= data.size());
 
@@ -221,7 +162,7 @@ namespace Blaster::Independent::Network
 
         static void WriteRaw(std::vector<std::uint8_t>& buffer, const void* data, std::size_t byteCount)
         {
-            const std::uint8_t* source = static_cast<const std::uint8_t*>(data);
+            const auto* source = static_cast<const std::uint8_t*>(data);
             buffer.insert(buffer.end(), source, source + byteCount);
         }
 
@@ -257,7 +198,7 @@ namespace Blaster::Independent::Network
 
         static void EncodeString(std::vector<std::uint8_t>& buf, const std::string& s)
         {
-            const std::uint32_t len = static_cast<std::uint32_t>(s.size());
+            const auto len = static_cast<std::uint32_t>(s.size());
 
             CommonNetwork::WriteTrivial(buf, len);
             CommonNetwork::WriteRaw(buf, s.data(), len);
@@ -265,7 +206,7 @@ namespace Blaster::Independent::Network
 
         static std::string DecodeString(std::span<const std::uint8_t> src, std::size_t& offset)
         {
-            const std::uint32_t len = CommonNetwork::ReadTrivial<std::uint32_t>(src, offset);
+            const auto len = CommonNetwork::ReadTrivial<std::uint32_t>(src, offset);
 
             std::string out(reinterpret_cast<const char*>(src.data() + offset), len);
             offset += len;
@@ -275,7 +216,7 @@ namespace Blaster::Independent::Network
 
         static void EncodeBlob(std::vector<std::uint8_t>& buf, const std::vector<std::uint8_t>& blob)
         {
-            const std::uint32_t len = static_cast<std::uint32_t>(blob.size());
+            const auto len = static_cast<std::uint32_t>(blob.size());
 
             CommonNetwork::WriteTrivial(buf, len);
             CommonNetwork::WriteRaw(buf, blob.data(), len);
@@ -283,7 +224,7 @@ namespace Blaster::Independent::Network
 
         static std::vector<std::uint8_t> DecodeBlob(std::span<const std::uint8_t> src, std::size_t& offset)
         {
-            const std::uint32_t len = CommonNetwork::ReadTrivial<std::uint32_t>(src, offset);
+            const auto len = CommonNetwork::ReadTrivial<std::uint32_t>(src, offset);
 
             std::vector<std::uint8_t> out(len);
             CommonNetwork::ReadRaw(src, offset, out.data(), len);
@@ -301,14 +242,14 @@ namespace Blaster::Independent::Network
 
             const std::string& txt = stream.str();
 
-            return std::vector<std::uint8_t>(txt.begin(), txt.end());
+            return { txt.begin(), txt.end() };
         }
 
     private:
 
         CommonNetwork() = default;
 
-        static void AppendElement(std::vector<std::uint8_t>& buffer)
+        static void AppendElement(const std::vector<std::uint8_t>& buffer)
         {
             (void)buffer;
         }
@@ -327,7 +268,7 @@ namespace Blaster::Independent::Network
 
             DataConversion<Decayed>::Encode(firstValue, buffer);
 
-            const std::uint64_t byteCount = static_cast<std::uint64_t>(buffer.size() - dataStart);
+            const auto byteCount = static_cast<std::uint64_t>(buffer.size() - dataStart);
 
             std::memcpy(buffer.data() + headerIndex, &typeHash, sizeof(std::uint64_t));
             std::memcpy(buffer.data() + headerIndex + sizeof(std::uint64_t), &byteCount, sizeof(std::uint64_t));
@@ -348,7 +289,7 @@ struct Blaster::Independent::Network::DataConversion<std::int32_t> : Blaster::In
         CommonNetwork::WriteTrivial(buffer, value);
     }
 
-    static std::any Decode(std::span<const std::uint8_t> bytes)
+    static std::any Decode(const std::span<const std::uint8_t> bytes)
     {
         assert(bytes.size() == sizeof(Type));
 
@@ -369,7 +310,7 @@ struct Blaster::Independent::Network::DataConversion<std::uint32_t> : Blaster::I
         CommonNetwork::WriteTrivial(buffer, value);
     }
 
-    static std::any Decode(std::span<const std::uint8_t> bytes)
+    static std::any Decode(const std::span<const std::uint8_t> bytes)
     {
         assert(bytes.size() == sizeof(Type));
 
@@ -390,7 +331,7 @@ struct Blaster::Independent::Network::DataConversion<float> : Blaster::Independe
         CommonNetwork::WriteTrivial(buffer, value);
     }
 
-    static std::any Decode(std::span<const std::uint8_t> bytes)
+    static std::any Decode(const std::span<const std::uint8_t> bytes)
     {
         assert(bytes.size() == sizeof(Type));
         Type value;
@@ -411,7 +352,7 @@ struct Blaster::Independent::Network::DataConversion<double> : Blaster::Independ
         CommonNetwork::WriteTrivial(buffer, value);
     }
 
-    static std::any Decode(std::span<const std::uint8_t> bytes)
+    static std::any Decode(const std::span<const std::uint8_t> bytes)
     {
         assert(bytes.size() == sizeof(Type));
 
@@ -429,16 +370,16 @@ struct Blaster::Independent::Network::DataConversion<std::string> : Blaster::Ind
 
     static void Encode(const Type& value, std::vector<std::uint8_t>& buffer)
     {
-        const std::uint64_t length = static_cast<std::uint64_t>(value.size());
+        const auto length = static_cast<std::uint64_t>(value.size());
 
         CommonNetwork::WriteTrivial(buffer, length);
         CommonNetwork::WriteRaw(buffer, value.data(), length);
     }
 
-    static std::any Decode(std::span<const std::uint8_t> bytes)
+    static std::any Decode(const std::span<const std::uint8_t> bytes)
     {
         std::size_t offset = 0;
-        const std::uint64_t length = CommonNetwork::ReadTrivial<std::uint64_t>(bytes, offset);
+        const auto length = CommonNetwork::ReadTrivial<std::uint64_t>(bytes, offset);
 
         assert(offset + length <= bytes.size());
 

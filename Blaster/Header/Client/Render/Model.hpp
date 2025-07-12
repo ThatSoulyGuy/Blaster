@@ -247,7 +247,7 @@ namespace Blaster::Client::Render
         }
 
         [[nodiscard]]
-        std::pair<std::vector<Vector<float, 3>>, std::vector<std::uint32_t>> LoadMeshBinary(const std::filesystem::path& inputPath)
+        static std::pair<std::vector<Vector<float, 3>>, std::vector<std::uint32_t>> LoadMeshBinary(const std::filesystem::path& inputPath)
         {
             std::ifstream stream(inputPath, std::ios::binary);
 
@@ -325,4 +325,4 @@ namespace Blaster::Client::Render
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::Render::Model)
+REGISTER_COMPONENT(Blaster::Client::Render::Model, 28374)

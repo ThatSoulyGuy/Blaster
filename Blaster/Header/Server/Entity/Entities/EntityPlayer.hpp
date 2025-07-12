@@ -169,4 +169,4 @@ namespace Blaster::Server::Entity::Entities
     };
 }
 
-REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer)
+REGISTER_COMPONENT(Blaster::Server::Entity::Entities::EntityPlayer, 57854)

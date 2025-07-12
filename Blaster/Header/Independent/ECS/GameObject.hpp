@@ -302,7 +302,7 @@ namespace Blaster::Independent::ECS
         [[nodiscard]]
         std::string GetTypeName() const override
         {
-            return typeid(*this).name();
+            return "class Blaster::Independent::ECS::GameObject";
         }
 
         [[nodiscard]]

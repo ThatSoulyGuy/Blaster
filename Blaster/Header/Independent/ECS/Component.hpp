@@ -7,7 +7,6 @@
 #include <boost/serialization/export.hpp>
 #include <boost/preprocessor.hpp>
 #include "Independent/ECS/MergeSupport.hpp"
-#include "Independent/Utility/Demangler.hpp"
 
 #define OPERATOR_CHECK_DETAIL(r, data, i, elem) \
     BOOST_PP_IF(i, && ,) elem == data.elem
@@ -71,7 +70,7 @@ namespace Blaster::Independent::ECS
         [[nodiscard]]
         std::string GetTypeName() const
         {
-            return CachedName(typeid(*this));
+            return typeid(*this).name();
         }
 
         [[nodiscard]]
@@ -93,7 +92,7 @@ namespace Blaster::Independent::ECS
             auto iterator = cache.find(key);
 
             if (iterator == cache.end())
-                iterator = cache.emplace(key, Blaster::Independent::Utility::Demangler::Demangle(typeInformation.name())).first;
+                iterator = cache.emplace(key, typeInformation.name()).first;
 
             return iterator->second;
         }

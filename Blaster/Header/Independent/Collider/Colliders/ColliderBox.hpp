@@ -47,4 +47,4 @@ namespace Blaster::Independent::Collider::Colliders
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderBox)
+REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderBox, 97472)

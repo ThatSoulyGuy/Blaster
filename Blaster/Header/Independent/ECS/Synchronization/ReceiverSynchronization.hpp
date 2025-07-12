@@ -191,31 +191,31 @@ namespace Blaster::Independent::ECS::Synchronization
             GameObjectManager::GetInstance().Unregister(operation.path);
         }
 
-        void HandleAddComponent(std::span<const std::uint8_t> slice, bool fromClient)
+        void HandleAddComponent(const std::span<const std::uint8_t> slice, bool fromClient)
         {
-            OpAddComponent operation = std::any_cast<OpAddComponent>(DataConversion<OpAddComponent>::Decode(slice));
+            auto [path, componentType, blob] = std::any_cast<OpAddComponent>(DataConversion<OpAddComponent>::Decode(slice));
 
-            auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
+            auto gameObjectOptional = GameObjectManager::GetInstance().Get(path);
 
             if (!gameObjectOptional)
                 return;
 
-            if (gameObjectOptional.value()->HasComponentDynamic(operation.componentType))
+            if (gameObjectOptional.value()->HasComponentDynamic(TypeRegistrar::GetRuntimeName(componentType)))
             {
-                auto& existing = *gameObjectOptional.value()->UnsafeFindComponentPointer(operation.componentType);
+                auto& existing = *gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(componentType));
 
                 if (typeid(*existing) == typeid(Transform))
                 {
-                    std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(operation.componentType);
+                    std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(componentType);
 
-                    DeserializeInto(fresh, operation.blob);
+                    DeserializeInto(fresh, blob);
 
                     std::shared_ptr<Transform> incoming = std::static_pointer_cast<Transform>(fresh);
 
                     std::static_pointer_cast<Transform>(existing)->SetLocalPosition(incoming->GetLocalPosition(), false);
                     std::static_pointer_cast<Transform>(existing)->SetLocalRotation(incoming->GetLocalRotation(), false);
                     std::static_pointer_cast<Transform>(existing)->SetLocalScale(incoming->GetLocalScale(), false);
-                    
+
                     existing->ClearWasAdded();
                     SenderSynchronization::GetInstance().RememberHash(existing);
                 }
@@ -223,12 +223,12 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
             }
 
-            std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(operation.componentType);
+            std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(componentType);
 
             if (!fresh)
                 return;
 
-            DeserializeInto(fresh, operation.blob);
+            DeserializeInto(fresh, blob);
 
             fresh->ClearWasAdded();
 
@@ -250,13 +250,13 @@ namespace Blaster::Independent::ECS::Synchronization
             if (!gameObjectOptional.has_value())
                 return;
 
-            if (gameObjectOptional.value()->HasComponentDynamic(operation.componentType))
-                SenderSynchronization::GetInstance().ForgetHash(*gameObjectOptional.value()->GetComponentDynamic(operation.componentType));
+            if (gameObjectOptional.value()->HasComponentDynamic(TypeRegistrar::GetRuntimeName(operation.componentType)))
+                SenderSynchronization::GetInstance().ForgetHash(*gameObjectOptional.value()->GetComponentDynamic(TypeRegistrar::GetRuntimeName(operation.componentType)));
 
 #ifndef IS_SERVER
-            gameObjectOptional.value()->RemoveComponentDynamic(operation.componentType, fromClient);
+            gameObjectOptional.value()->RemoveComponentDynamic(TypeRegistrar::GetRuntimeName(operation.componentType), fromClient);
 #else
-            gameObjectOptional.value()->RemoveComponentDynamic(operation.componentType, !fromClient);
+            gameObjectOptional.value()->RemoveComponentDynamic(TypeRegistrar::GetRuntimeName(operation.componentType), !fromClient);
 #endif
         }
 
@@ -265,7 +265,7 @@ namespace Blaster::Independent::ECS::Synchronization
             OpSetField operation = std::any_cast<OpSetField>(DataConversion<OpSetField>::Decode(slice));
             
 #ifndef IS_SERVER
-            if (operation.componentType == Component::CachedName(typeid(Blaster::Independent::Math::Transform)))
+            if (operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform>())
             {
                 std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(operation.componentType);
 
@@ -276,7 +276,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
 
                 if (gameObjectOptional)
-                    TranslationBuffer::GetInstance().Enqueue(std::static_pointer_cast<Transform>(*gameObjectOptional.value()->UnsafeFindComponentPointer(operation.componentType)), temporary->GetLocalPosition(), temporary->GetLocalRotation(), temporary->GetLocalScale());
+                    TranslationBuffer::GetInstance().Enqueue(std::static_pointer_cast<Transform>(*gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(operation.componentType))), temporary->GetLocalPosition(), temporary->GetLocalRotation(), temporary->GetLocalScale());
                 
                 return;
             }
@@ -287,7 +287,7 @@ namespace Blaster::Independent::ECS::Synchronization
             if (!gameObjectOptional.has_value())
                 return;
 
-            auto* componentOptional = gameObjectOptional.value()->UnsafeFindComponentPointer(operation.componentType);
+            auto* componentOptional = gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(operation.componentType));
 
             if (!componentOptional)
                 return;

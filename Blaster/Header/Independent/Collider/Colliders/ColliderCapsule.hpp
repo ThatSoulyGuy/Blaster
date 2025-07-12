@@ -50,4 +50,4 @@ namespace Blaster::Independent::Collider::Colliders
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderCapsule)
+REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderCapsule, 29749)

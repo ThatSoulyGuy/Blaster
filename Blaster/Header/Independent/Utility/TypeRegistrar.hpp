@@ -12,12 +12,14 @@
 #include <boost/preprocessor/cat.hpp>
 
 #if defined(_MSC_VER)
-    #include <windows.h>
-    #include <dbghelp.h>
-    #pragma comment(lib, "DbgHelp.lib")
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "DbgHelp.lib")
 #else
-    #include <cxxabi.h>
-    #include <cstdlib>
+#include <cxxabi.h>
+#include <cstdlib>
 #endif
 
 #if defined(__clang__) || defined(__GNUC__)
@@ -106,7 +108,7 @@ namespace Blaster::Independent::Utility
     struct TypeIdFromType : std::integral_constant<std::size_t, CalcTypeId<T>()>
     {
         [[nodiscard]]
-            static std::string DemangleName(const char* encodedName) noexcept
+        static std::string DemangleName(const char* encodedName)
         {
 #if defined(_MSC_VER)
             char buffer[1024] = {};
@@ -125,7 +127,7 @@ namespace Blaster::Independent::Utility
         }
 
         BLASTER_USED
-        inline static const bool registered = []() noexcept
+        inline static const bool registered = []()
             {
                 Add(TypeIdFromType<T>::value, DemangleName(typeid(T).name()));
                 return true;

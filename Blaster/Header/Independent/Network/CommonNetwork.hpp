@@ -20,9 +20,8 @@ namespace Blaster::Independent::Network
         S2C_Snapshot = 4,
         C2S_Snapshot = 5,
         S2C_TranslateTo = 6,
-        C2S_Rigidbody_AddForce = 7,
-        C2S_Rigidbody_AddImpulse = 8,
-        C2S_Rigidbody_SetStaticTransform = 9
+        C2S_Rigidbody_Impulse = 7,
+        C2S_Rigidbody_SetTransform = 8
     };
 
     struct PacketHeader

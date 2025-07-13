@@ -229,18 +229,30 @@ namespace Blaster::Independent::Math
             onScaleUpdated.push_back(function);
         }
 
+        bool ShouldSynchronize() const
+        {
+            return shouldSynchronize;
+        }
+
+        void SetShouldSynchronize(bool shouldSynchronize)
+        {
+            this->shouldSynchronize = shouldSynchronize;
+        }
+
         void Update() override
         {
             using Clock = std::chrono::steady_clock;
 
-            if (const bool positionChanged = (localPosition != lastSyncedPosition))
+            const bool positionChanged = (localPosition != lastSyncedPosition);
+
+            if (positionChanged)
                 pendingSync = true;
-            
+
             lastSyncedPosition = localPosition;
 
             if (!pendingSync)
                 return;
-            
+
             pendingSync = false;
 
             const Clock::time_point now = Clock::now();
@@ -248,10 +260,11 @@ namespace Blaster::Independent::Math
             if (now - lastSentTime < kSyncPeriod)
                 return;
 
+            if (!shouldSynchronize)
+                return;
+
             lastSentTime = now;
 
-            std::cout << "Position of game object '" << std::static_pointer_cast<IGameObjectSynchronization>(GetGameObject())->GetAbsolutePath() << "' is now '" << localPosition << "'" << std::endl;
-            
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Transform));
         }
 
@@ -329,6 +342,7 @@ namespace Blaster::Independent::Math
 
         Vector<float, 3> lastSyncedPosition = localPosition;
 
+        bool shouldSynchronize = true;
         bool pendingSync = false;
         std::chrono::steady_clock::time_point lastSentTime = std::chrono::steady_clock::now();
 

@@ -157,7 +157,7 @@ namespace Blaster::Server::Entity::Entities
             if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
                 direction -= cameraRight;
 
-            GetGameObject()->GetComponent<Rigidbody>().value()->AddImpulse({ direction });
+            GetGameObject()->GetComponent<Rigidbody>().value()->ApplyImpulse({ direction });
         }
 
         std::shared_ptr<Camera> camera;

@@ -6,8 +6,10 @@
 #include <random>
 #include "Client/Render/Model.hpp"
 #include "Client/Render/TextureFuture.hpp"
-#include "Independent/Collider/Colliders/ColliderBox.hpp"
-#include "Independent/Collider/Colliders/ColliderCapsule.hpp"
+#include "Independent/Physics/Colliders/ColliderBox.hpp"
+#include "Independent/Physics/Colliders/ColliderCapsule.hpp"
+#include "Independent/Physics/PhysicsWorld.hpp"
+#include "Independent/Physics/Rigidbody.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
@@ -17,6 +19,8 @@
 
 using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Independent::ECS::Synchronization;
+using namespace Blaster::Independent::Physics::Colliders;
+using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::Thread;
 using namespace Blaster::Server::Network;
 
@@ -53,16 +57,16 @@ namespace Blaster::Server
 
                     ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
-                    const auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
+                    auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
                     player->AddComponent(EntityPlayer::Create());
-                    player->AddComponent(ColliderCapsule::Create(8.0f, 8.0f));
-                    player->AddComponent(Rigidbody::Create(true, 8.0f));
+                    player->AddComponent(ColliderCapsule::Create(0.75f, 1.95f));
+                    player->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::DYNAMIC));
                     player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
-                    player->GetTransform()->SetLocalPosition({ 0.0f, 20.0f, 0.0f });
 
                     SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
+
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = messageIn]
@@ -84,42 +88,70 @@ namespace Blaster::Server
                     });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_AddForce, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
+            auto validateAndApply = [](NetworkId who, const std::string& path, const std::function<void(std::shared_ptr<Rigidbody>)>& function)
                 {
-                    OpRigidbodyOperation operation = std::any_cast<OpRigidbodyOperation>(CommonNetwork::DisassembleData(messageIn)[0]);
+                    auto optionalGameObject = GameObjectManager::GetInstance().Get(path);
 
-                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
+                    if (!optionalGameObject)
+                        return;
 
-                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
-                        gameObject.value()->GetComponent<Rigidbody>().value()->AddForce(operation.value);
+                    auto gameObject = optionalGameObject.value();
+
+                    if (gameObject->GetOwningClient() != who)
+                        return;
+
+                    auto rigidbodyOptional = gameObject->GetComponent<Rigidbody>();
+
+                    if (!rigidbodyOptional)
+                        return;
+
+                    function(rigidbodyOptional.value());
+                };
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_Impulse, [validateAndApply](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto anyList = CommonNetwork::DisassembleData(data);
+
+                    if (anyList.empty())
+                        return;
+
+                    auto command = std::any_cast<ImpulseCommand>(anyList[0]);
+
+                    validateAndApply(who, command.path, [&](auto rigidbody)
+                        {
+                            rigidbody->ApplyImpulse(command.impulse, command.point);
+                        });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_AddImpulse, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_SetTransform, [validateAndApply](NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    OpRigidbodyOperation operation = std::any_cast<OpRigidbodyOperation>(CommonNetwork::DisassembleData(messageIn)[0]);
+                    auto anyList = CommonNetwork::DisassembleData(data);
 
-                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
+                    if (anyList.empty())
+                        return;
 
-                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
-                        gameObject.value()->GetComponent<Rigidbody>().value()->AddImpulse(operation.value);
+                    auto command = std::any_cast<SetTransformCommand>(anyList[0]);
+
+                    validateAndApply(who, command.path, [&](auto rigidbody)
+                        {
+                            if (rigidbody->GetBodyType() == Rigidbody::Type::STATIC)
+                            {
+                                rigidbody->GetGameObject()->GetTransform()->SetLocalPosition(command.position);
+                                rigidbody->GetGameObject()->GetTransform()->SetLocalRotation(command.rotation);
+
+                                rigidbody->PushTransformToPhysics();
+                            }
+                        });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_SetStaticTransform, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)
-                {
-                    OpRigidbodySetTransform operation = std::any_cast<OpRigidbodySetTransform>(CommonNetwork::DisassembleData(messageIn)[0]);
-
-                    auto gameObject = GameObjectManager::GetInstance().Get(operation.path);
-
-                    if (gameObject.has_value() && gameObject.value()->HasComponent<Rigidbody>())
-                        gameObject.value()->GetComponent<Rigidbody>().value()->SetStaticTransform(operation.position, operation.rotation);
-                });
+            PhysicsWorld::GetInstance().Initialize();
 
             const auto crateObject = GameObjectManager::GetInstance().Register(GameObject::Create("crate"));
 
             crateObject->AddComponent(TextureFuture::Create("blaster.container"));
             crateObject->AddComponent(Model::Create({ "Blaster", "Model/Crate.fbx" }, false));
-            crateObject->AddComponent(ColliderBox::Create({ 10, 10, 10 }));
-            crateObject->AddComponent(Rigidbody::Create(true, 3.0f));
+            crateObject->AddComponent(ColliderBox::Create({ 8.0f, 8.0f, 8.0f }));
+            crateObject->AddComponent(Rigidbody::Create(8.0f, Rigidbody::Type::DYNAMIC));
 
             crateObject->GetTransform()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
 
@@ -128,7 +160,7 @@ namespace Blaster::Server
             platformObject->AddComponent(TextureFuture::Create("blaster.stone"));
             platformObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
 
-            platformObject->GetComponent<Rigidbody>().value()->SetStaticTransform({ 0.0f, -250.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+            platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
         }
 
         bool IsRunning()

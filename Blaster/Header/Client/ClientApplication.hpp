@@ -17,8 +17,7 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
-#include "Independent/Collider/Colliders/ColliderBox.hpp"
-#include "Independent/Collider/PhysicsWorld.hpp"
+#include "Independent/Physics/PhysicsWorld.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
@@ -29,7 +28,7 @@ using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
-using namespace Blaster::Independent::Collider::Colliders;
+using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Thread;
 
@@ -90,6 +89,8 @@ namespace Blaster::Client
                         });
                 });
 
+            PhysicsWorld::GetInstance().Initialize();
+
             std::thread([this]() mutable
             {
                 std::this_thread::sleep_for(100ms);
@@ -136,6 +137,8 @@ namespace Blaster::Client
             MainThreadExecutor::GetInstance().Execute();
 
             GameObjectManager::GetInstance().Update();
+
+            PhysicsWorld::GetInstance().Update();
 
             TranslationBuffer::GetInstance().Update();
 

@@ -17,11 +17,14 @@ namespace Blaster::Independent::ECS::Synchronization
     struct OpSetField;
 }
 
+namespace Blaster::Independent::Physics
+{
+    struct ImpulseCommand;
+    struct SetTransformCommand;
+}
+
 namespace Blaster::Independent::Math
 {
-    struct OpRigidbodyOperation;
-    struct OpRigidbodySetTransform;
-
     template <Arithmetic, std::size_t N> requires (N > 1)
     class Vector;
 }
@@ -39,8 +42,8 @@ REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpDestroy, 22789)
 REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpAddComponent, 36578)
 REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpRemoveComponent, 13466)
 REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpSetField, 87953)
-REGISTER_TYPE(Blaster::Independent::Math::OpRigidbodyOperation, 25467)
-REGISTER_TYPE(Blaster::Independent::Math::OpRigidbodySetTransform, 27588)
+REGISTER_TYPE(Blaster::Independent::Physics::ImpulseCommand, 25467)
+REGISTER_TYPE(Blaster::Independent::Physics::SetTransformCommand, 17834)
 
 namespace Blaster::Independent::Utility
 {

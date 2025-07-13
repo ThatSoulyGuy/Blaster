@@ -1,23 +1,23 @@
 #pragma once
 
-#include "Independent/Collider/ColliderBase.hpp"
-#include "Independent/ECS/GameObject.hpp"
+#include "Independent/Math/Vector.hpp"
+#include "Independent/Physics/Collider.hpp"
 
 using namespace Blaster::Independent::Math;
 
-namespace Blaster::Independent::Collider::Colliders
+namespace Blaster::Independent::Physics::Colliders
 {
-    class ColliderCapsule final : public ColliderBase
+    class ColliderCapsule final : public Collider
     {
 
     public:
 
         void Initialize() override
         {
-            shape = std::make_unique<btCapsuleShape>(radius, height);
+            shape = new btCapsuleShape(radius, height);
         }
 
-        static std::shared_ptr<ColliderCapsule> Create(const float radius, const float height)
+        static std::shared_ptr<ColliderCapsule> Create(float radius, float height)
         {
             std::shared_ptr<ColliderCapsule> result(new ColliderCapsule());
 
@@ -27,9 +27,13 @@ namespace Blaster::Independent::Collider::Colliders
             return result;
         }
 
-    private:
+        [[nodiscard]]
+        COLLIDER_TYPE GetColliderType() const override
+        {
+            return COLLIDER_TYPE::CAPSULE;
+        }
 
-        ColliderCapsule() = default;
+    private:
 
         friend class boost::serialization::access;
         friend class Blaster::Independent::ECS::ComponentFactory;
@@ -38,16 +42,15 @@ namespace Blaster::Independent::Collider::Colliders
         void serialize(Archive& archive, const unsigned)
         {
             archive & boost::serialization::base_object<Component>(*this);
-
+            
             archive & BOOST_SERIALIZATION_NVP(radius);
             archive & BOOST_SERIALIZATION_NVP(height);
         }
 
-        float radius;
-        float height;
+        float radius, height;
 
-        DESCRIBE_AND_REGISTER(ColliderCapsule, (ColliderBase), (), (), (radius, height))
+        DESCRIBE_AND_REGISTER(ColliderCapsule, (Collider), (), (), ())
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Collider::Colliders::ColliderCapsule, 29749)
+REGISTER_COMPONENT(Blaster::Independent::Physics::Colliders::ColliderCapsule, 90832)

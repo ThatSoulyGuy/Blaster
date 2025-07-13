@@ -11,14 +11,15 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Skeleton.hpp"
 #include "Client/Render/Texture.hpp"
-#include "Independent/Collider/Colliders/ColliderMesh.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
-#include "Independent/Math/Rigidbody.hpp"
+#include "Independent/Physics/Colliders/ColliderMesh.hpp"
+#include "Independent/Physics/Rigidbody.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Render::Vertices;
-using namespace Blaster::Independent::Collider::Colliders;
+using namespace Blaster::Independent::Physics::Colliders;
+using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client::Render
@@ -37,18 +38,13 @@ namespace Blaster::Client::Render
         {
             if (!GetGameObject()->IsAuthoritative())
                 LoadModel();
-            else if (GetGameObject()->IsAuthoritative() && buildCollider)
+
+            if (buildCollider)
             {
                 const auto& [colliderVertices, colliderIndices] = LoadMeshBinary(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.bin");
 
-                const auto rootGameObject = GetGameObject();
-
-                rootGameObject->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
-
-                if (rootGameObject->HasComponent<Rigidbody>())
-                    rootGameObject->RemoveComponent<Rigidbody>();
-
-                rootGameObject->AddComponent(Rigidbody::Create(false));
+                GetGameObject()->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
+                GetGameObject()->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::STATIC));
             }
         }
 

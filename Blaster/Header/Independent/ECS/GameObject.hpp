@@ -100,15 +100,23 @@ namespace Blaster::Independent::ECS
         }
 
         template <typename T> requires (std::is_base_of_v<Component, T>)
-        std::optional<std::shared_ptr<T>> GetComponent()
+            std::optional<std::shared_ptr<T>> GetComponent()
         {
-            if (!componentMap.contains(typeid(T)))
+            std::shared_lock lock(mutex);
+
+            if (const auto exactHit = componentMap.find(typeid(T)); exactHit != componentMap.end())
+                return std::make_optional(std::static_pointer_cast<T>(exactHit->second));
+
+
+            for (const auto& [storedType, storedComponent] : componentMap)
             {
-                std::cout << "Component map for game object '" << name << "' doesn't contain component '" << typeid(T).name() << "'!" << std::endl;
-                return std::nullopt;
+                if (auto casted = std::dynamic_pointer_cast<T>(storedComponent); casted != nullptr)
+                    return std::make_optional(std::move(casted));
             }
 
-            return std::make_optional(std::static_pointer_cast<T>(componentMap[typeid(T)]));
+            std::cout << "Component map for game object '" << name << "' does not contain a component derived from '" << typeid(T).name() << "'!" << std::endl;
+
+            return std::nullopt;
         }
 
         std::optional<std::shared_ptr<Component>> GetComponentDynamic(const std::string& typeName)

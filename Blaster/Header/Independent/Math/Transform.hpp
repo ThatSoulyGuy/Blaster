@@ -229,16 +229,6 @@ namespace Blaster::Independent::Math
             onScaleUpdated.push_back(function);
         }
 
-        bool ShouldSynchronize() const
-        {
-            return shouldSynchronize;
-        }
-
-        void SetShouldSynchronize(bool shouldSynchronize)
-        {
-            this->shouldSynchronize = shouldSynchronize;
-        }
-
         void Update() override
         {
             using Clock = std::chrono::steady_clock;
@@ -258,9 +248,6 @@ namespace Blaster::Independent::Math
             const Clock::time_point now = Clock::now();
 
             if (now - lastSentTime < kSyncPeriod)
-                return;
-
-            if (!shouldSynchronize)
                 return;
 
             lastSentTime = now;
@@ -342,7 +329,6 @@ namespace Blaster::Independent::Math
 
         Vector<float, 3> lastSyncedPosition = localPosition;
 
-        bool shouldSynchronize = true;
         bool pendingSync = false;
         std::chrono::steady_clock::time_point lastSentTime = std::chrono::steady_clock::now();
 

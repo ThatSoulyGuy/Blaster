@@ -34,7 +34,7 @@ namespace Blaster::Server::Network
             boost::asio::strand<boost::asio::any_io_executor> strand;
 
             std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
-            std::vector<std::weak_ptr<IGameObjectSynchronization>> ownedGameObjectList;
+            std::unordered_map<std::string, std::weak_ptr<IGameObjectSynchronization>> ownedGameObjectList;
 
             NetworkId id{};
             std::string stringId = "!";
@@ -122,6 +122,11 @@ namespace Blaster::Server::Network
             return clientMap.contains(id);
         }
 
+        void AddOnClientDisconnectedCallback(const std::function<void(std::shared_ptr<ClientReference>)>& callback)
+        {
+            onClientDisconnectedCallbackList.push_back(callback);
+        }
+
         std::optional<std::shared_ptr<ClientReference>> GetClient(const NetworkId id)
         {
             if (!clientMap.contains(id))
@@ -155,8 +160,11 @@ namespace Blaster::Server::Network
             if (ioThread.joinable())
                 ioThread.join();
 
-            for (auto &client: clientMap | std::views::values)
-                CleanupOwnedObjects(client);
+            for (auto& client : clientMap | std::views::values)
+            {
+                for (auto& callback : onClientDisconnectedCallbackList)
+                    callback(client);
+            }
 
             clientMap.clear();
 
@@ -263,7 +271,9 @@ namespace Blaster::Server::Network
 
         void HandleDisconnect(const std::shared_ptr<ClientReference>& client)
         {
-            CleanupOwnedObjects(client);
+            for (auto& callback : onClientDisconnectedCallbackList)
+                callback(client);
+
             ReleaseId(client->id);
             clientMap.erase(client->id);
 
@@ -279,22 +289,13 @@ namespace Blaster::Server::Network
             }
         }
 
-        static void CleanupOwnedObjects(const std::shared_ptr<ClientReference>& client)
-        {
-            for (auto& weak : client->ownedGameObjectList)
-            {
-                if (const auto gameObject = weak.lock())
-                    gameObject->MarkDestroyed();
-            }
-
-            client->ownedGameObjectList.clear();
-        }
-
         boost::asio::io_context ioContext;
         std::optional<TcpProtocol::acceptor> acceptor;
         std::thread ioThread;
         std::atomic<bool> running = false;
         std::atomic<NetworkId> nextId = 0;
+
+        std::vector<std::function<void(std::shared_ptr<ClientReference>)>> onClientDisconnectedCallbackList;
 
         std::queue<NetworkId> freeIds;
         std::mutex idMutex;

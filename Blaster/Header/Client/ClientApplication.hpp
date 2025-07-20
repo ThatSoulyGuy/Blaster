@@ -20,6 +20,7 @@
 #include "Independent/Physics/PhysicsWorld.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
+#include "Independent/Test/PhysicsDebugger.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 
@@ -30,6 +31,7 @@ using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
 using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::ECS::Synchronization;
+using namespace Blaster::Independent::Test;
 using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client
@@ -56,6 +58,10 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));
 
             InputManager::GetInstance().Initialize();
+
+#ifdef _WIN32
+            PhysicsDebugger::Initialize();
+#endif
         }
 
         void Initialize()
@@ -81,6 +87,12 @@ namespace Blaster::Client
 
             ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
 
+            ClientNetwork::GetInstance().AddOnServerConnectionLostCallback([&]()
+                {
+                    camera = std::nullopt;
+                    GameObjectManager::GetInstance().Clear();
+                });
+
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Snapshot, [](std::vector<std::uint8_t> messageIn)
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
@@ -93,7 +105,7 @@ namespace Blaster::Client
 
             std::thread([this]() mutable
             {
-                std::this_thread::sleep_for(100ms);
+                std::this_thread::sleep_for(400ms);
 
                 const auto optionalPlayer = GameObjectManager::GetInstance().Get("player-" + ClientNetwork::GetInstance().GetStringId());
 
@@ -159,6 +171,11 @@ namespace Blaster::Client
         void Uninitialize()
         {
             ClientNetwork::GetInstance().Uninitialize();
+
+#ifdef _WIN32
+            PhysicsDebugger::Uninitialize();
+#endif
+            PhysicsWorld::GetInstance().Uninitialize();
         }
 
         static ClientApplication& GetInstance()

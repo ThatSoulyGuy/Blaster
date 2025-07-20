@@ -130,34 +130,40 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
-            Vector<float, 3> cameraForward = camera->GetGameObject()->GetTransform()->GetForward();
+            Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
 
-            cameraForward.y() = 0.0f;
+            forward.y() = 0.0f;
 
-            float cameraLength = Vector<float, 3>::Magnitude(cameraForward);
+            if (Vector<float, 3>::LengthSquared(forward) < 1e-6f)
+                forward = { 0,0,1 };
+            else
+                Vector<float, 3>::Normalize(forward);
 
-            if (cameraLength < 1e-4f)
-                cameraForward = { 0.0f, 0.0f, 1.0f }, cameraLength = 1.0f;
+            Vector<float, 3> right = { -forward.z(), 0.0f, forward.x() };
 
-            cameraForward /= cameraLength;
-
-            Vector<float, 3> cameraRight = { -cameraForward.z(), 0.0f, cameraForward.x() };
-
-            Vector<float, 3> direction{ 0.0f, 0.0f, 0.0f };
+            Vector<float, 3> direction = { 0,0,0 };
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
-                direction += cameraForward;
+                direction += forward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD))
-                direction -= cameraForward;
+                direction -= forward;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD))
-                direction += cameraRight;
+                direction += right;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
-                direction -= cameraRight;
+                direction -= right;
 
-            GetGameObject()->GetComponent<Rigidbody>().value()->ApplyImpulse({ direction });
+            if (Vector<float, 3>::LengthSquared(direction) > 1e-6f)
+            {
+                Vector<float, 3>::Normalize(direction);
+
+                constexpr float moveSpeed = 5.0f;
+                btVector3 impulse(direction.x() * moveSpeed, 0.0f, direction.z() * moveSpeed);
+
+                GetGameObject()->GetComponent<Rigidbody>().value()->ApplyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
+            }
         }
 
         std::shared_ptr<Camera> camera;

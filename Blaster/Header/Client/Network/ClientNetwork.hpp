@@ -83,6 +83,11 @@ namespace Blaster::Client::Network
             return networkId;
         }
 
+        void AddOnServerConnectionLostCallback(const std::function<void()>& callback)
+        {
+            onServerConnectionLostCallbackList.push_back(callback);
+        }
+
         auto& GetIoContext()
         {
             return ioContext;
@@ -115,16 +120,43 @@ namespace Blaster::Client::Network
 
         ClientNetwork() = default;
 
+        void NotifyConnectionLost()
+        {
+            std::vector<std::function<void()>> toRun;
+
+            {
+                std::lock_guard lock(callbackMutex);
+
+                toRun.swap(onServerConnectionLostCallbackList);
+            }
+
+            for (auto& cb : toRun)
+            {
+                try
+                {
+                    cb();
+                }
+                catch (std::exception exception)
+                {
+                    std::cerr << "Execption thrown from function: '" << exception.what() << "'!" << std::endl;
+                }
+            }
+
+            ioContext.stop();
+            running = false;
+        }
+
         void StartWrite()
         {
-            boost::asio::async_write(socket, boost::asio::buffer(*writeQueue.front()), boost::asio::bind_executor(strand,
-                [this](const ErrorCode& error, std::size_t)
+            boost::asio::async_write(socket, boost::asio::buffer(*writeQueue.front()), boost::asio::bind_executor(strand, [this](const ErrorCode& error, std::size_t)
                 {
                     writeQueue.pop_front();
 
                     if (error)
                     {
                         std::cerr << "ClientNetwork: write failed: " << error.message() << '\n';
+                        NotifyConnectionLost();
+
                         return;
                     }
 
@@ -138,7 +170,13 @@ namespace Blaster::Client::Network
             socket.async_read_some(boost::asio::buffer(readBuffer), boost::asio::bind_executor(strand, [this] (const ErrorCode& errorCode, const std::size_t number)
                 {
                     if (errorCode)
+                    {
+                        std::cerr << "ClientNetwork: read failed: " << errorCode.message() << '\n';
+
+                        NotifyConnectionLost();
+
                         return;
+                    }
 
                     inbox.insert(inbox.end(), readBuffer.data(), readBuffer.data() + number);
 
@@ -195,6 +233,10 @@ namespace Blaster::Client::Network
         TcpProtocol::socket socket{ioContext};
         std::thread ioThread;
         std::atomic<bool> running = false;
+
+        std::vector<std::function<void()>> onServerConnectionLostCallbackList;
+
+        std::mutex callbackMutex;
 
         std::string stringId;
         NetworkId networkId = 0;

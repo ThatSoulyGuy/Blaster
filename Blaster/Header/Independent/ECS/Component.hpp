@@ -81,6 +81,17 @@ namespace Blaster::Independent::ECS
         {
             return wasRemoved;
         }
+
+        void SetShouldSynchronize(bool shouldSynchronize)
+        {
+            this->shouldSynchronize = shouldSynchronize;
+        }
+
+        [[nodiscard]]
+        bool ShouldSynchronize() const noexcept
+        {
+            return shouldSynchronize;
+        }
         
         void ClearWasRemoved()
         {
@@ -128,6 +139,8 @@ namespace Blaster::Independent::ECS
         }
 
         std::weak_ptr<GameObject> gameObject;
+
+        bool shouldSynchronize = true;
 
         bool wasAdded = false;
         bool wasRemoved = false;

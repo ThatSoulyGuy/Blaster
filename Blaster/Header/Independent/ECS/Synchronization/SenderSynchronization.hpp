@@ -97,7 +97,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
 #endif
 
-            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal())
+            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal() || (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->GetComponentMap().contains(component) && !std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->GetComponentMap().at(component)->ShouldSynchronize()))
                 return;
 
             {
@@ -335,7 +335,7 @@ namespace Blaster::Independent::ECS::Synchronization
             PushOp(snap.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName(), node->GetOwningClient() });
             ++snap.header.operationCount;
 
-            for (const auto& component : node->GetComponentMap() | std::views::values)
+            for (const auto& component : node->GetComponentOrder())
             {
                 const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
 
@@ -344,7 +344,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 ++snap.header.operationCount;
             }
 
-            for (const auto& child: node->GetChildMap() | std::views::values)
+            for (const auto& child : node->GetChildMap() | std::views::values)
                 SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(child), snap);
         }
 

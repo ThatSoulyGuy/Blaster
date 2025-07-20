@@ -486,30 +486,50 @@ namespace Blaster::Independent::Math
 			return N;
 		}
 
-		static T Magnitude(const Vector& first)
+		static T Dot(const Vector& a, const Vector& b)
 		{
-			return std::sqrt(std::inner_product(first.data.begin(), first.data.end(), first.data.begin(), T(0)));
+			return std::inner_product(a.data.begin(), a.data.end(), b.data.begin(), T(0));
 		}
 
-		static Vector Normalize(const Vector& first)
+		static T LengthSquared(const Vector& v)
 		{
-			const T len2 = Dot(first, first);
-
-			if (len2 < T(1e-8))
-				return first;
-
-			const T invLen = T(1) / std::sqrt(len2);
-
-			Vector out;
-
-			std::transform(first.begin(), first.end(), out.begin(), [&](T e) { return e * invLen; });
-
-			return out;
+			return Dot(v, v);
 		}
 
-		static T Dot(const Vector& first, const Vector& second)
+		static T Magnitude(const Vector& v)
 		{
-			return std::inner_product(first.data.begin(), first.data.end(), second.data.begin(), T(0));
+			return std::sqrt(LengthSquared(v));
+		}
+
+		static Vector Normalize(const Vector& v)
+		{
+			T ls = LengthSquared(v);
+			if (ls < T(1e-8)) return v;
+			return v / std::sqrt(ls);
+		}
+
+		static Vector Multiply(const Vector& a, const Vector& b) requires (N == 4)
+		{
+			T x1 = a.x(), y1 = a.y(), z1 = a.z(), w1 = a.w();
+			T x2 = b.x(), y2 = b.y(), z2 = b.z(), w2 = b.w();
+
+			return Vector
+			{
+				w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+				w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+				w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+				w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+			};
+		}
+
+		static Vector Conjugate(const Vector& q) requires (N == 4)
+		{
+			return Vector{ -q.x(), -q.y(), -q.z(), q.w() };
+		}
+
+		static Vector Inverse(const Vector& q) requires (N == 4)
+		{
+			return Conjugate(q) / LengthSquared(q);
 		}
 
 		static T AngleBetween(const Vector& v1, const Vector& v2)

@@ -12,6 +12,7 @@
 #include "Independent/Physics/Rigidbody.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
+#include "Independent/Test/PhysicsDebugger.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 #include "Server/Entity/Entities/EntityPlayer.hpp"
@@ -21,6 +22,7 @@ using namespace Blaster::Server::Entity::Entities;
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Physics::Colliders;
 using namespace Blaster::Independent::Physics;
+using namespace Blaster::Independent::Test;
 using namespace Blaster::Independent::Thread;
 using namespace Blaster::Server::Network;
 
@@ -38,7 +40,9 @@ namespace Blaster::Server
 
         void PreInitialize()
         {
-            
+#ifdef _WIN32
+            PhysicsDebugger::Initialize();
+#endif
         }
 
         void Initialize()
@@ -49,6 +53,13 @@ namespace Blaster::Server
             std::cin >> port;
 
             ServerNetwork::GetInstance().Initialize(port);
+
+            ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto client)
+                {
+                    for (const auto& gameObjectPath : client->ownedGameObjectList | std::views::keys)
+                        GameObjectManager::GetInstance().Unregister(gameObjectPath);
+                });
+
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
                 {
                     const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
@@ -60,8 +71,8 @@ namespace Blaster::Server
                     auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
                     player->AddComponent(EntityPlayer::Create());
-                    player->AddComponent(ColliderCapsule::Create(0.75f, 1.95f));
-                    player->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::DYNAMIC));
+                    player->AddComponent(ColliderCapsule::Create(10.0f, 10.0f));
+                    player->AddComponent(Rigidbody::Create(100.0f, Rigidbody::Type::DYNAMIC));
                     player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
 
                     SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
@@ -119,7 +130,10 @@ namespace Blaster::Server
 
                     validateAndApply(who, command.path, [&](auto rigidbody)
                         {
-                            rigidbody->ApplyImpulse(command.impulse, command.point);
+                            if (command.hasPoint)
+                                rigidbody->ApplyImpulseAtPoint(command.impulse, command.point);
+                            else
+                                rigidbody->ApplyCentralImpulse(command.impulse);
                         });
                 });
 
@@ -150,12 +164,14 @@ namespace Blaster::Server
 
             crateObject->AddComponent(TextureFuture::Create("blaster.container"));
             crateObject->AddComponent(Model::Create({ "Blaster", "Model/Crate.fbx" }, false));
-            crateObject->AddComponent(ColliderBox::Create({ 8.0f, 8.0f, 8.0f }));
-            crateObject->AddComponent(Rigidbody::Create(8.0f, Rigidbody::Type::DYNAMIC));
+            crateObject->AddComponent(ColliderBox::Create({ 20.0f, 20.0f, 20.0f }));
+            crateObject->AddComponent(Rigidbody::Create(100.0f, Rigidbody::Type::DYNAMIC));
 
             crateObject->GetTransform()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
 
             const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
+
+            platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
             platformObject->AddComponent(TextureFuture::Create("blaster.stone"));
             platformObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
@@ -181,6 +197,12 @@ namespace Blaster::Server
 
         void Uninitialize()
         {
+#ifdef _WIN32
+            PhysicsDebugger::Uninitialize();
+#endif
+
+            PhysicsWorld::GetInstance().Uninitialize();
+
             ServerNetwork::GetInstance().Uninitialize();
         }
 

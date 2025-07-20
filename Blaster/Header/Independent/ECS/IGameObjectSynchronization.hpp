@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <shared_mutex>
 #include <optional>
@@ -48,6 +49,9 @@ namespace Blaster::Independent::ECS
         virtual const std::unordered_map<std::type_index, std::shared_ptr<Component>>& GetComponentMap() const = 0;
 
         [[nodiscard]]
-        virtual const std::unordered_map<std::string, std::shared_ptr<GameObject>>& GetChildMap() const = 0;
+        virtual const std::map<std::string, std::shared_ptr<GameObject>>& GetChildMap() const = 0;
+
+        [[nodiscard]]
+        virtual const std::vector<std::shared_ptr<Component>>& GetComponentOrder() const = 0;
     };
 }

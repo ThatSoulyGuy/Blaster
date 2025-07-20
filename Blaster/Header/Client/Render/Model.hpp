@@ -127,15 +127,6 @@ namespace Blaster::Client::Render
 
             ProcessNode(scene->mRootNode, scene, GetGameObject(), aiMatrix4x4());
 
-            if (buildCollider && !colliderVertices.empty())
-            {
-                const auto rootGameObject = GetGameObject();
-
-                rootGameObject->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
-
-                rootGameObject->AddComponent(Rigidbody::Create(false));
-            }
-
             if (hasBones)
                 GetGameObject()->AddComponent(Animator::Create(&skeleton));
         }

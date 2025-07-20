@@ -5,13 +5,17 @@
 #include <memory>
 #include <optional>
 #include <ranges>
-#include <unordered_map>
+#include <map>
 #include "Client/Network/ClientNetwork.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
+
+#ifdef IS_SERVER
+#include "Server/Network/ServerNetwork.hpp"
+#endif
 
 using namespace Blaster::Client::Network;
 using namespace Blaster::Independent::Math;
@@ -25,6 +29,14 @@ namespace Blaster::Independent::ECS
     {
 
     public:
+
+        ~GameObject()
+        {
+#ifdef IS_SERVER
+            if (owningClient.has_value() && owningClient.value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).has_value())
+                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.erase(GetAbsolutePath());
+#endif
+        }
 
         GameObject(const GameObject&) = delete;
         GameObject(GameObject&&) = delete;
@@ -46,6 +58,7 @@ namespace Blaster::Independent::ECS
             component->Initialize();
 
             componentMap.insert({ typeid(T), std::move(component) });
+            componentOrder.push_back(componentMap[typeid(T)]);
 
             componentMap[typeid(T)]->wasAdded = true;
 
@@ -70,6 +83,7 @@ namespace Blaster::Independent::ECS
             component->Initialize();
 
             componentMap.insert({ type, std::move(component) });
+            componentOrder.push_back(componentMap[type]);
 
             componentMap[type]->wasAdded = markDirty;
 
@@ -99,8 +113,7 @@ namespace Blaster::Independent::ECS
             }();
         }
 
-        template <typename T> requires (std::is_base_of_v<Component, T>)
-            std::optional<std::shared_ptr<T>> GetComponent()
+        template <typename T> requires (std::is_base_of_v<Component, T>) std::optional<std::shared_ptr<T>> GetComponent()
         {
             std::shared_lock lock(mutex);
 
@@ -214,9 +227,14 @@ namespace Blaster::Independent::ECS
             return componentMap;
         }
 
-        const std::unordered_map<std::string, std::shared_ptr<GameObject>>& GetChildMap() const override
+        const std::map<std::string, std::shared_ptr<GameObject>>& GetChildMap() const override
         {
             return childMap;
+        }
+
+        const std::vector<std::shared_ptr<Component>>& GetComponentOrder() const override
+        {
+            return componentOrder;
         }
 
         std::optional<std::weak_ptr<GameObject>> GetParent()
@@ -301,6 +319,11 @@ namespace Blaster::Independent::ECS
             return destroyed;
         }
 
+        void SetLocal(bool isLocal)
+        {
+            this->isLocal = isLocal;
+        }
+
         [[nodiscard]]
         bool IsLocal() const noexcept override
         {
@@ -358,6 +381,9 @@ namespace Blaster::Independent::ECS
             result->owningClient = owningClient;
 #ifdef IS_SERVER
             result->isAuthoritative = true;
+
+            if (owningClient.has_value() && owningClient.value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).has_value())
+                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
 #endif
 
             result->AddComponent(Transform::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
@@ -434,8 +460,11 @@ namespace Blaster::Independent::ECS
 
         std::optional<std::weak_ptr<GameObject>> parent;
 
-        std::unordered_map<std::type_index, std::shared_ptr<Component>> componentMap = {};
-        std::unordered_map<std::string, std::shared_ptr<GameObject>> childMap = {};
+        std::unordered_map<std::type_index, std::shared_ptr<Component>> componentMap;
+
+        std::vector<std::shared_ptr<Component>> componentOrder;
+
+        std::map<std::string, std::shared_ptr<GameObject>> childMap = {};
 
     };
 }

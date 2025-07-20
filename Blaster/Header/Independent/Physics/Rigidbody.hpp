@@ -1,9 +1,12 @@
 #pragma once
 
+#include <optional>
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Physics/Collider.hpp"
 #include "Independent/Physics/PhysicsWorld.hpp"
+#include "Independent/Physics/RigidbodyCommands.hpp"
+#include "Independent/Test/PhysicsDebugger.hpp"
 
 #ifdef IS_SERVER
 #include "Server/Network/ServerNetwork.hpp"
@@ -14,92 +17,7 @@
 using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Math;
 using namespace Blaster::Independent::Network;
-
-namespace Blaster::Independent::Physics
-{
-    struct ImpulseCommand
-    {
-        std::string path;
-
-        Vector<float, 3> impulse;
-        Vector<float, 3> point;
-
-        static constexpr std::uint8_t CODE = 42;
-    };
-
-    struct SetTransformCommand
-    {
-        std::string path;
-
-        Vector<float, 3> position;
-        Vector<float, 3> rotation;
-
-        static constexpr std::uint8_t CODE = 43;
-    };
-}
-
-namespace Blaster::Independent::Network
-{
-    template <>
-    struct DataConversion<Blaster::Independent::Physics::ImpulseCommand> : DataConversionBase<DataConversion<Blaster::Independent::Physics::ImpulseCommand>, Blaster::Independent::Physics::ImpulseCommand>
-    {
-        using Type = Blaster::Independent::Physics::ImpulseCommand;
-
-        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
-        {
-            CommonNetwork::EncodeString(buffer, operation.path);
-            DataConversion<Vector<float, 3>>::Encode(operation.impulse, buffer);
-            DataConversion<Vector<float, 3>>::Encode(operation.point, buffer);
-        }
-
-        static std::any Decode(std::span<const std::uint8_t> bytes)
-        {
-            std::size_t offset = 0;
-
-            Type out;
-
-            out.path = CommonNetwork::DecodeString(bytes, offset);
-            out.impulse = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
-
-            offset += DataConversion<Vector<float, 3>>::kWireSize;
-
-            out.point = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
-
-            return out;
-        }
-    };
-
-    template <>
-    struct DataConversion<Blaster::Independent::Physics::SetTransformCommand> : DataConversionBase<DataConversion<Blaster::Independent::Physics::SetTransformCommand>, Blaster::Independent::Physics::SetTransformCommand>
-    {
-        using Type = Blaster::Independent::Physics::SetTransformCommand;
-
-        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
-        {
-            CommonNetwork::EncodeString(buffer, operation.path);
-
-            DataConversion<Vector<float, 3>>::Encode(operation.position, buffer);
-            DataConversion<Vector<float, 3>>::Encode(operation.rotation, buffer);
-        }
-
-        static std::any Decode(std::span<const std::uint8_t> bytes)
-        {
-            std::size_t offset = 0;
-
-            Type out;
-
-            out.path = CommonNetwork::DecodeString(bytes, offset);
-
-            out.position = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
-
-            offset += DataConversion<Vector<float, 3>>::kWireSize;
-
-            out.rotation = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
-
-            return out;
-        }
-    };
-}
+using namespace Blaster::Independent::Test;
 
 namespace Blaster::Independent::Physics
 {
@@ -135,11 +53,19 @@ namespace Blaster::Independent::Physics
 
         void Initialize() override
         {
+#ifndef IS_SERVER
+            if (!GetGameObject()->IsLocallyControlled())
+                GetGameObject()->SetLocal(true);
+            
+            GetGameObject()->GetTransform()->SetShouldSynchronize(false);
+#endif
+
             auto colliderOptional = GetGameObject()->GetComponent<Collider>();
 
             if (!colliderOptional)
             {
                 std::cerr << "Rigidbody requires a collider on GameObject '" << GetGameObject()->GetName() << "'\n";
+
                 return;
             }
 
@@ -152,49 +78,68 @@ namespace Blaster::Independent::Physics
                 collider->GetShape()->calculateLocalInertia(mass, inertia);
 
             btTransform startXform;
-
+            
             startXform.setIdentity();
 
-            const auto position = transform->GetWorldPosition();
-            const auto rotation = transform->GetWorldRotation();
+            {
+                auto p = transform->GetWorldPosition();
+                auto r = transform->GetWorldRotation();
 
-            startXform.setOrigin({ position.x(), position.y(), position.z() });
-            startXform.setRotation(btQuaternion(btVector3(1, 0, 0), btScalar(rotation.x() * std::numbers::pi_v<float> / 180.0f)) * btQuaternion(btVector3(0, 1, 0), btScalar(rotation.y() * std::numbers::pi_v<float> / 180.0f)) * btQuaternion(btVector3(0, 0, 1), btScalar(rotation.z() * std::numbers::pi_v<float> / 180.0f)));
+                startXform.setOrigin({ p.x(), p.y(), p.z() });
+                startXform.setRotation(btQuaternion(btVector3(1, 0, 0), r.x() * SIMD_PI / 180.f) * btQuaternion(btVector3(0, 1, 0), r.y() * SIMD_PI / 180.f) * btQuaternion(btVector3(0, 0, 1), r.z() * SIMD_PI / 180.f));
+            }
 
-            auto* motion = new btDefaultMotionState(startXform);
-
-            btRigidBody::btRigidBodyConstructionInfo ci(bodyType == Type::DYNAMIC ? mass : 0.0f, motion, collider->GetShape(), inertia);
+            auto* motionState = new btDefaultMotionState(startXform);
+            btRigidBody::btRigidBodyConstructionInfo ci((bodyType == Type::DYNAMIC) ? mass : 0.0f, motionState, collider->GetShape(), inertia);
 
             body = new btRigidBody(ci);
-            body->setUserPointer(static_cast<void*>(this));
+            body->setUserPointer(this);
 
-            RegisterWithWorld();
-
-#ifndef IS_SERVER
-            GetGameObject()->GetTransform()->SetShouldSynchronize(false);
+#ifdef _WIN32
+            PhysicsDebugger::RegisterRigidbody(body);
 #endif
+
+            PhysicsWorld::GetInstance().AddBody(body);
         }
 
         void Update() override
         {
 #ifdef IS_SERVER
             if (bodyType == Type::DYNAMIC)
-                SyncTransformFromPhysics();
+                SyncTransformFromLocalPhysics();
             else
                 PushTransformToPhysics();
-#else
-            SyncTransformFromPhysics();
 #endif
         }
 
-        void ApplyImpulse(const Vector<float, 3>& impulse, const Vector<float, 3>& relativePoint = { 0,0,0 })
+        void ApplyCentralImpulse(const Vector<float, 3>& impulse)
         {
-#ifdef IS_SERVER
-            body->applyImpulse({ impulse.x(), impulse.y(), impulse.z() }, { relativePoint.x(), relativePoint.y(), relativePoint.z() });
+            if (!body)
+                return;
+
+            body->applyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
             body->activate(true);
-#else
+
+#ifndef IS_SERVER
             if (GetGameObject()->IsLocallyControlled())
-                QueueImpulseToServer(impulse, relativePoint);
+                QueueImpulseToServer(impulse, std::nullopt);
+#endif
+        }
+
+        void ApplyImpulseAtPoint(const Vector<float, 3>& impulse, const Vector<float, 3>& worldPoint)
+        {
+            if (!body)
+                return;
+
+            btVector3 btImpulse(impulse.x(), impulse.y(), impulse.z());
+            btVector3 rel = btVector3(worldPoint.x(), worldPoint.y(), worldPoint.z()) - body->getCenterOfMassPosition();
+
+            body->applyImpulse(btImpulse, rel);
+            body->activate(true);
+
+#ifndef IS_SERVER
+            if (GetGameObject()->IsLocallyControlled())
+                QueueImpulseToServer(impulse, worldPoint);
 #endif
         }
 
@@ -211,6 +156,10 @@ namespace Blaster::Independent::Physics
 
         void PushTransformToPhysics()
         {
+#ifndef IS_SERVER
+            return;
+#endif
+
             const auto transform = GetGameObject()->GetTransform();
 
             const auto position = transform->GetWorldPosition();
@@ -226,10 +175,15 @@ namespace Blaster::Independent::Physics
 
 #ifndef IS_SERVER
             ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_SetTransform, SetTransformCommand{ position, rotation });
+
+#ifdef _WIN32
+            PhysicsDebugger::LogSetTransformPacket(SetTransformCommand{ position, rotation });
+#endif
 #endif
         }
 
-        [[nodiscard]] btRigidBody* GetBtBody() const
+        [[nodiscard]]
+        btRigidBody* GetBtBody() const
         {
             return body;
         }
@@ -266,7 +220,7 @@ namespace Blaster::Independent::Physics
 
             auto flags = static_cast<std::uint8_t>(lockedAxes);
 
-            archive& BOOST_SERIALIZATION_NVP(flags);
+            archive & BOOST_SERIALIZATION_NVP(flags);
 
             if constexpr (Archive::is_loading::value)
                 lockedAxes = static_cast<Axis>(flags);
@@ -282,12 +236,16 @@ namespace Blaster::Independent::Physics
             PhysicsWorld::GetInstance().RemoveBody(body);
         }
 
-        void QueueImpulseToServer(const Vector<float, 3>& impulse, const Vector<float, 3>& point)
+        void QueueImpulseToServer(const Vector<float, 3>& impulse, std::optional<Vector<float, 3>> point)
         {
-            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_Impulse, ImpulseCommand{ GetGameObject()->GetAbsolutePath(), impulse, point });
+            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_Impulse, ImpulseCommand{ GetGameObject()->GetAbsolutePath(), point.has_value(), impulse, point.has_value() ? point.value() : Vector<float, 3>{ 0.0f, 0.0f, 0.0f } });
+        
+#ifdef _WIN32
+            PhysicsDebugger::LogImpulsePacket(ImpulseCommand{ GetGameObject()->GetAbsolutePath(), point.has_value(), impulse, point.has_value() ? point.value() : Vector<float, 3>{ 0.0f, 0.0f, 0.0f } });
+#endif
         }
 
-        void SyncTransformFromPhysics()
+        void SyncTransformFromLocalPhysics()
         {
             if (!body)
                 return;
@@ -305,9 +263,14 @@ namespace Blaster::Independent::Physics
             auto transform = GetGameObject()->GetTransform();
 
             transform->SetLocalPosition({ position.x(), position.y(), position.z() }, false);
-            transform->SetLocalRotation({ rotation[2] * 180.0f / std::numbers::pi_v<float>, rotation[1] * 180.0f / std::numbers::pi_v<float>, rotation[0] * 180.0f / std::numbers::pi_v<float> }, false);
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Math::Transform));
+            float rotZ, rotY, rotX;
+
+            bulletTransform.getRotation().getEulerZYX(rotZ, rotY, rotX);
+
+            auto deg = 180.0f / std::numbers::pi_v<float>;
+
+            transform->SetLocalRotation({ rotX * deg, rotY * deg, rotZ * deg }, false);
         }
 
         void ApplyAngularFactor() const

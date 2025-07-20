@@ -20,12 +20,12 @@ namespace Blaster::Independent::Physics
 
         void Initialize()
         {
-            collisionConfiguration = std::make_unique<btDefaultCollisionConfiguration>();
-            dispatcher = std::make_unique<btCollisionDispatcher>(collisionConfiguration.get());
-            broadphase = std::make_unique<btDbvtBroadphase>();
-            solver = std::make_unique<btSequentialImpulseConstraintSolver>();
+            collisionConfiguration = new btDefaultCollisionConfiguration();
+            dispatcher = new btCollisionDispatcher(collisionConfiguration);
+            broadphase = new btDbvtBroadphase();
+            solver = new btSequentialImpulseConstraintSolver();
 
-            world = std::make_unique<btDiscreteDynamicsWorld>(dispatcher.get(), broadphase.get(), solver.get(), collisionConfiguration.get());
+            world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
             world->setGravity(btVector3(0.0f, -9.8f, 0.0f));
         }
 
@@ -39,18 +39,33 @@ namespace Blaster::Independent::Physics
 
         void AddBody(btRigidBody* body)
         {
+            if (!world)
+                return;
+
             world->addRigidBody(body);
         }
 
         void RemoveBody(btRigidBody* body)
         {
+            if (!world)
+                return;
+
             world->removeRigidBody(body);
         }
 
         [[nodiscard]]
         btDiscreteDynamicsWorld* GetHandle() const
         {
-            return world.get();
+            return world;
+        }
+
+        void Uninitialize()
+        {
+            delete world;
+            delete collisionConfiguration;
+            delete dispatcher;
+            delete broadphase;
+            delete solver;
         }
 
         static PhysicsWorld& GetInstance()
@@ -67,11 +82,11 @@ namespace Blaster::Independent::Physics
 
         PhysicsWorld() = default;
 
-        std::unique_ptr<btDefaultCollisionConfiguration> collisionConfiguration;
-        std::unique_ptr<btCollisionDispatcher> dispatcher;
-        std::unique_ptr<btBroadphaseInterface> broadphase;
-        std::unique_ptr<btSequentialImpulseConstraintSolver> solver;
-        std::unique_ptr<btDiscreteDynamicsWorld> world;
+        btDefaultCollisionConfiguration* collisionConfiguration;
+        btCollisionDispatcher* dispatcher;
+        btBroadphaseInterface* broadphase;
+        btSequentialImpulseConstraintSolver* solver;
+        btDiscreteDynamicsWorld* world;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<PhysicsWorld> instance;

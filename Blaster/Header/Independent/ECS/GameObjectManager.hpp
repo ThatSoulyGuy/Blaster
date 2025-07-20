@@ -70,6 +70,11 @@ namespace Blaster::Independent::ECS
             }
 
             const auto gameObject = gameObjectOptional.value();
+
+            gameObject->MarkDestroyed();
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
+
             const std::string absolutePath = gameObject->GetAbsolutePath();
             const bool isRoot = absolutePath.find('.') == std::string::npos;
 
@@ -93,8 +98,6 @@ namespace Blaster::Independent::ECS
             }
 
             parentOptional.value()->RemoveChild(childName);
-
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
         }
 
         bool Has(const std::string& path) const override

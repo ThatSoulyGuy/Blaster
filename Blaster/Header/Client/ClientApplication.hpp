@@ -48,13 +48,14 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.73.18", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.83.18", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.simple", { "Blaster", "Shader/Simple" }));
-            TextureManager::GetInstance().Register(Texture::Create("blaster.wood", { "Blaster", "Texture/Wood.png" }));
-            TextureManager::GetInstance().Register(Texture::Create("blaster.stone", { "Blaster", "Texture/Stone.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.map_texture", { "Blaster", "Texture/MapTexture.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.resource.wood", { "Blaster", "Texture/Resource/Wood.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.resource.stone", { "Blaster", "Texture/Resource/Stone.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));
 
             InputManager::GetInstance().Initialize();
@@ -103,39 +104,42 @@ namespace Blaster::Client
 
             PhysicsWorld::GetInstance().Initialize();
 
+            camera = std::nullopt;
+
             std::thread([this]() mutable
             {
-                std::this_thread::sleep_for(400ms);
-
-                const auto optionalPlayer = GameObjectManager::GetInstance().Get("player-" + ClientNetwork::GetInstance().GetStringId());
-
-                if (!optionalPlayer.has_value())
+                while (!camera.has_value())
                 {
-                    std::cerr << "Failed to find player game object!" << std::endl;
-                    return;
+                    std::this_thread::sleep_for(1s);
+
+                    const auto optionalPlayer = GameObjectManager::GetInstance().Get("player-" + ClientNetwork::GetInstance().GetStringId());
+
+                    if (!optionalPlayer.has_value())
+                    {
+                        std::cerr << "Failed to find player game object!" << std::endl;
+                        continue;
+                    } 
+
+                    const auto& player = optionalPlayer.value();
+
+                    const auto optionalCamera = GameObjectManager::GetInstance().Get(player->GetAbsolutePath() + ".camera");
+
+                    if (!optionalCamera.has_value())
+                    {
+                        std::cerr << "Failed to find player's camera game object!" << std::endl;
+                        continue;
+                    }
+
+                    const auto& camera = optionalCamera.value();
+
+                    if (!camera->HasComponent<Camera>())
+                    {
+                        std::cerr << "Failed to find player's camera's camera component!" << std::endl;
+                        continue;
+                    }
+
+                    this->camera = camera->GetComponent<Camera>();
                 }
-
-                const auto& player = optionalPlayer.value();
-
-                std::this_thread::sleep_for(20ms);
-
-                const auto optionalCamera = GameObjectManager::GetInstance().Get(player->GetAbsolutePath() + ".camera");
-
-                if (!optionalCamera.has_value())
-                {
-                    std::cerr << "Failed to find player's camera game object!" << std::endl;
-                    return;
-                }
-
-                const auto& camera = optionalCamera.value();
-
-                if (!camera->HasComponent<Camera>())
-                {
-                    std::cerr << "Failed to find player's camera's camera component!" << std::endl;
-                    return;
-                }
-
-                this->camera = camera->GetComponent<Camera>();
             }).detach();
         }
 

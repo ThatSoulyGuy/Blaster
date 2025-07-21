@@ -90,9 +90,26 @@ namespace Blaster::Independent::Physics
             }
 
             auto* motionState = new btDefaultMotionState(startXform);
+
+#ifndef IS_SERVER
+            if (!GetGameObject()->IsLocallyControlled() && bodyType == Type::DYNAMIC)
+            {
+                bodyType = Type::KINEMATIC;
+                mass = 0.0f;
+
+                inertia = { 0,0,0 };
+            }
+#endif
+
             btRigidBody::btRigidBodyConstructionInfo ci((bodyType == Type::DYNAMIC) ? mass : 0.0f, motionState, collider->GetShape(), inertia);
 
             body = new btRigidBody(ci);
+            
+#ifndef IS_SERVER
+            if (bodyType == Type::KINEMATIC)
+                body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
+#endif
+            
             body->setUserPointer(this);
 
 #ifdef _WIN32
@@ -156,10 +173,6 @@ namespace Blaster::Independent::Physics
 
         void PushTransformToPhysics()
         {
-#ifndef IS_SERVER
-            return;
-#endif
-
             const auto transform = GetGameObject()->GetTransform();
 
             const auto position = transform->GetWorldPosition();
@@ -172,14 +185,6 @@ namespace Blaster::Independent::Physics
 
             if (bodyType == Type::STATIC)
                 PhysicsWorld::GetInstance().GetHandle()->updateSingleAabb(body);
-
-#ifndef IS_SERVER
-            ClientNetwork::GetInstance().Send(PacketType::C2S_Rigidbody_SetTransform, SetTransformCommand{ position, rotation });
-
-#ifdef _WIN32
-            PhysicsDebugger::LogSetTransformPacket(SetTransformCommand{ position, rotation });
-#endif
-#endif
         }
 
         [[nodiscard]]

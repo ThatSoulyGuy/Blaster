@@ -26,7 +26,7 @@ namespace Blaster::Independent::Physics
             solver = new btSequentialImpulseConstraintSolver();
 
             world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
-            world->setGravity(btVector3(0.0f, -9.8f, 0.0f));
+            world->setGravity(btVector3(0.0f, -19.8f, 0.0f));
         }
 
         void Update()

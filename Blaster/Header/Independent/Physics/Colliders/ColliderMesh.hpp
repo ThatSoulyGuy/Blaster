@@ -34,12 +34,13 @@ namespace Blaster::Independent::Physics::Colliders
             shape = new btBvhTriangleMeshShape(triangleMesh, true);
         }
 
-        static std::shared_ptr<ColliderMesh> Create(const std::vector<Vector<float, 3>>& vertices, const std::vector<std::uint32_t>& indices)
+        static std::shared_ptr<ColliderMesh> Create(const std::vector<Vector<float, 3>>& vertices, const std::vector<std::uint32_t>& indices, bool shouldSynchronize = true)
         {
             std::shared_ptr<ColliderMesh> result(new ColliderMesh());
 
             result->vertices = vertices;
             result->indices = indices;
+            result->shouldSerialize = shouldSynchronize;
 
             return result;
         }
@@ -60,12 +61,19 @@ namespace Blaster::Independent::Physics::Colliders
         {
             archive & boost::serialization::base_object<Component>(*this);
             
-            archive & BOOST_SERIALIZATION_NVP(vertices);
-            archive & BOOST_SERIALIZATION_NVP(indices);
+            archive & BOOST_SERIALIZATION_NVP(shouldSerialize);
+
+            if (shouldSerialize)
+            {
+                archive & BOOST_SERIALIZATION_NVP(vertices);
+                archive & BOOST_SERIALIZATION_NVP(indices);
+            }
         }
 
         std::vector<Vector<float, 3>> vertices;
         std::vector<unsigned int> indices;
+
+        bool shouldSerialize = true;
 
         DESCRIBE_AND_REGISTER(ColliderMesh, (Collider), (), (), ())
     };

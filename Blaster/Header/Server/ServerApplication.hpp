@@ -51,7 +51,7 @@ namespace Blaster::Server
 
             std::cout << "Enter PORT: ";
             std::cin >> port;
-
+            
             ServerNetwork::GetInstance().Initialize(port);
 
             ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto client)
@@ -62,6 +62,16 @@ namespace Blaster::Server
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
                 {
+                    std::random_device device;
+                    std::mt19937 generator(device());
+
+                    constexpr int min = 1;
+                    constexpr int max = 2;
+
+                    std::uniform_int_distribution distribution(min, max);
+
+                    const int randomNumber = distribution(generator);
+
                     const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
 
                     std::cout << "Client " << who << " is '" << name << "'." << std::endl;
@@ -69,10 +79,15 @@ namespace Blaster::Server
                     ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
                     auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
+                    
+                    if (randomNumber == 1)
+                        player->GetTransform()->SetLocalPosition({ 418.87f, -200.0f, 13.19f });
+                    else
+                        player->GetTransform()->SetLocalPosition({ -411.66f, -200.0f, 7.50f });
 
                     player->AddComponent(EntityPlayer::Create());
-                    player->AddComponent(ColliderCapsule::Create(10.0f, 10.0f));
-                    player->AddComponent(Rigidbody::Create(100.0f, Rigidbody::Type::DYNAMIC));
+                    player->AddComponent(ColliderCapsule::Create(2.0f, 8.0f));
+                    player->AddComponent(Rigidbody::Create(81.65f, Rigidbody::Type::DYNAMIC));
                     player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
 
                     SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
@@ -160,21 +175,12 @@ namespace Blaster::Server
 
             PhysicsWorld::GetInstance().Initialize();
 
-            const auto crateObject = GameObjectManager::GetInstance().Register(GameObject::Create("crate"));
-
-            crateObject->AddComponent(TextureFuture::Create("blaster.container"));
-            crateObject->AddComponent(Model::Create({ "Blaster", "Model/Crate.fbx" }, false));
-            crateObject->AddComponent(ColliderBox::Create({ 20.0f, 20.0f, 20.0f }));
-            crateObject->AddComponent(Rigidbody::Create(100.0f, Rigidbody::Type::DYNAMIC));
-
-            crateObject->GetTransform()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
-
             const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
-            platformObject->AddComponent(TextureFuture::Create("blaster.stone"));
-            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Platform.fbx" }, true));
+            platformObject->AddComponent(TextureFuture::Create("blaster.map_texture"));
+            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, true));
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
         }

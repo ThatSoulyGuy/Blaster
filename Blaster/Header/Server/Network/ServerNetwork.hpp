@@ -42,6 +42,8 @@ namespace Blaster::Server::Network
             std::array<std::uint8_t, 512> readBuffer{};
             std::vector<std::uint8_t> inbox;
 
+            boost::asio::steady_timer disconnectTimer{ socket.get_executor() };
+
             explicit ClientReference(TcpProtocol::socket sock) : socket(std::move(sock)), strand(boost::asio::make_strand(socket.get_executor())) { }
         };
 
@@ -195,10 +197,12 @@ namespace Blaster::Server::Network
                 {
                     std::cerr << "Error during packet sending! " << error << std::endl;
 
-                    HandleDisconnect(client);
+                    StartDisconnectTimer(client);
 
                     return;
                 }
+
+                CancelDisconnectTimer(client);
 
                 if (!client->writeQueue.empty())
                     StartWrite(client);
@@ -238,10 +242,12 @@ namespace Blaster::Server::Network
                 {
                     if (errorCode)
                     {
-                        HandleDisconnect(client);
+                        StartDisconnectTimer(client);
 
                         return;
                     }
+
+                    CancelDisconnectTimer(client);
 
                     client->inbox.insert(client->inbox.end(), client->readBuffer.data(), client->readBuffer.data() + number);
 
@@ -274,7 +280,9 @@ namespace Blaster::Server::Network
             for (auto& callback : onClientDisconnectedCallbackList)
                 callback(client);
 
-            ReleaseId(client->id);
+            client->socket.shutdown(boost::asio::socket_base::shutdown_both);
+            client->socket.close();
+
             clientMap.erase(client->id);
 
             std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!" << std::endl;
@@ -289,6 +297,34 @@ namespace Blaster::Server::Network
             }
         }
 
+        NetworkId AcquireId()
+        {
+            return ++nextId;
+        }
+
+        void StartDisconnectTimer(const std::shared_ptr<ClientReference>& client)
+        {
+            if (client->disconnectTimer.expiry() != boost::asio::steady_timer::time_point::max())
+                return;
+
+            client->disconnectTimer.expires_after(std::chrono::seconds(2));
+            client->disconnectTimer.async_wait([this, wp = std::weak_ptr(client)](const boost::system::error_code& ec)
+                {
+                    if (ec == boost::asio::error::operation_aborted)
+                        return;
+
+                    if (auto sp = wp.lock())
+                        HandleDisconnect(sp);
+                });
+        }
+
+        void CancelDisconnectTimer(const std::shared_ptr<ClientReference>& client)
+        {
+            client->disconnectTimer.expires_at(boost::asio::steady_timer::time_point::max());
+
+            client->disconnectTimer.cancel();
+        }
+
         boost::asio::io_context ioContext;
         std::optional<TcpProtocol::acceptor> acceptor;
         std::thread ioThread;
@@ -296,31 +332,6 @@ namespace Blaster::Server::Network
         std::atomic<NetworkId> nextId = 0;
 
         std::vector<std::function<void(std::shared_ptr<ClientReference>)>> onClientDisconnectedCallbackList;
-
-        std::queue<NetworkId> freeIds;
-        std::mutex idMutex;
-
-        NetworkId AcquireId()
-        {
-            std::scoped_lock lock(idMutex);
-
-            if (!freeIds.empty())
-            {
-                NetworkId id = freeIds.front();
-
-                freeIds.pop();
-
-                return id;
-            }
-
-            return ++nextId;
-        }
-
-        void ReleaseId(NetworkId id)
-        {
-            std::scoped_lock guard(idMutex);
-            freeIds.push(id);
-        }
 
         std::unordered_map<NetworkId, std::shared_ptr<ClientReference>> clientMap;
 

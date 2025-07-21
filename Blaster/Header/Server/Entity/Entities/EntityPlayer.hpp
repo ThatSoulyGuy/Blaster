@@ -41,7 +41,7 @@ namespace Blaster::Server::Entity::Entities
 
                 const auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
+                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.resource.wood").value());
 
                 modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Player.fbx" }));
 
@@ -52,7 +52,7 @@ namespace Blaster::Server::Entity::Entities
             {
                 const auto modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.wood").value());
+                modelGameObject->AddComponent(TextureManager::GetInstance().Get("blaster.resource.wood").value());
 
                 modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Player.fbx" }));
             }
@@ -61,6 +61,12 @@ namespace Blaster::Server::Entity::Entities
 
         void Update() override
         {
+            if (!GetGameObject()->IsLocallyControlled())
+                return;
+
+            if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
+                std::cout << "Current Position: " << GetGameObject()->GetTransform()->GetWorldPosition() << std::endl;
+
             UpdateMouselook();
             UpdateMovement();
         }
@@ -78,7 +84,7 @@ namespace Blaster::Server::Entity::Entities
                     .Set(EntityBase::RegistryNameSetter{ "entity_player" })
                     .Set(EntityBase::CurrentHealthSetter{ 100.0f })
                     .Set(EntityBase::MaximumHealthSetter{ 100.0f })
-                    .Set(EntityBase::MovementSpeedSetter{ 0.28f })
+                    .Set(EntityBase::MovementSpeedSetter{ 20.0f })
                     .Set(EntityBase::RunningMultiplierSetter{ 1.2f })
                     .Set(EntityBase::JumpHeightSetter{ 5.0f })
                     .Set(EntityBase::CanJumpSetter{ true })
@@ -108,9 +114,6 @@ namespace Blaster::Server::Entity::Entities
 
         void UpdateMouselook() const
         {
-            if (!GetGameObject()->IsLocallyControlled())
-                return;
-
             if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
                 InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
 
@@ -127,9 +130,6 @@ namespace Blaster::Server::Entity::Entities
 
         void UpdateMovement() const
         {
-            if (!GetGameObject()->IsLocallyControlled())
-                return;
-
             Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
 
             forward.y() = 0.0f;
@@ -159,8 +159,7 @@ namespace Blaster::Server::Entity::Entities
             {
                 Vector<float, 3>::Normalize(direction);
 
-                constexpr float moveSpeed = 5.0f;
-                btVector3 impulse(direction.x() * moveSpeed, 0.0f, direction.z() * moveSpeed);
+                btVector3 impulse(direction.x() * GetMovementSpeed(), 0.0f, direction.z() * GetMovementSpeed());
 
                 GetGameObject()->GetComponent<Rigidbody>().value()->ApplyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
             }

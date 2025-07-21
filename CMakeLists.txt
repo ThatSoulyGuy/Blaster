@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.4...4.0)
+cmake_minimum_required(VERSION 3.1...4.0)
 
 project(Blaster LANGUAGES CXX)
 
@@ -715,6 +715,31 @@ if (TARGET assimp AND NOT TARGET assimp::assimp)
     add_library(assimp::assimp ALIAS assimp)
 endif()
 
+set(ZSTD_BUILD_PROGRAMS      OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED        OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_CONTRIB       OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS         OFF CACHE BOOL "" FORCE)
+set(ZSTD_LEGACY_SUPPORT      OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    zstd
+    GIT_REPOSITORY https://github.com/facebook/zstd.git
+    GIT_TAG        release
+    SOURCE_SUBDIR  build/cmake
+)
+FetchContent_MakeAvailable(zstd)
+
+if (TARGET zstd_static)
+    add_library(ZSTD::ZSTD ALIAS zstd_static)
+elseif (TARGET libzstd_static)
+    add_library(ZSTD::ZSTD ALIAS libzstd_static)
+else()
+    message(FATAL_ERROR
+        "Neither zstd_static nor libzstd_static target was found after "
+        "FetchContent_MakeAvailable(zstd).  Please check the zstd CMake export "
+        "names for this commit.")
+endif()
+
 set(BUILD_SHARED_LIBS OFF)
 
 set(EXTRA_PLATFORM_LIBS "")
@@ -771,6 +796,7 @@ function(blaster_add_executable target source_glob)
             Boost::serialization
             Boost::asio
             assimp::assimp
+            ZSTD::ZSTD
             ${EXTRA_PLATFORM_LIBS}
     )
 

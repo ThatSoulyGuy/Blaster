@@ -310,11 +310,11 @@ namespace Blaster::Independent::Math
         template <class Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive& boost::serialization::base_object<Component>(*this);
-
-            archive& BOOST_SERIALIZATION_NVP(localPosition);
-            archive& BOOST_SERIALIZATION_NVP(localRotation);
-            archive& BOOST_SERIALIZATION_NVP(localScale);
+            archive & boost::serialization::base_object<Component>(*this);
+            
+            archive & BOOST_SERIALIZATION_NVP(localPosition);
+            archive & BOOST_SERIALIZATION_NVP(localRotation);
+            archive & BOOST_SERIALIZATION_NVP(localScale);
         }
 
         std::optional<std::weak_ptr<Transform>> parent;

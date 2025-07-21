@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <regex>
 #include <assimp/Importer.hpp>
@@ -15,6 +15,22 @@
 #include "Independent/Physics/Colliders/ColliderMesh.hpp"
 #include "Independent/Physics/Rigidbody.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
+#include <zstd.h>
+
+#if defined(_MSC_VER)
+#define PACK_BEGIN __pragma(pack(push, 1))
+#define PACK_END   __pragma(pack(pop))
+#define PACK_ATTR
+#elif defined(__GNUC__) || defined(__clang__)
+#define PACK_BEGIN
+#define PACK_END
+#define PACK_ATTR  __attribute__((packed))
+#else
+#pragma message("Warning: no struct‑packing directive - Header layout will be compiler-specific.")
+#define PACK_BEGIN
+#define PACK_END
+#define PACK_ATTR
+#endif
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Render::Vertices;
@@ -41,10 +57,13 @@ namespace Blaster::Client::Render
 
             if (buildCollider)
             {
-                const auto& [colliderVertices, colliderIndices] = LoadMeshBinary(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.bin");
+                const auto& [colliderVertices, colliderIndices] = LoadColliderCLD1(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.cld1");
 
-                GetGameObject()->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices));
-                GetGameObject()->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::STATIC));
+                GetGameObject()->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices), false);
+                GetGameObject()->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::STATIC), false);
+
+                GetGameObject()->GetComponent<ColliderMesh>().value()->SetShouldSynchronize(false);
+                GetGameObject()->GetComponent<Rigidbody>().value()->SetShouldSynchronize(false);
             }
         }
 
@@ -91,6 +110,16 @@ namespace Blaster::Client::Render
 
             return result;
         }
+
+        PACK_BEGIN
+        struct Header PACK_ATTR
+        {
+            char magic[4]{ 'C','L','D','1' };
+            uint32_t vertexCnt{ 0 };
+            uint32_t indexCnt{ 0 };
+            struct { float x, y, z; } bbMin{}, bbMax{};
+        };
+        PACK_END
 
     private:
 
@@ -161,7 +190,8 @@ namespace Blaster::Client::Render
                 if (aMesh->HasTextureCoords(0))
                 {
                     aiVector3D t = aMesh->mTextureCoords[0][v];
-                    vertex.uv0 = {t.x, t.y};
+
+                    vertex.uv0 = { t.x, 1.0f - t.y };
                 }
 
                 vertices.emplace_back(vertex);
@@ -177,19 +207,8 @@ namespace Blaster::Client::Render
                     indices.push_back(aMesh->mFaces[f].mIndices[j]);
             }
 
-            std::vector<Vector<uint32_t,4>> boneIds(aMesh->mNumVertices, { 0, 0, 0,0 });
-            std::vector<Vector<float,4>> weights(aMesh->mNumVertices, { 0, 0, 0,0 });
-
-            if (buildCollider)
-            {
-                const auto base = static_cast<std::uint32_t>(colliderVertices.size());
-
-                for (const auto& vertex : vertices)
-                    colliderVertices.push_back(vertex.position);
-
-                for (const auto index : indices)
-                    colliderIndices.push_back(base + index);
-            }
+            std::vector<Vector<uint32_t, 4>> boneIds(aMesh->mNumVertices, { 0, 0, 0,0 });
+            std::vector<Vector<float, 4>> weights(aMesh->mNumVertices, { 0, 0, 0,0 });
 
             if (aMesh->HasBones())
             {
@@ -233,42 +252,104 @@ namespace Blaster::Client::Render
             });
         }
 
-        [[nodiscard]]
-        static std::pair<std::vector<Vector<float, 3>>, std::vector<std::uint32_t>> LoadMeshBinary(const std::filesystem::path& inputPath)
+        inline std::pair<std::vector<Vector<float, 3>>, std::vector<uint32_t>> LoadColliderCLD1(const std::filesystem::path& filePath)
         {
-            std::ifstream stream(inputPath, std::ios::binary);
+            std::ifstream file(filePath, std::ios::binary | std::ios::ate);
 
-            if (!stream)
-                throw std::runtime_error("LoadMeshBinary: could not open '" + inputPath.string() + '\'');
-            
-            std::uint32_t vertexCount = 0;
-            std::uint32_t indexCount = 0;
+            if (!file)
+                throw std::runtime_error("CLD1 open fail");
 
-            stream.read(reinterpret_cast<char*>(&vertexCount), sizeof(vertexCount));
-            stream.read(reinterpret_cast<char*>(&indexCount), sizeof(indexCount));
+            std::vector<uint8_t> buffer(file.tellg());
 
-            if (!stream)
-                throw std::runtime_error("LoadMeshBinary: header read failed or file too short");
-            
-            std::vector<Vector<float, 3>> positions(vertexCount);
-            std::vector<std::uint32_t> indices(indexCount);
+            file.seekg(0);
+            file.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
 
-            stream.read(reinterpret_cast<char*>(positions.data()), static_cast<std::streamsize>(vertexCount) * sizeof(float) * 3);
-            stream.read(reinterpret_cast<char*>(indices.data()), static_cast<std::streamsize>(indexCount) * sizeof(std::uint32_t));
+            const uint8_t* data = buffer.data();
+            size_t size = buffer.size();
 
-            if (!stream)
-                throw std::runtime_error("LoadMeshBinary: payload read failed or file truncated");
-
-            for (Vector<float, 3>& p : positions)
-                p.y() = -p.y();
-
-            if (indexCount % 3 == 0)
+            if (size >= 4 && std::memcmp(data, "ZST\0", 4) == 0)
             {
-                for (std::size_t i = 0; i < indexCount; i += 3)
-                    std::swap(indices[i + 1], indices[i + 2]);
+                const void* frame = data + 4;
+
+                size_t cSz = size - 4;
+                size_t rSz = ZSTD_getFrameContentSize(frame, cSz);
+
+                if (rSz == ZSTD_CONTENTSIZE_ERROR || rSz == ZSTD_CONTENTSIZE_UNKNOWN)
+                    throw std::runtime_error("bad zstd frame");
+
+                std::vector<uint8_t> raw(rSz);
+
+                if (ZSTD_decompress(raw.data(), rSz, frame, cSz) != rSz)
+                    throw std::runtime_error("zstd decompress fail");
+
+                buffer.swap(raw);
+
+                data = buffer.data();
+                size = buffer.size();
             }
-            
-            return { std::move(positions), std::move(indices) }; 
+
+            if (size < sizeof(Header))
+                throw std::runtime_error("CLD1 truncated");
+
+            Header header{};
+
+            std::memcpy(&header, data, sizeof header);
+
+            if (std::memcmp(header.magic, "CLD1", 4) != 0)
+                throw std::runtime_error("bad magic");
+
+            const uint8_t* ptr = data + sizeof header;
+            const uint8_t* end = data + size;
+
+            const Vector<float, 3> lo{ header.bbMin.x, header.bbMin.y, header.bbMin.z };
+            const Vector<float, 3> span{ header.bbMax.x - header.bbMin.x, header.bbMax.y - header.bbMin.y, header.bbMax.z - header.bbMin.z };
+
+            if (ptr + header.vertexCnt * 6 > end)
+                throw std::runtime_error("vertex block truncated");
+
+            std::vector<Vector<float, 3>> vertices;
+            vertices.reserve(header.vertexCnt);
+
+            for (uint32_t i = 0; i < header.vertexCnt; ++i, ptr += 6)
+            {
+                uint16_t qx, qy, qz;
+
+                std::memcpy(&qx, ptr + 0, 2);
+                std::memcpy(&qy, ptr + 2, 2);
+                std::memcpy(&qz, ptr + 4, 2);
+
+                vertices.emplace_back(Vector<float, 3>{ lo.x() + span.x() * Dequant(qx), lo.y() + span.y() * Dequant(qy), lo.z() + span.z() * Dequant(qz) });
+            }
+
+            const bool idx32 = header.vertexCnt > 0xFFFF;
+            const size_t idxBytes = idx32 ? 4 : 2;
+
+            if (ptr + header.indexCnt * idxBytes > end)
+                throw std::runtime_error("index block truncated");
+
+            std::vector<uint32_t> indices;
+            indices.reserve(header.indexCnt);
+
+            if (idx32)
+            {
+                const uint32_t* src = reinterpret_cast<const uint32_t*>(ptr);
+
+                indices.assign(src, src + header.indexCnt);
+            }
+            else
+            {
+                const uint16_t* src = reinterpret_cast<const uint16_t*>(ptr);
+
+                for (uint32_t i = 0; i < header.indexCnt; ++i)
+                    indices.push_back(src[i]);
+            }
+
+            ptr += header.indexCnt * idxBytes;
+
+            if (ptr != end)
+                std::cerr << "CLD1 importer: " << (end - ptr) << " unused byte(s) at file end\n";
+
+            return { std::move(vertices), std::move(indices) };
         }
 
         static Vector<float, 3> ToVector(const aiVector3D& v)
@@ -299,11 +380,19 @@ namespace Blaster::Client::Render
             return {tmp.x, tmp.y, tmp.z};
         }
 
+        static constexpr std::uint16_t Quant(float n)
+        {
+            return std::uint16_t(std::clamp(n * 65535.f, 0.f, 65535.f) + 0.5f);
+        }
+
+        static constexpr float Dequant(std::uint16_t q)
+        {
+            return q / 65535.f;
+        }
+
         AssetPath path;
         bool buildCollider = false;
 
-        std::vector<Vector<float,3>> colliderVertices;
-        std::vector<std::uint32_t> colliderIndices;
         Skeleton skeleton;
         bool hasBones = false;
 

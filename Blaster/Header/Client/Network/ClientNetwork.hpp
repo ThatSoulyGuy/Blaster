@@ -155,10 +155,12 @@ namespace Blaster::Client::Network
                     if (error)
                     {
                         std::cerr << "ClientNetwork: write failed: " << error.message() << '\n';
-                        NotifyConnectionLost();
+                        StartDisconnectCountdown();
 
                         return;
                     }
+
+                    CancelDisconnectCountdown();
 
                     if (!writeQueue.empty())
                         StartWrite();
@@ -173,10 +175,12 @@ namespace Blaster::Client::Network
                     {
                         std::cerr << "ClientNetwork: read failed: " << errorCode.message() << '\n';
 
-                        NotifyConnectionLost();
+                        StartDisconnectCountdown();
 
                         return;
                     }
+
+                    CancelDisconnectCountdown();
 
                     inbox.insert(inbox.end(), readBuffer.data(), readBuffer.data() + number);
 
@@ -229,10 +233,38 @@ namespace Blaster::Client::Network
             }
         }
 
+        void StartDisconnectCountdown()
+        {
+            if (disconnectTimerActive.exchange(true))
+                return;
+
+            disconnectTimer.expires_after(std::chrono::seconds(2));
+            disconnectTimer.async_wait(boost::asio::bind_executor(strand, [this](const ErrorCode& errorCode)
+                {
+                    if (!errorCode)
+                        NotifyConnectionLost();
+
+                    disconnectTimerActive = false;
+                }));
+        }
+
+        void CancelDisconnectCountdown()
+        {
+            if (!disconnectTimerActive)
+                return;
+
+            disconnectTimerActive = false;
+
+            disconnectTimer.cancel();
+        }
+
         boost::asio::io_context ioContext;
         TcpProtocol::socket socket{ioContext};
         std::thread ioThread;
         std::atomic<bool> running = false;
+
+        boost::asio::steady_timer disconnectTimer{ ioContext };
+        std::atomic<bool> disconnectTimerActive{ false };
 
         std::vector<std::function<void()>> onServerConnectionLostCallbackList;
 

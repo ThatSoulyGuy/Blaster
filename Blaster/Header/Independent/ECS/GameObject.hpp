@@ -44,7 +44,7 @@ namespace Blaster::Independent::ECS
         GameObject& operator=(GameObject&&) = delete;
 
         template <typename T> requires (std::is_base_of_v<Component, T>)
-        std::shared_ptr<T> AddComponent(std::shared_ptr<T> component)
+        std::shared_ptr<T> AddComponent(std::shared_ptr<T> component, bool markDirty = true)
         {
             std::shared_lock lock(mutex);
 
@@ -62,7 +62,8 @@ namespace Blaster::Independent::ECS
 
             componentMap[typeid(T)]->wasAdded = true;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
 
             return std::static_pointer_cast<T>(componentMap[typeid(T)]);
         }
@@ -113,7 +114,8 @@ namespace Blaster::Independent::ECS
             }();
         }
 
-        template <typename T> requires (std::is_base_of_v<Component, T>) std::optional<std::shared_ptr<T>> GetComponent()
+        template <typename T> requires (std::is_base_of_v<Component, T>)
+        std::optional<std::shared_ptr<T>> GetComponent()
         {
             std::shared_lock lock(mutex);
 

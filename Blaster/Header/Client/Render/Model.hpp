@@ -10,7 +10,7 @@
 #include "Client/Render/Vertices/ModelVertex.hpp"
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Skeleton.hpp"
-#include "Client/Render/Texture.hpp"
+#include "Client/Render/TextureManager.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Physics/Colliders/ColliderMesh.hpp"
 #include "Independent/Physics/Rigidbody.hpp"
@@ -69,34 +69,31 @@ namespace Blaster::Client::Render
 
         void Render(const std::shared_ptr<Camera>&) override
         {
-            if (GetGameObject()->HasComponent<Texture>())
+            for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
             {
+                child->GetComponent<Mesh<ModelVertex>>().value()->QueueShaderCall<int>("diffuse", 0);
+
+                child->GetComponent<Mesh<ModelVertex>>().value()->QueueRenderCall([&]
+                    {
+                        glActiveTexture(GL_TEXTURE0);
+                        child->GetComponent<Texture>().value()->Bind(0);
+                    });
+            }
+
+            if (hasBones)
+            {
+                std::array<Matrix<float, 4, 4>, 128> matrices{};
+                const std::size_t count = std::min<std::size_t>(128, skeleton.bones.size());
+
+                for (std::size_t i = 0; i < count;++i)
+                    matrices[i] = skeleton.bones[i].finalPose * skeleton.bones[i].offset;
+
                 for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
                 {
-                    child->GetComponent<Mesh<ModelVertex>>().value()->QueueShaderCall<int>("hasTexture", 1);
+                    const auto mesh = child->GetComponent<Mesh<ModelVertex>>().value();
 
-                    child->GetComponent<Mesh<ModelVertex>>().value()->QueueRenderCall([&]
-                        {
-                            GetGameObject()->GetComponent<Texture>().value()->Bind(0);
-                        });
-
-                }
-
-                if (hasBones)
-                {
-                    std::array<Matrix<float, 4, 4>, 128> matrices{};
-                    const std::size_t count = std::min<std::size_t>(128, skeleton.bones.size());
-
-                    for (std::size_t i = 0; i < count;++i)
-                        matrices[i] = skeleton.bones[i].finalPose * skeleton.bones[i].offset;
-
-                    for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
-                    {
-                        const auto mesh = child->GetComponent<Mesh<ModelVertex>>().value();
-
-                        mesh->QueueShaderCall<int>("uUseSkinning", 1);
-                        mesh->QueueShaderCall<std::vector<Matrix<float, 4, 4>>>("uBoneMatrices", { matrices.begin(), matrices.end() });
-                    }
+                    mesh->QueueShaderCall<int>("uUseSkinning", 1);
+                    mesh->QueueShaderCall<std::vector<Matrix<float, 4, 4>>>("uBoneMatrices", { matrices.begin(), matrices.end() });
                 }
             }
         }
@@ -167,13 +164,13 @@ namespace Blaster::Client::Render
             const std::shared_ptr<GameObject>& current = parentGO;
 
             for (unsigned i = 0; i < node->mNumMeshes; ++i)
-                BuildMesh(scene->mMeshes[node->mMeshes[i]], current, i, globalTransform);
+                BuildMesh(scene->mMeshes[node->mMeshes[i]], scene, current, i, globalTransform);
 
             for (unsigned c = 0; c < node->mNumChildren; ++c)
                 ProcessNode(node->mChildren[c], scene, current, globalTransform);
         }
 
-        void BuildMesh(const aiMesh* aMesh, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform)
+        void BuildMesh(const aiMesh* aMesh, const aiScene* scene, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform)
         {
             std::vector<ModelVertex> vertices;
             vertices.reserve(aMesh->mNumVertices);
@@ -240,16 +237,48 @@ namespace Blaster::Client::Render
                 }
             }
 
-            const auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(localIdx), true), GetGameObject()->GetAbsolutePath());
-            
+            const auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(meshCounter++), true), GetGameObject()->GetAbsolutePath());
+
             meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
 
-            const auto component = meshGameObject->AddComponent(Mesh<ModelVertex>::Create(vertices, indices));
+            const auto meshComponent = meshGameObject->AddComponent(Mesh<ModelVertex>::Create(vertices, indices));
 
-            MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [component]
+            std::string materialName;
+
+            if (aMesh->mMaterialIndex < scene->mNumMaterials)
             {
-                component->Generate();
-            });
+                aiString tmp;
+
+                if (scene->mMaterials[aMesh->mMaterialIndex]->Get(AI_MATKEY_NAME, tmp) == AI_SUCCESS)
+                    materialName = tmp.C_Str();
+            }
+
+            std::shared_ptr<Texture> texture;
+
+            if (!materialName.empty())
+            {
+                std::ranges::transform(materialName, materialName.begin(), [](char c) { return std::tolower(c); });
+                std::regex_replace(materialName, std::regex(".001"), "");
+
+                texture = TextureManager::GetInstance().Get(materialName).value_or(nullptr);
+            }
+
+            if (!texture)
+                texture = TextureManager::GetInstance().Get("blaster.error").value();
+
+            meshGameObject->AddComponent(texture);
+
+            meshComponent->QueueShaderCall<int>("hasTexture", 1);
+            meshComponent->QueueRenderCall([textureCopy = texture]()
+                {
+                    glActiveTexture(GL_TEXTURE0);
+                    textureCopy->Bind(0);
+                });
+
+            MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [meshComponent]
+                {
+                    meshComponent->Generate();
+                });
         }
 
         inline std::pair<std::vector<Vector<float, 3>>, std::vector<uint32_t>> LoadColliderCLD1(const std::filesystem::path& filePath)
@@ -395,6 +424,8 @@ namespace Blaster::Client::Render
 
         Skeleton skeleton;
         bool hasBones = false;
+
+        std::size_t meshCounter = 0;
 
         DESCRIBE_AND_REGISTER(Model, (Component), (), (), (path, buildCollider, hasBones))
 

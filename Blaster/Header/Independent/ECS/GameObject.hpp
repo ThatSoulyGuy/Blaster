@@ -351,9 +351,6 @@ namespace Blaster::Independent::ECS
 
         void Update()
         {
-            if (!IsAuthoritative() && owningClient.has_value() && owningClient.value() != ClientNetwork::GetInstance().GetNetworkId())
-                return;
-
             std::shared_lock lock(mutex);
 
             for (const auto& component : componentMap | std::views::values)

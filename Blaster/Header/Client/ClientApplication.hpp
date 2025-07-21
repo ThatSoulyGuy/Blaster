@@ -53,7 +53,11 @@ namespace Blaster::Client
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.simple", { "Blaster", "Shader/Simple" }));
-            TextureManager::GetInstance().Register(Texture::Create("blaster.map_texture", { "Blaster", "Texture/MapTexture.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.error", { "Blaster", "Texture/Error.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_lens", { "Blaster", "Texture/Player/MtfLens.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_diffuse", { "Blaster", "Texture/Player/MtfDiffuse.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.map.concrete_floor", { "Blaster", "Texture/Map/ConcreteFloor.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.map.metal_wall", { "Blaster", "Texture/Map/MetalWall.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.wood", { "Blaster", "Texture/Resource/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.stone", { "Blaster", "Texture/Resource/Stone.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));

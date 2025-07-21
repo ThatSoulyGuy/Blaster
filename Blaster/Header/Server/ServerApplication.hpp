@@ -179,7 +179,6 @@ namespace Blaster::Server
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
-            platformObject->AddComponent(TextureFuture::Create("blaster.map_texture"));
             platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, true));
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });

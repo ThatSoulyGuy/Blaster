@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <regex>
+#include <set>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -65,45 +66,64 @@ namespace Blaster::Client::Render
                 GetGameObject()->GetComponent<ColliderMesh>().value()->SetShouldSynchronize(false);
                 GetGameObject()->GetComponent<Rigidbody>().value()->SetShouldSynchronize(false);
             }
+
+#ifndef IS_SERVER
+            if (hasBones && boneUbo == 0)
+            {
+                glGenBuffers(1, &boneUbo);
+                glBindBuffer(GL_UNIFORM_BUFFER, boneUbo);
+                glBufferData(GL_UNIFORM_BUFFER, 128 * sizeof(Matrix<float, 4, 4>), nullptr, GL_DYNAMIC_DRAW);
+                glBindBuffer(GL_UNIFORM_BUFFER, 0);
+            }
+#endif
         }
 
         void Render(const std::shared_ptr<Camera>&) override
         {
-            for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
-            {
-                child->GetComponent<Mesh<ModelVertex>>().value()->QueueShaderCall<int>("diffuse", 0);
-
-                child->GetComponent<Mesh<ModelVertex>>().value()->QueueRenderCall([&]
-                    {
-                        glActiveTexture(GL_TEXTURE0);
-                        child->GetComponent<Texture>().value()->Bind(0);
-                    });
-            }
-
             if (hasBones)
             {
-                std::array<Matrix<float, 4, 4>, 128> matrices{};
-                const std::size_t count = std::min<std::size_t>(128, skeleton.bones.size());
+                const size_t boneCnt = skeleton.bones.size();
+                std::vector<Matrix<float, 4, 4>> palette(boneCnt);
 
-                for (std::size_t i = 0; i < count;++i)
-                    matrices[i] = skeleton.bones[i].finalPose * skeleton.bones[i].offset;
+                for (size_t i = 0; i < boneCnt; ++i)
+                    palette[i] = skeleton.bones[i].globalAnimated * skeleton.bones[i].offset;
 
-                for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
-                {
-                    const auto mesh = child->GetComponent<Mesh<ModelVertex>>().value();
+                glBindBuffer(GL_UNIFORM_BUFFER, boneUbo);
+                glBufferSubData(GL_UNIFORM_BUFFER, 0, palette.size() * sizeof(Matrix<float, 4, 4>), palette.data());
+                glBindBufferBase(GL_UNIFORM_BUFFER, 0, boneUbo);
+                glBindBuffer(GL_UNIFORM_BUFFER, 0);
+            }
 
-                    mesh->QueueShaderCall<int>("uUseSkinning", 1);
-                    mesh->QueueShaderCall<std::vector<Matrix<float, 4, 4>>>("uBoneMatrices", { matrices.begin(), matrices.end() });
-                }
+            for (auto& childGameObject : GetGameObject()->GetChildMap() | std::views::values)
+            {
+                auto meshOptional = childGameObject->GetComponent<Mesh<ModelVertex>>();
+
+                if (!meshOptional)
+                    continue;
+
+                auto mesh = meshOptional.value();
+
+                mesh->QueueShaderCall<int>("diffuse", 0);
+                mesh->QueueShaderCall<int>("uUseSkinning", hasBones ? 1 : 0);
+
+                mesh->QueueRenderCall([texture = childGameObject->GetComponent<Texture>().value_or(nullptr)]()
+                    {
+                        if (texture)
+                        {
+                            glActiveTexture(GL_TEXTURE0);
+                            texture->Bind(0);
+                        }
+                    });
             }
         }
 
-        static std::shared_ptr<Model> Create(const AssetPath& path, bool buildCollider = false)
+        static std::shared_ptr<Model> Create(const AssetPath& path, bool hasBones = false, bool buildCollider = false)
         {
             std::shared_ptr<Model> result(new Model());
 
             result->path = path;
             result->buildCollider = buildCollider;
+            result->hasBones = hasBones;
 
             return result;
         }
@@ -132,6 +152,7 @@ namespace Blaster::Client::Render
 
             archive & BOOST_SERIALIZATION_NVP(path);
             archive & BOOST_SERIALIZATION_NVP(buildCollider);
+            archive & BOOST_SERIALIZATION_NVP(hasBones);
         }
 
         void LoadModel()
@@ -154,23 +175,47 @@ namespace Blaster::Client::Render
             ProcessNode(scene->mRootNode, scene, GetGameObject(), aiMatrix4x4());
 
             if (hasBones)
-                GetGameObject()->AddComponent(Animator::Create(&skeleton));
+            {
+                FillBindPose(scene->mRootNode, scene->mRootNode->mTransformation, aiMatrix4x4());
+
+                std::shared_ptr<Animator> animator;
+
+                if (auto found = GetGameObject()->GetComponent<Animator>())
+                    animator = found.value();
+                else
+                    animator = GetGameObject()->AddComponent(Animator::Create(&skeleton));
+
+                animator->SetSkeleton(&skeleton);
+
+                for (unsigned a = 0; a < scene->mNumAnimations; ++a)
+                {
+                    AnimationClip clip = ImportClip(scene->mAnimations[a], skeleton);
+
+                    if (!animator->HasClip(clip.name))
+                        animator->AddClip(std::move(clip));
+                }
+            }
         }
 
-        void ProcessNode(const aiNode* node, const aiScene* scene, const std::shared_ptr<GameObject>& parentGO, const aiMatrix4x4& parentTransform)
+        void ProcessNode(const aiNode* node, const aiScene* scene, const std::shared_ptr<GameObject>& current, const aiMatrix4x4& parentTransform, uint32_t parentBoneId = std::numeric_limits<uint32_t>::max())
         {
             const aiMatrix4x4 globalTransform = parentTransform * node->mTransformation;
 
-            const std::shared_ptr<GameObject>& current = parentGO;
+            uint32_t myBoneId = parentBoneId;
 
-            for (unsigned i = 0; i < node->mNumMeshes; ++i)
-                BuildMesh(scene->mMeshes[node->mMeshes[i]], scene, current, i, globalTransform);
+            if (IsBoneNode(node))
+                myBoneId = skeleton.GetOrAdd(node->mName.C_Str(), aiMatrix4x4(), node->mTransformation, parentBoneId);
+            else if (hasBones)
+                myBoneId = skeleton.GetOrAdd(node->mName.C_Str(), aiMatrix4x4(), node->mTransformation, parentBoneId);
+
+            for (unsigned m = 0; m < node->mNumMeshes; ++m)
+                BuildMesh(scene->mMeshes[node->mMeshes[m]], scene, current, m, globalTransform, myBoneId);
 
             for (unsigned c = 0; c < node->mNumChildren; ++c)
-                ProcessNode(node->mChildren[c], scene, current, globalTransform);
+                ProcessNode(node->mChildren[c], scene, current, globalTransform, myBoneId);
         }
 
-        void BuildMesh(const aiMesh* aMesh, const aiScene* scene, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform)
+        void BuildMesh(const aiMesh* aMesh, const aiScene* scene, const std::shared_ptr<GameObject>& owner, const unsigned localIdx, const aiMatrix4x4& xform, const uint32_t nodeParentBoneId)
         {
             std::vector<ModelVertex> vertices;
             vertices.reserve(aMesh->mNumVertices);
@@ -179,7 +224,10 @@ namespace Blaster::Client::Render
             {
                 ModelVertex vertex;
 
-                vertex.position = TransformPosition(xform, aMesh->mVertices[v]);
+                if (aMesh->HasBones())
+                    vertex.position = ToVector(aMesh->mVertices[v]);
+                else
+                    vertex.position = TransformPosition(xform, aMesh->mVertices[v]);
 
                 if (aMesh->HasVertexColors(0))
                     vertex.color = ToVector(aMesh->mColors[0][v]);
@@ -204,24 +252,24 @@ namespace Blaster::Client::Render
                     indices.push_back(aMesh->mFaces[f].mIndices[j]);
             }
 
-            std::vector<Vector<uint32_t, 4>> boneIds(aMesh->mNumVertices, { 0, 0, 0,0 });
-            std::vector<Vector<float, 4>> weights(aMesh->mNumVertices, { 0, 0, 0,0 });
+            std::vector<Vector<uint32_t, 4>> boneIds(aMesh->mNumVertices, { 0, 0, 0, 0 });
+            std::vector<Vector<float, 4>> weights(aMesh->mNumVertices, { 0, 0, 0, 0 });
 
             if (aMesh->HasBones())
             {
-                hasBones = true;
-
                 for (unsigned b = 0; b < aMesh->mNumBones; ++b)
                 {
                     const aiBone* bone = aMesh->mBones[b];
-                    const std::size_t boneIndex = skeleton.GetOrAdd(bone->mName.C_Str(), bone->mOffsetMatrix);
+
+                    const uint32_t parentId = nodeParentBoneId;
+                    const uint32_t boneIndex = skeleton.GetOrAdd(bone->mName.C_Str(), bone->mOffsetMatrix, aiMatrix4x4(), std::numeric_limits<uint32_t>::max());
 
                     for (unsigned w = 0; w < bone->mNumWeights; ++w)
                     {
                         const aiVertexWeight& vertexWeight = bone->mWeights[w];
 
-                        auto& idList = boneIds [vertexWeight.mVertexId];
-                        auto& weightList = weights [vertexWeight.mVertexId];
+                        auto& idList = boneIds[vertexWeight.mVertexId];
+                        auto& weightList = weights[vertexWeight.mVertexId];
 
                         for (int slot = 0; slot < 4; ++slot)
                         {
@@ -237,11 +285,24 @@ namespace Blaster::Client::Render
                 }
             }
 
+            for (std::size_t i = 0; i < vertices.size(); ++i)
+            {
+                vertices[i].boneIds = boneIds[i];
+                vertices[i].weights = weights[i];
+
+                const float wSum = vertices[i].weights.x() + vertices[i].weights.y() + vertices[i].weights.z() + vertices[i].weights.w();
+
+                if (wSum > 0.0f)
+                    vertices[i].weights /= wSum;
+            }
+
             const auto meshGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("mesh" + std::to_string(meshCounter++), true), GetGameObject()->GetAbsolutePath());
 
             meshGameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.model").value());
 
             const auto meshComponent = meshGameObject->AddComponent(Mesh<ModelVertex>::Create(vertices, indices));
+
+            meshComponent->AddBuffer("bones", [this](GLuint& dst) { dst = boneUbo; });
 
             std::string materialName;
 
@@ -268,7 +329,6 @@ namespace Blaster::Client::Render
 
             meshGameObject->AddComponent(texture);
 
-            meshComponent->QueueShaderCall<int>("hasTexture", 1);
             meshComponent->QueueRenderCall([textureCopy = texture]()
                 {
                     glActiveTexture(GL_TEXTURE0);
@@ -279,9 +339,40 @@ namespace Blaster::Client::Render
                 {
                     meshComponent->Generate();
                 });
+
+            if (hasBones)
+            {
+                auto transform = meshGameObject->GetTransform();
+
+                Vector<float, 3> position, rotationDegrees, scale;
+                DecomposeAiMatrix(xform, position, rotationDegrees, scale);
+
+                transform->SetLocalPosition(position,  false);
+                transform->SetLocalRotation(rotationDegrees, false);
+                transform->SetLocalScale(scale, false);
+            }
         }
 
-        inline std::pair<std::vector<Vector<float, 3>>, std::vector<uint32_t>> LoadColliderCLD1(const std::filesystem::path& filePath)
+        void FillBindPose(const aiNode* node, const aiMatrix4x4&, const aiMatrix4x4& parent)
+        {
+            aiMatrix4x4 local = node->mTransformation;
+            aiMatrix4x4 global = parent * local;
+
+            auto iterator = skeleton.boneIndex.find(node->mName.C_Str());
+
+            if (iterator != skeleton.boneIndex.end())
+            {
+                BoneInformation& information = skeleton.bones[iterator->second];
+
+                information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(local);
+                information.globalAnimated = Matrix<float, 4, 4>::FromAssimpMatrix(global);
+            }
+
+            for (unsigned c = 0; c < node->mNumChildren; ++c)
+                FillBindPose(node->mChildren[c], aiMatrix4x4(), global);
+        }
+
+        std::pair<std::vector<Vector<float, 3>>, std::vector<uint32_t>> LoadColliderCLD1(const std::filesystem::path& filePath)
         {
             std::ifstream file(filePath, std::ios::binary | std::ios::ate);
 
@@ -381,6 +472,11 @@ namespace Blaster::Client::Render
             return { std::move(vertices), std::move(indices) };
         }
 
+        bool IsBoneNode(const aiNode* node)
+        {
+            return skeleton.boneIndex.contains(node->mName.C_Str());
+        }
+
         static Vector<float, 3> ToVector(const aiVector3D& v)
         {
             return { v.x, v.y, v.z };
@@ -409,6 +505,38 @@ namespace Blaster::Client::Render
             return {tmp.x, tmp.y, tmp.z};
         }
 
+        static void DecomposeAiMatrix(const aiMatrix4x4& matrix, Vector<float, 3>& outPosition, Vector<float, 3>& outRotationDegrees, Vector<float, 3>& outScale)
+        {
+            aiVector3D s;
+            aiQuaternion q;
+            aiVector3D t;
+            matrix.Decompose(s, q, t);
+
+            outPosition = { t.x, t.y, t.z };
+            outScale = { s.x, s.y, s.z };
+
+            float ysqr = q.y * q.y;
+
+            float sinr_cosp = 2.f * (q.w * q.x + q.y * q.z);
+            float cosr_cosp = 1.f - 2.f * (q.x * q.x + ysqr);
+            float roll = std::atan2(sinr_cosp, cosr_cosp);
+
+            float sinp = 2.f * (q.w * q.y - q.z * q.x);
+            float pitch;
+
+            if (std::fabs(sinp) >= 1.f)
+                pitch = std::copysign(std::numbers::pi_v<float> / 2.f, sinp);
+            else
+                pitch = std::asin(sinp);
+
+            float siny_cosp = 2.f * (q.w * q.z + q.x * q.y);
+            float cosy_cosp = 1.f - 2.f * (ysqr + q.z * q.z);
+            float yaw = std::atan2(siny_cosp, cosy_cosp);
+
+            constexpr float rad2deg = 180.f / std::numbers::pi_v<float>;
+            outRotationDegrees = { roll * rad2deg, pitch * rad2deg, yaw * rad2deg };
+        }
+
         static constexpr std::uint16_t Quant(float n)
         {
             return std::uint16_t(std::clamp(n * 65535.f, 0.f, 65535.f) + 0.5f);
@@ -419,6 +547,135 @@ namespace Blaster::Client::Render
             return q / 65535.f;
         }
 
+        static Blaster::Client::Render::AnimationClip ImportClip(const aiAnimation* assimpAnimation, Skeleton& skeleton)
+        {
+            using namespace Blaster::Client::Render;
+
+            AnimationClip clip;
+
+            clip.name = assimpAnimation->mName.C_Str();
+
+            clip.name = clip.name.substr(clip.name.find("|") + 1);
+
+            clip.ticksPerSecond = (assimpAnimation->mTicksPerSecond > 0.0) ? static_cast<float>(assimpAnimation->mTicksPerSecond) : 25.0f;
+            clip.durationSeconds = static_cast<float>(assimpAnimation->mDuration / clip.ticksPerSecond);
+
+            auto toSeconds = [&](double tick)
+                {
+                    return static_cast<float>(tick / clip.ticksPerSecond);
+                };
+
+            for (unsigned c = 0; c < assimpAnimation->mNumChannels; ++c)
+            {
+                const aiNodeAnim* source = assimpAnimation->mChannels[c];
+                const std::string boneName = source->mNodeName.C_Str();
+
+                auto iterator = skeleton.boneIndex.find(boneName);
+
+                if (iterator == skeleton.boneIndex.end())
+                    continue;
+
+                Channel dst;
+
+                dst.boneId = static_cast<uint32_t>(iterator->second);
+
+                std::set<float> timeList;
+
+                for (unsigned i = 0; i < source->mNumPositionKeys; ++i)
+                    timeList.insert(toSeconds(source->mPositionKeys[i].mTime));
+
+                for (unsigned i = 0; i < source->mNumRotationKeys; ++i)
+                    timeList.insert(toSeconds(source->mRotationKeys[i].mTime));
+
+                for (unsigned i = 0; i < source->mNumScalingKeys; ++i)
+                    timeList.insert(toSeconds(source->mScalingKeys[i].mTime));
+
+                auto sampleVec3 = [&](const aiVectorKey* keys, unsigned count, float t)
+                    {
+                        if (count == 0)
+                            return Vector<float, 3>{0, 0, 0};
+
+                        if (t <= toSeconds(keys[0].mTime))
+                            return Vector<float, 3>{keys[0].mValue.x, keys[0].mValue.y, keys[0].mValue.z};
+
+                        if (t >= toSeconds(keys[count - 1].mTime))
+                            return Vector<float, 3>{keys[count - 1].mValue.x, keys[count - 1].mValue.y, keys[count - 1].mValue.z};
+
+                        for (unsigned i = 1; i < count; ++i)
+                        {
+                            float t1 = toSeconds(keys[i].mTime);
+                            float t0 = toSeconds(keys[i - 1].mTime);
+
+                            if (t < t1)
+                            {
+                                float alpha = (t - t0) / (t1 - t0);
+
+                                const auto& v0 = keys[i - 1].mValue;
+                                const auto& v1 = keys[i].mValue;
+
+                                return Vector<float, 3>{ v0.x + (v1.x - v0.x) * alpha, v0.y + (v1.y - v0.y) * alpha, v0.z + (v1.z - v0.z) * alpha };
+                            }
+                        }
+
+                        return Vector<float, 3>{0, 0, 0};
+                    };
+
+                auto sampleQuaternion = [&](const aiQuatKey* keys, unsigned count, float t)
+                    {
+                        if (count == 0)
+                            return Vector<float, 4>{0, 0, 0, 1};
+
+                        if (t <= toSeconds(keys[0].mTime))
+                        {
+                            const auto& q = keys[0].mValue;
+                            
+                            return Vector<float, 4>{q.x, q.y, q.z, q.w};
+                        }
+
+                        if (t >= toSeconds(keys[count - 1].mTime))
+                        {
+                            const auto& q = keys[count - 1].mValue;
+                            
+                            return Vector<float, 4>{q.x, q.y, q.z, q.w};
+                        }
+                        
+                        for (unsigned i = 1; i < count; ++i)
+                        {
+                            float t1 = toSeconds(keys[i].mTime);
+                            float t0 = toSeconds(keys[i - 1].mTime);
+
+                            if (t < t1)
+                            {
+                                float alpha = (t - t0) / (t1 - t0);
+
+                                aiQuaternion out;
+                                aiQuaternion::Interpolate(out, keys[i - 1].mValue, keys[i].mValue, alpha);
+
+                                return Vector<float, 4>{out.x, out.y, out.z, out.w};
+                            }
+                        }
+
+                        return Vector<float, 4>{0, 0, 0, 1};
+                    };
+
+                for (float time : timeList)
+                {
+                    Key key;
+
+                    key.time = time;
+                    key.translation = sampleVec3(source->mPositionKeys, source->mNumPositionKeys, time);
+                    key.scale = sampleVec3(source->mScalingKeys, source->mNumScalingKeys, time);
+                    key.rotation = sampleQuaternion(source->mRotationKeys, source->mNumRotationKeys, time);
+
+                    dst.keys.push_back(key);
+                }
+
+                clip.channels.push_back(std::move(dst));
+            }
+
+            return clip;
+        }
+
         AssetPath path;
         bool buildCollider = false;
 
@@ -426,6 +683,7 @@ namespace Blaster::Client::Render
         bool hasBones = false;
 
         std::size_t meshCounter = 0;
+        GLuint boneUbo{ 0 };
 
         DESCRIBE_AND_REGISTER(Model, (Component), (), (), (path, buildCollider, hasBones))
 

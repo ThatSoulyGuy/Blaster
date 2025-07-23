@@ -16,6 +16,35 @@ using namespace Blaster::Independent::Network;
 
 namespace Blaster::Independent::ECS::Synchronization
 {
+    struct SnapshotApplyGuard
+    {
+        SnapshotApplyGuard()
+        {
+            gSnapshotApplyDepth.fetch_add(1);
+        }
+
+        ~SnapshotApplyGuard()
+        {
+            gSnapshotApplyDepth.fetch_sub(1);
+
+            if (gSnapshotApplyDepth.load(std::memory_order_relaxed) == 0)
+            {
+                for (auto& request : gDeferredDirty)
+                {
+                    if (auto gameObject = request.go.lock())
+                    {
+                        if (request.component.has_value())
+                            SenderSynchronization::GetInstance().MarkDirty(std::static_pointer_cast<GameObject>(gameObject), request.component.value());
+                        else
+                            SenderSynchronization::GetInstance().MarkDirty(std::static_pointer_cast<GameObject>(gameObject));
+                    }
+                }
+
+                gDeferredDirty.clear();
+            }
+        }
+    };
+
     class ReceiverSynchronization final
     { 
 
@@ -83,11 +112,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
         void ApplySnapshot(const Snapshot& snapshot)
         {
-            struct Guard
-            {
-                Guard() { gSnapshotApplyDepth.fetch_add(1); }
-                ~Guard() { gSnapshotApplyDepth.fetch_sub(1); }
-            } guard;
+            SnapshotApplyGuard guard;
 
             std::span<const std::uint8_t> blob(snapshot.operationBlob.data(), snapshot.operationBlob.size());
 
@@ -217,6 +242,11 @@ namespace Blaster::Independent::ECS::Synchronization
                     std::static_pointer_cast<Transform>(existing)->SetLocalScale(incoming->GetLocalScale(), false);
 
                     existing->ClearWasAdded();
+                    SenderSynchronization::GetInstance().RememberHash(existing);
+                }
+                else
+                {
+                    DeserializeIntoMerge(existing, blob);
                     SenderSynchronization::GetInstance().RememberHash(existing);
                 }
 

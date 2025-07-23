@@ -4,8 +4,21 @@
 
 using namespace Blaster::Independent::Network;
 
+namespace Blaster::Independent::ECS
+{
+    class IGameObjectSynchronization;
+}
+
 namespace Blaster::Independent::ECS::Synchronization
 {
+    struct DirtyRequest
+    {
+        std::weak_ptr<Blaster::Independent::ECS::IGameObjectSynchronization> go;
+        std::optional<std::type_index> component;
+    };
+
+    thread_local std::vector<DirtyRequest> gDeferredDirty;
+
     inline std::atomic_uint32_t gSnapshotApplyDepth{ 0 };
 
     enum class Route : std::uint8_t

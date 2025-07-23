@@ -32,47 +32,36 @@ namespace Blaster::Server::Entity::Entities
 
         void Initialize() override
         {
-#ifdef IS_SERVER
-            GameObjectManager::GetInstance().Register(GameObject::Create("model_rotation_reference"), GetGameObject()->GetAbsolutePath());
-#endif
             if (GetGameObject()->IsLocallyControlled())
             {
                 const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
                 cameraGameObject->GetTransform()->SetLocalPosition({ 0.0f, 8.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
-
+                
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+
+                modelGameObject->GetTransform()->SetLocalPosition({ 0.0f, 0.1f, 0.0f });
+                modelGameObject->GetTransform()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
+                modelGameObject->GetTransform()->SetLocalScale({ 0.00015f, 0.00015f, 0.00015f });
+
+                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2.fbx" }, true));
 
                 InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
             }
-#ifndef IS_SERVER
-            else
-            {
-                modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
-
-                modelGameObject->GetTransform()->SetLocalPosition({ 0.0f, -0.9f, 0.0f });
-
-                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/NewPlayer.fbx" }));
-            }
-#endif
         }
 
         void Update() override
         {
             if (!GetGameObject()->IsLocallyControlled())
-            {
-#ifndef IS_SERVER
-                modelGameObject->GetTransform()->SetLocalRotation({ 0.0f, GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model_rotation_reference").value()->GetTransform()->GetLocalRotation().y(), 0.0f});
-#endif
-
                 return;
-            }
+
+            modelGameObject->SetLocallyActive(false);
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
                 std::cout << "Current Position: " << GetGameObject()->GetTransform()->GetWorldPosition() << std::endl;
 
-            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model_rotation_reference").value()->GetTransform()->SetLocalRotation(camera->GetGameObject()->GetTransform()->GetLocalRotation());
+            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform()->GetLocalRotation().y(), 0.0f });
 
             UpdateMouselook();
             UpdateMovement();
@@ -91,7 +80,7 @@ namespace Blaster::Server::Entity::Entities
                     .Set(EntityBase::RegistryNameSetter{ "entity_player" })
                     .Set(EntityBase::CurrentHealthSetter{ 100.0f })
                     .Set(EntityBase::MaximumHealthSetter{ 100.0f })
-                    .Set(EntityBase::MovementSpeedSetter{ 20.0f })
+                    .Set(EntityBase::MovementSpeedSetter{ 10.0f })
                     .Set(EntityBase::RunningMultiplierSetter{ 1.2f })
                     .Set(EntityBase::JumpHeightSetter{ 5.0f })
                     .Set(EntityBase::CanJumpSetter{ true })
@@ -137,6 +126,8 @@ namespace Blaster::Server::Entity::Entities
 
         void UpdateMovement() const
         {
+            std::shared_ptr<Animator> animator = modelGameObject->GetComponent<Animator>().value();
+
             Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
 
             forward.y() = 0.0f;
@@ -164,11 +155,25 @@ namespace Blaster::Server::Entity::Entities
 
             if (Vector<float, 3>::LengthSquared(direction) > 1e-6f)
             {
+                if (!animator->IsPlaying("mtf2.walk"))
+                {
+                    animator->StopAll();
+                    animator->Play("mtf2.walk");
+                }
+
                 Vector<float, 3>::Normalize(direction);
 
                 btVector3 impulse(direction.x() * GetMovementSpeed(), 0.0f, direction.z() * GetMovementSpeed());
 
                 GetGameObject()->GetComponent<Rigidbody>().value()->ApplyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
+            }
+            else
+            {
+                if (!animator->IsPlaying("mtf2.idle"))
+                {
+                    animator->StopAll();
+                    animator->Play("mtf2.idle");
+                }
             }
         }
 
@@ -177,7 +182,7 @@ namespace Blaster::Server::Entity::Entities
 
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)
 
-        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase<EntityPlayer>), (), (), (camera, MouseSensitivity))
+        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase<EntityPlayer>), (), (), (MouseSensitivity))
 
     };
 }

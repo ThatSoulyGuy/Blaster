@@ -179,7 +179,7 @@ namespace Blaster::Server
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
-            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, true));
+            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, false, true));
 
             platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
         }

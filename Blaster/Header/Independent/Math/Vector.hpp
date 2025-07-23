@@ -504,7 +504,10 @@ namespace Blaster::Independent::Math
 		static Vector Normalize(const Vector& v)
 		{
 			T ls = LengthSquared(v);
-			if (ls < T(1e-8)) return v;
+
+			if (ls < T(1e-8))
+				return v;
+
 			return v / std::sqrt(ls);
 		}
 

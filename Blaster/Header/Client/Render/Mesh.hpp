@@ -5,6 +5,7 @@
 #include <concepts>
 #include <glad/glad.h>
 #include <boost/serialization/vector.hpp>
+#include <boost/serialization/unordered_map.hpp>
 #include <boost/serialization/array.hpp>
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Shader.hpp"
@@ -51,11 +52,8 @@ namespace Blaster::Client::Render
             if (VAO)
                 glDeleteVertexArrays(1, &VAO);
 
-            if (VBO)
-                glDeleteBuffers(1, &VBO);
-
-            if (EBO)
-                glDeleteBuffers(1, &EBO);
+            for (auto& buffer : bufferMap | std::views::values)
+                glDeleteBuffers(1, &buffer);
         }
 
         Mesh(const Mesh&) = delete;
@@ -67,7 +65,8 @@ namespace Blaster::Client::Render
         {
             if (shouldRegenerate && !GetGameObject()->IsAuthoritative() && GetGameObject()->GetOwningClient().has_value() && GetGameObject()->GetOwningClient().value() != ClientNetwork::GetInstance().GetNetworkId() && !vertices.empty() && !indices.empty())
             {
-                VAO = VBO = EBO = 0;
+                for (auto& buffer : bufferMap | std::views::values)
+                    buffer = 0;
 
                 Generate();
             }
@@ -76,16 +75,16 @@ namespace Blaster::Client::Render
         void Generate()
         {
             glGenVertexArrays(1, &VAO);
-            glGenBuffers(1, &VBO);
-            glGenBuffers(1, &EBO);
+            glGenBuffers(1, &bufferMap["vbo"]);
+            glGenBuffers(1, &bufferMap["ebo"]);
 
             glBindVertexArray(VAO);
 
-            glBindBuffer(GL_ARRAY_BUFFER,VBO);
+            glBindBuffer(GL_ARRAY_BUFFER, bufferMap["vbo"]);
             glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(T), vertices.data(), GL_STATIC_DRAW);
 
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size()*sizeof(uint32_t),indices.data(),GL_STATIC_DRAW);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferMap["ebo"]);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
 
             for (const auto layout = T::GetLayout(); auto const& element : layout.GetElements())
             {
@@ -96,8 +95,11 @@ namespace Blaster::Client::Render
                 if (element.type == GL_INT || element.type == GL_UNSIGNED_INT)
                     glVertexAttribIPointer(element.index, element.componentCount, element.type, stride, reinterpret_cast<const void*>(element.offset));
                 else
-                    glVertexAttribPointer (element.index, element.componentCount, element.type, element.normalized, stride, reinterpret_cast<const void*>(element.offset));
+                    glVertexAttribPointer(element.index, element.componentCount, element.type, element.normalized, stride, reinterpret_cast<const void*>(element.offset));
             }
+
+            for (auto& [name, callback] : bufferCreationCallbackMap)
+                callback(bufferMap[name]);
 
             glBindVertexArray(0);
 
@@ -142,6 +144,18 @@ namespace Blaster::Client::Render
             }
         }
 
+        void AddBuffer(const std::string& name, const std::function<void(GLuint&)>& callback)
+        {
+            bufferMap.insert({ name, 0 });
+
+            bufferCreationCallbackMap.insert({ name, callback });
+        }
+
+        GLuint& GetBuffer(const std::string& name)
+        {
+            return bufferMap.at(name);
+        }
+
         void SetVertices(std::vector<T> v)
         {
             MarkVertexChanges(vertices, std::move(v));
@@ -155,7 +169,7 @@ namespace Blaster::Client::Render
         [[nodiscard]]
         bool operator==(const Mesh& other) const
         {
-            return OPERATOR_CHECK(vertices, indices, VAO, VBO, EBO);
+            return OPERATOR_CHECK(vertices, indices, bufferMap);
         }
 
         [[nodiscard]]
@@ -193,9 +207,7 @@ namespace Blaster::Client::Render
             archive & boost::serialization::make_nvp("vertices", vertices);
             archive & boost::serialization::make_nvp("indices", indices);
 
-            archive & boost::serialization::make_nvp("vao", VAO);
-            archive & boost::serialization::make_nvp("vbo", VBO);
-            archive & boost::serialization::make_nvp("ebo", EBO);
+            archive & boost::serialization::make_nvp("bufferMap", bufferMap);
         }
 
         void CommitIfDirty()
@@ -207,12 +219,12 @@ namespace Blaster::Client::Render
 
             if (areVerticesResized)
             {
-                glBindBuffer(GL_ARRAY_BUFFER,VBO);
+                glBindBuffer(GL_ARRAY_BUFFER, bufferMap["vbo"]);
                 glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(T), vertices.data(), GL_STATIC_DRAW);
             }
             else if (areVerticesDirty)
             {
-                glBindBuffer(GL_ARRAY_BUFFER,VBO);
+                glBindBuffer(GL_ARRAY_BUFFER, bufferMap["vbo"]);
 
                 const GLsizeiptr offset = firstVerticeDirty * sizeof(T);
                 const GLsizeiptr bytes = (lastVerticeDirty - firstVerticeDirty + 1) * sizeof(T);
@@ -222,12 +234,12 @@ namespace Blaster::Client::Render
 
             if (areIndicesResized)
             {
-                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferMap["ebo"]);
                 glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t),indices.data(), GL_STATIC_DRAW);
             }
             else if (areIndicesDirty)
             {
-                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferMap["ebo"]);
 
                 const GLsizeiptr offset = firstIndiceDirty * sizeof(uint32_t);
                 const GLsizeiptr bytes = (lastIndiceDirty - firstIndiceDirty + 1) * sizeof(uint32_t);
@@ -284,12 +296,20 @@ namespace Blaster::Client::Render
             MarkRange(indices, std::move(newI), areIndicesDirty, areIndicesResized, firstIndiceDirty, lastIndiceDirty);
         }
 
+        std::unordered_map<std::string, std::function<void(GLuint&)>> bufferCreationCallbackMap;
+
         std::deque<ShaderCall> shaderCallDeque;
         std::deque<std::function<void()>> renderCallDeque;
         std::vector<T> vertices;
         std::vector<uint32_t> indices;
 
-        GLuint VAO = 0, VBO = 0, EBO = 0;
+        GLuint VAO = 0;
+
+        std::unordered_map<std::string, GLuint> bufferMap =
+        {
+            { "vbo", 0 },
+            { "ebo", 0 }
+        };
 
         bool shouldRegenerate = true;
 

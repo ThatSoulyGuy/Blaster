@@ -65,7 +65,10 @@ namespace Blaster::Independent::ECS::Synchronization
         void MarkDirty(const std::shared_ptr<GameObject>& gameObject)
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
+            {
+                gDeferredDirty.push_back({ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), std::nullopt });
                 return;
+            }
 
 #ifndef IS_SERVER
             auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);
@@ -88,7 +91,11 @@ namespace Blaster::Independent::ECS::Synchronization
         void MarkDirty(const std::shared_ptr<GameObject>& gameObject, const std::type_index& component)
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
+            {
+                gDeferredDirty.push_back({ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), component });
+
                 return;
+            }
 
 #ifndef IS_SERVER
             auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);

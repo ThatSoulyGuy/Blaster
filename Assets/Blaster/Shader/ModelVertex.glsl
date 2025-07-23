@@ -1,17 +1,22 @@
 #version 410 core
 
-layout (location = 0) in vec3 aPosition;
-layout (location = 1) in vec4 aColor;
-layout (location = 2) in vec2 aUV;
-layout (location = 3) in ivec4 aBoneIDs;
-layout (location = 4) in vec4 aWeights;
+#extension GL_ARB_shading_language_420pack : enable
+
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec4 aColor;
+layout(location = 2) in vec2 aUV;
+layout(location = 3) in ivec4 aBoneIDs;
+layout(location = 4) in vec4 aWeights;
 
 uniform mat4 modelUniform;
 uniform mat4 viewUniform;
 uniform mat4 projectionUniform;
+uniform bool uUseSkinning;
 
-uniform bool uUseSkinning = false;
-uniform mat4 uBoneMatrices[128];
+layout(std140, binding = 0) uniform Bones
+{
+    mat4 uBoneMatrices[128];
+};
 
 out VS_OUT
 {
@@ -21,7 +26,12 @@ out VS_OUT
 
 mat4 skinMatrix()
 {
-    if (!uUseSkinning)
+    if(!uUseSkinning)
+        return mat4(1.0);
+
+    float wSum = aWeights.x + aWeights.y + aWeights.z + aWeights.w;
+
+    if(wSum == 0.0)
         return mat4(1.0);
 
     return aWeights.x * uBoneMatrices[aBoneIDs.x] + aWeights.y * uBoneMatrices[aBoneIDs.y] + aWeights.z * uBoneMatrices[aBoneIDs.z] + aWeights.w * uBoneMatrices[aBoneIDs.w];

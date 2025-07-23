@@ -1,6 +1,10 @@
 #pragma once
 
 #include <sstream>
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <assimp/vector3.h>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/nvp.hpp>
 #include "Independent/Math/Vector.hpp"
@@ -364,6 +368,17 @@ namespace Blaster::Independent::Math
 		auto end() const
 		{
 			return data.end();
+		}
+
+		static Matrix<T, 4, 4> FromAssimpMatrix(const aiMatrix4x4& matrix)
+		{
+			Matrix<T, 4, 4> result;
+
+			for (int row = 0; row < 4; ++row)
+				for (int col = 0; col < 4; ++col)
+					result[col][row] = matrix[row][col];
+
+			return result;
 		}
 
 		static constexpr size_t Rows()

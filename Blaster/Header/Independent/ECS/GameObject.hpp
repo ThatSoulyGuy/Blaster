@@ -344,6 +344,16 @@ namespace Blaster::Independent::ECS
             return mutex;
         }
 
+        void SetLocallyActive(bool isLocallyActive)
+        {
+            this->isLocallyActive = isLocallyActive;
+        }
+
+        bool IsLocallyActive() const
+        {
+            return isLocallyActive;
+        }
+
         void MarkDestroyed() noexcept override
         {
             destroyed = true;
@@ -362,6 +372,9 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::shared_ptr<Client::Render::Camera>& camera)
         {
+            if (!isLocallyActive)
+                return;
+
             std::shared_lock lock(mutex);
 
             for (const auto& component : componentMap | std::views::values)
@@ -454,6 +467,8 @@ namespace Blaster::Independent::ECS
 
         bool justCreated = true;
         bool destroyed = false;
+
+        bool isLocallyActive = true;
 
         std::optional<NetworkId> owningClient = std::nullopt;
 

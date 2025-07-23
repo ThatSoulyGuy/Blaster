@@ -128,9 +128,14 @@ namespace Blaster::Independent::ECS
     template <class Derived>
     struct Registrar
     {
-        static void Thunk(void* d, const void* s)
+        static void Thunk(void* destination, const void* source)
         {
-            MergeSupport::MergeFields(*static_cast<Derived*>(d), *static_cast<const Derived*>(s));
+            auto& derivedDestination = *static_cast<Derived*>(destination);
+            const auto& derivedSource = *static_cast<const Derived*>(source);
+
+            MergeSupport::MergeFields(derivedDestination, derivedSource);
+
+            derivedDestination.OnAfterMerge();
         }
 
         Registrar()

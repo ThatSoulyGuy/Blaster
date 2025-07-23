@@ -1,47 +1,75 @@
 #pragma once
 
 #include <string>
-#include <assimp/matrix4x4.h>
-
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <assimp/vector3.h>
 #include "Independent/Math/Matrix.hpp"
 
 using namespace Blaster::Independent::Math;
 
 namespace Blaster::Client::Render
 {
-    struct BoneInfo
+    struct BoneInformation
     {
-        Matrix<float, 4, 4> offset;
-        Matrix<float, 4, 4> finalPose;
+        uint32_t parent{ std::numeric_limits<uint32_t>::max() };
+
+        Matrix<float, 4, 4> offset = Matrix<float, 4, 4>::Identity();
+        Matrix<float, 4, 4> localBind = Matrix<float, 4, 4>::Identity();
+        Matrix<float, 4, 4> globalAnimated = Matrix<float, 4, 4>::Identity();
+
+        template <typename Archive>
+        void serialize(Archive& archive, const unsigned)
+        {
+            archive & parent;
+            archive & offset;
+            archive & localBind;
+            archive & globalAnimated;
+        }
     };
 
     struct Skeleton
     {
         std::unordered_map<std::string, std::size_t> boneIndex;
-        std::vector<BoneInfo> bones;
+        std::vector<BoneInformation> bones;
 
-        std::size_t AddBone(const std::string& name, const aiMatrix4x4& offset)
+        int32_t AddBone(const std::string& name, const aiMatrix4x4& offset, const aiMatrix4x4& localBind, uint32_t parent)
         {
-            const std::size_t id = bones.size();
-
+            uint32_t id = static_cast<uint32_t>(bones.size());
             boneIndex[name] = id;
 
-            BoneInfo bone;
+            BoneInformation information;
 
-            bone.offset = *reinterpret_cast<const Matrix<float,4,4>*>(&offset);
-            bone.finalPose = Matrix<float,4,4>::Identity();
+            information.parent = parent;
+            information.offset = Matrix<float, 4, 4>::FromAssimpMatrix(offset);
+            information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(localBind);
+            information.globalAnimated = Matrix<float, 4, 4>::Identity();
 
-            bones.push_back(bone);
+            bones.push_back(information);
 
             return id;
         }
 
-        std::size_t GetOrAdd(const std::string& name, const aiMatrix4x4& offset)
+        uint32_t GetOrAdd(const std::string& name, const aiMatrix4x4& offset, const aiMatrix4x4& localBind, uint32_t parent)
         {
-            if (const auto iterator = boneIndex.find(name); iterator != boneIndex.end())
-                return iterator->second;
+            if (auto iterator = boneIndex.find(name); iterator != boneIndex.end())
+            {
+                BoneInformation& information = bones[iterator->second];
 
-            return AddBone(name, offset);
+                if (information.offset == Matrix<float, 4, 4>::Identity())
+                    information.offset = Matrix<float, 4, 4>::FromAssimpMatrix(offset);
+
+                if (information.localBind == Matrix<float, 4, 4>::Identity())
+                    information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(localBind);
+
+                if (information.parent == std::numeric_limits<uint32_t>::max() && parent != std::numeric_limits<uint32_t>::max())
+                    information.parent = parent;
+
+                return iterator->second;
+            }
+
+            return AddBone(name, offset, localBind, parent);
         }
 
         template <typename Archive>

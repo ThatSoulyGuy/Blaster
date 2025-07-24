@@ -23,9 +23,9 @@
 #define PACK_END   __pragma(pack(pop))
 #define PACK_ATTR
 #elif defined(__GNUC__) || defined(__clang__)
-#define PACK_BEGIN
+#define PACK_BEGIN  __attribute__((packed))
 #define PACK_END
-#define PACK_ATTR  __attribute__((packed))
+#define PACK_ATTR
 #else
 #pragma message("Warning: no struct‑packing directive - Header layout will be compiler-specific.")
 #define PACK_BEGIN

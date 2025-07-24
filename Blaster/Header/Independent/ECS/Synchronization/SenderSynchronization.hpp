@@ -237,7 +237,11 @@ namespace Blaster::Independent::ECS::Synchronization
             {
                 Snapshot snapshot = templateSnapshot;
 
-                FilterOpsForClient(id, snapshot.operationBlob, snapshot.header.operationCount);
+                uint32_t operationCount;
+
+                FilterOpsForClient(id, snapshot.operationBlob, operationCount);
+
+                snapshot.header.operationCount = operationCount;
 
                 if (snapshot.header.operationCount == 0)
                     continue;

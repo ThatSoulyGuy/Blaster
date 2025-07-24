@@ -11,5 +11,9 @@ namespace Blaster::Independent::Math
         { x - y } -> std::convertible_to<T>;
         { x * y } -> std::convertible_to<T>;
         { x / y } -> std::convertible_to<T>;
+        { x += y } -> std::convertible_to<T>;
+        { x -= y } -> std::convertible_to<T>;
+        { x *= y } -> std::convertible_to<T>;
+        { x /= y } -> std::convertible_to<T>;
     };
 }

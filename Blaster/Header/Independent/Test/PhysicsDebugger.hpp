@@ -19,7 +19,7 @@ namespace Blaster::Independent::Test
 #include <sstream>
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Math/Transform.hpp"
-#include "Independent/Physics/RigidbodyCommands.hpp"
+#include "Independent/Physics/PhysicsCommands.hpp"
 
 #undef min
 #undef max

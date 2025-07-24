@@ -10,6 +10,7 @@
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Utility/Time.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
+#include "Independent/Physics/CharacterController.hpp"
 #include "Server/Entity/EntityBase.hpp"
 
 using namespace std::chrono_literals;
@@ -36,14 +37,14 @@ namespace Blaster::Server::Entity::Entities
             {
                 const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
-                cameraGameObject->GetTransform()->SetLocalPosition({ 0.0f, 8.0f, 0.0f });
+                cameraGameObject->GetTransform()->SetLocalPosition({ 0.0f, 16.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
                 
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                modelGameObject->GetTransform()->SetLocalPosition({ 0.0f, 0.1f, 0.0f });
+                modelGameObject->GetTransform()->SetLocalPosition({ 0.0f, 6.0f, 0.0f });
                 modelGameObject->GetTransform()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
-                modelGameObject->GetTransform()->SetLocalScale({ 0.00015f, 0.00015f, 0.00015f });
+                modelGameObject->GetTransform()->SetLocalScale({ 0.0002f, 0.0002f, 0.0002f });
 
                 modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2.fbx" }, true));
 
@@ -77,14 +78,14 @@ namespace Blaster::Server::Entity::Entities
         EntityPlayer()
         {
             Builder<EntityBase>::New()
-                    .Set(EntityBase::RegistryNameSetter{ "entity_player" })
-                    .Set(EntityBase::CurrentHealthSetter{ 100.0f })
-                    .Set(EntityBase::MaximumHealthSetter{ 100.0f })
-                    .Set(EntityBase::MovementSpeedSetter{ 10.0f })
-                    .Set(EntityBase::RunningMultiplierSetter{ 1.2f })
-                    .Set(EntityBase::JumpHeightSetter{ 5.0f })
-                    .Set(EntityBase::CanJumpSetter{ true })
-                    .Build(static_cast<EntityBase&>(*this));
+                .Set(EntityBase::RegistryNameSetter{ "entity_player" })
+                .Set(EntityBase::CurrentHealthSetter{ 100.0f })
+                .Set(EntityBase::MaximumHealthSetter{ 100.0f })
+                .Set(EntityBase::MovementSpeedSetter{ 30.0f })
+                .Set(EntityBase::RunningMultiplierSetter{ 1.2f })
+                .Set(EntityBase::JumpHeightSetter{ 5.0f })
+                .Set(EntityBase::CanJumpSetter{ true })
+                .Build(static_cast<EntityBase&>(*this));
 
             Builder<EntityPlayer>::New()
                 .Set(EntityPlayer::MouseSensitivitySetter{ 0.1f })
@@ -126,20 +127,23 @@ namespace Blaster::Server::Entity::Entities
 
         void UpdateMovement() const
         {
-            std::shared_ptr<Animator> animator = modelGameObject->GetComponent<Animator>().value();
+            constexpr float epsilon = 1e-6f;
+
+            auto animator = modelGameObject->GetComponent<Animator>().value();
+            auto controller = GetGameObject()->GetComponent<CharacterController>().value();
 
             Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
 
-            forward.y() = 0.0f;
+            forward.y() = 0;
 
-            if (Vector<float, 3>::LengthSquared(forward) < 1e-6f)
-                forward = { 0,0,1 };
+            if (Vector<float, 3>::LengthSquared(forward) < epsilon)
+                forward = { 0.0f, 0.0f, 1.0f };
             else
-                Vector<float, 3>::Normalize(forward);
+                forward = Vector<float, 3>::Normalize(forward);
 
             Vector<float, 3> right = { -forward.z(), 0.0f, forward.x() };
 
-            Vector<float, 3> direction = { 0,0,0 };
+            Vector<float, 3> direction{ 0.0f, 0.0f, 0.0f };
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
                 direction += forward;
@@ -153,32 +157,31 @@ namespace Blaster::Server::Entity::Entities
             if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
                 direction -= right;
 
-            if (Vector<float, 3>::LengthSquared(direction) > 1e-6f)
+            if (Vector<float, 3>::LengthSquared(direction) > epsilon)
             {
+                direction = Vector<float, 3>::Normalize(direction);
+
+                controller->SetWalkDirection(direction * GetMovementSpeed());
+
                 if (!animator->IsPlaying("mtf2.walk"))
-                {
-                    animator->StopAll();
-                    animator->Play("mtf2.walk");
-                }
-
-                Vector<float, 3>::Normalize(direction);
-
-                btVector3 impulse(direction.x() * GetMovementSpeed(), 0.0f, direction.z() * GetMovementSpeed());
-
-                GetGameObject()->GetComponent<Rigidbody>().value()->ApplyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
+                    animator->Play("mtf2.walk", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
             }
             else
             {
+                controller->SetWalkDirection({ 0.0f, 0.0f, 0.0f });
+
                 if (!animator->IsPlaying("mtf2.idle"))
-                {
-                    animator->StopAll();
-                    animator->Play("mtf2.idle");
-                }
+                    animator->Play("mtf2.idle", blendTime);
             }
+
+            if (InputManager::GetInstance().GetKeyState(KeyCode::SPACE, KeyState::PRESSED) && controller->OnGround())
+                controller->Jump();
         }
 
         std::shared_ptr<Camera> camera;
         std::shared_ptr<GameObject> modelGameObject;
+
+        constexpr static float blendTime = 0.20f;
 
         BUILDABLE_PROPERTY(MouseSensitivity, float, EntityPlayer)
 

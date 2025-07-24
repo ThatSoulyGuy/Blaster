@@ -18,6 +18,15 @@ namespace Blaster::Independent::Physics
         static constexpr std::uint8_t CODE = 42;
     };
 
+    struct SetVelocityCommand
+    {
+        std::string path;
+
+        Vector<float, 3> velocity;
+
+        static constexpr std::uint8_t CODE = 43;
+    };
+
     struct SetTransformCommand
     {
         std::string path;
@@ -25,7 +34,16 @@ namespace Blaster::Independent::Physics
         Vector<float, 3> position;
         Vector<float, 3> rotation;
 
-        static constexpr std::uint8_t CODE = 43;
+        static constexpr std::uint8_t CODE = 44;
+    };
+
+    struct CharacterControllerInputCommand
+    {
+        std::string path;
+
+        bool wantJump;
+
+        Vector<float, 3> walkDirection;
     };
 }
 
@@ -63,6 +81,30 @@ namespace Blaster::Independent::Network
     };
 
     template <>
+    struct DataConversion<Blaster::Independent::Physics::SetVelocityCommand> : DataConversionBase<DataConversion<Blaster::Independent::Physics::SetVelocityCommand>, Blaster::Independent::Physics::SetVelocityCommand>
+    {
+        using Type = Blaster::Independent::Physics::SetVelocityCommand;
+
+        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
+        {
+            CommonNetwork::EncodeString(buffer, operation.path);
+            DataConversion<Vector<float, 3>>::Encode(operation.velocity, buffer);
+        }
+
+        static std::any Decode(std::span<const std::uint8_t> bytes)
+        {
+            std::size_t offset = 0;
+
+            Type result;
+
+            result.path = CommonNetwork::DecodeString(bytes, offset);
+            result.velocity = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
+
+            return result;
+        }
+    };
+
+    template <>
     struct DataConversion<Blaster::Independent::Physics::SetTransformCommand> : DataConversionBase<DataConversion<Blaster::Independent::Physics::SetTransformCommand>, Blaster::Independent::Physics::SetTransformCommand>
     {
         using Type = Blaster::Independent::Physics::SetTransformCommand;
@@ -90,6 +132,32 @@ namespace Blaster::Independent::Network
             out.rotation = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
 
             return out;
+        }
+    };
+
+    template <>
+    struct DataConversion<Blaster::Independent::Physics::CharacterControllerInputCommand> : DataConversionBase<DataConversion<Blaster::Independent::Physics::CharacterControllerInputCommand>, Blaster::Independent::Physics::CharacterControllerInputCommand>
+    {
+        using Type = Blaster::Independent::Physics::CharacterControllerInputCommand;
+
+        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
+        {
+            CommonNetwork::EncodeString(buffer, operation.path);
+            CommonNetwork::WriteTrivial(buffer, operation.wantJump);
+            DataConversion<Vector<float, 3>>::Encode(operation.walkDirection, buffer);
+        }
+
+        static std::any Decode(std::span<const std::uint8_t> bytes)
+        {
+            std::size_t offset = 0;
+
+            Type result;
+
+            result.path = CommonNetwork::DecodeString(bytes, offset);
+            result.wantJump = CommonNetwork::ReadTrivial<bool>(bytes, offset);
+            result.walkDirection = std::any_cast<Vector<float, 3>>(DataConversion<Vector<float, 3>>::Decode(bytes.subspan(offset, DataConversion<Vector<float, 3>>::kWireSize)));
+
+            return result;
         }
     };
 }

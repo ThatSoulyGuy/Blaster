@@ -4,8 +4,9 @@
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Math/Transform.hpp"
 #include "Independent/Physics/Collider.hpp"
+#include "Independent/Physics/PhysicsBody.hpp"
 #include "Independent/Physics/PhysicsWorld.hpp"
-#include "Independent/Physics/RigidbodyCommands.hpp"
+#include "Independent/Physics/PhysicsCommands.hpp"
 #include "Independent/Test/PhysicsDebugger.hpp"
 
 #ifdef IS_SERVER
@@ -21,7 +22,7 @@ using namespace Blaster::Independent::Test;
 
 namespace Blaster::Independent::Physics
 {
-    class Rigidbody final : public Component
+    class Rigidbody final : public PhysicsBody
     {
 
     public:
@@ -50,6 +51,11 @@ namespace Blaster::Independent::Physics
 
             body = nullptr;
         }
+
+        Rigidbody(const Rigidbody&) = delete;
+        Rigidbody(Rigidbody&&) = delete;
+        Rigidbody& operator=(const Rigidbody&) = delete;
+        Rigidbody& operator=(Rigidbody&&) = delete;
 
         void Initialize() override
         {
@@ -105,6 +111,11 @@ namespace Blaster::Independent::Physics
 
             body = new btRigidBody(ci);
             
+            body->setDamping(linearDamping, angularDamping);
+            body->setFriction(friction);
+            
+            collider->GetShape()->setMargin(colliderMargin);
+
 #ifndef IS_SERVER
             if (bodyType == Type::KINEMATIC)
                 body->setCollisionFlags(body->getCollisionFlags() | btCollisionObject::CF_KINEMATIC_OBJECT);
@@ -119,16 +130,6 @@ namespace Blaster::Independent::Physics
             PhysicsWorld::GetInstance().AddBody(body);
         }
 
-        void Update() override
-        {
-#ifdef IS_SERVER
-            if (bodyType == Type::DYNAMIC)
-                SyncTransformFromLocalPhysics();
-            else
-                PushTransformToPhysics();
-#endif
-        }
-
         void ApplyCentralImpulse(const Vector<float, 3>& impulse)
         {
             if (!body)
@@ -137,9 +138,59 @@ namespace Blaster::Independent::Physics
             body->applyCentralImpulse({ impulse.x(), impulse.y(), impulse.z() });
             body->activate(true);
 
-#ifndef IS_SERVER
+            QueueToServer(PacketType::C2S_Rigidbody_Impulse, ImpulseCommand{ GetGameObject()->GetAbsolutePath(), false, impulse, { 0.0f, 0.0f, 0.0f } });
+        }
+
+        void SetHorizontalVelocity(const Vector<float, 3>& desiredVelocity)
+        {
+            if (!body)
+                return;
+
+            btVector3 velocity = body->getLinearVelocity();
+
+            velocity.setX(desiredVelocity.x());
+            velocity.setZ(desiredVelocity.z());
+
+            body->setLinearVelocity(velocity);  body->activate(true);
+
+            QueueToServer(PacketType::C2S_Rigidbody_SetVelocity, SetVelocityCommand{ GetGameObject()->GetAbsolutePath(), desiredVelocity });
+        }
+
+        void SyncToBullet() override
+        {
+            if (IsAuthoritative())
+            {
+                if (bodyType == Type::KINEMATIC)
+                    PushTransformToPhysics();
+            }
+            else
+                PushTransformToPhysics();
+        }
+
+        void SyncFromBullet() override
+        {
+            if (!IsAuthoritative())
+                return;
+
+#ifdef IS_SERVER
+            SyncTransformFromLocalPhysics();
+#else
             if (GetGameObject()->IsLocallyControlled())
-                QueueImpulseToServer(impulse, std::nullopt);
+                SyncTransformFromLocalPhysics();
+#endif
+        }
+
+        btCollisionObject* GetCollisionObject() const override
+        {
+            return body;
+        }
+
+        bool IsAuthoritative() const noexcept override
+        {
+#ifdef IS_SERVER
+            return true;
+#else
+            return GetGameObject()->IsLocallyControlled();
 #endif
         }
 
@@ -154,10 +205,7 @@ namespace Blaster::Independent::Physics
             body->applyImpulse(btImpulse, rel);
             body->activate(true);
 
-#ifndef IS_SERVER
-            if (GetGameObject()->IsLocallyControlled())
-                QueueImpulseToServer(impulse, worldPoint);
-#endif
+            QueueToServer(PacketType::C2S_Rigidbody_Impulse, ImpulseCommand{ GetGameObject()->GetAbsolutePath(), true, impulse, worldPoint });
         }
 
         void LockRotation(const Axis axis)
@@ -198,11 +246,15 @@ namespace Blaster::Independent::Physics
             return bodyType;
         }
 
-        static std::shared_ptr<Rigidbody> Create(float mass = 1.0f, Type bodyType = Type::DYNAMIC)
+        static std::shared_ptr<Rigidbody> Create(Type bodyType = Type::DYNAMIC, float mass = 1.0f, float linearDamping = 0.05f, float angularDamping = 0.95f, float friction = 0.2f, float colliderMargin = 0.02f)
         {
             std::shared_ptr<Rigidbody> result(new Rigidbody());
 
             result->mass = mass;
+            result->linearDamping = linearDamping;
+            result->angularDamping = angularDamping;
+            result->friction = friction;
+            result->colliderMargin = colliderMargin;
             result->bodyType = bodyType;
 
             return result;
@@ -221,6 +273,10 @@ namespace Blaster::Independent::Physics
             archive & boost::serialization::base_object<Component>(*this);
 
             archive & BOOST_SERIALIZATION_NVP(mass);
+            archive & BOOST_SERIALIZATION_NVP(linearDamping);
+            archive & BOOST_SERIALIZATION_NVP(angularDamping);
+            archive & BOOST_SERIALIZATION_NVP(friction);
+            archive & BOOST_SERIALIZATION_NVP(colliderMargin);
             archive & BOOST_SERIALIZATION_NVP(bodyType);
 
             auto flags = static_cast<std::uint8_t>(lockedAxes);
@@ -313,12 +369,17 @@ namespace Blaster::Independent::Physics
 
         float mass;
 
+        float linearDamping = 0.15f;
+        float angularDamping = 0.95f;
+        float friction = 0.8f;
+        float colliderMargin = 0.02f;
+
         Axis lockedAxes = Axis::NONE;
 
         Type bodyType;
         btRigidBody* body = nullptr;
 
-        DESCRIBE_AND_REGISTER(Rigidbody, (Component), (), (), (mass, bodyType))
+        DESCRIBE_AND_REGISTER(Rigidbody, (Component), (), (), (mass, linearDamping, angularDamping, friction, colliderMargin, bodyType))
     };
 
     inline Rigidbody::Axis operator|(Rigidbody::Axis a, Rigidbody::Axis b)

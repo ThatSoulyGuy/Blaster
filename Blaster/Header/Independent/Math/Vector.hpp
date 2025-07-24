@@ -587,11 +587,11 @@ namespace Blaster::Independent::Math
 			return result;
 		}
 
-		static Vector Lerp(const Vector& first, const Vector& second, T t)
+		static Vector Lerp(const Vector& first, const Vector& second, T time)
 		{
 			Vector result;
 
-			std::transform(first.data.begin(), first.data.end(), second.data.begin(), result.data.begin(), [&](T a, T b) { return a + t * (b - a); });
+			std::transform(first.data.begin(), first.data.end(), second.data.begin(), result.data.begin(), [&](T a, T b) { return a + time * (b - a); });
 
 			return result;
 		}

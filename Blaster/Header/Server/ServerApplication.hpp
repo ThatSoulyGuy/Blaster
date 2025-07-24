@@ -8,8 +8,8 @@
 #include "Client/Render/TextureFuture.hpp"
 #include "Independent/Physics/Colliders/ColliderBox.hpp"
 #include "Independent/Physics/Colliders/ColliderCapsule.hpp"
-#include "Independent/Physics/PhysicsWorld.hpp"
-#include "Independent/Physics/Rigidbody.hpp"
+#include "Independent/Physics/CharacterController.hpp"
+#include "Independent/Physics/PhysicsSystem.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Test/PhysicsDebugger.hpp"
@@ -81,15 +81,13 @@ namespace Blaster::Server
                     auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
                     
                     if (randomNumber == 1)
-                        player->GetTransform()->SetLocalPosition({ 418.87f, -200.0f, 13.19f });
+                        player->GetTransform()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
                     else
-                        player->GetTransform()->SetLocalPosition({ -411.66f, -200.0f, 7.50f });
-
+                        player->GetTransform()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
+                    
+                    player->AddComponent(CharacterController::Create(1.45f, 8.0f));
                     player->AddComponent(EntityPlayer::Create());
-                    player->AddComponent(ColliderCapsule::Create(2.0f, 8.0f));
-                    player->AddComponent(Rigidbody::Create(81.65f, Rigidbody::Type::DYNAMIC));
-                    player->GetComponent<Rigidbody>().value()->LockRotation(Rigidbody::Axis::X | Rigidbody::Axis::Y | Rigidbody::Axis::Z);
-
+                    
                     SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });
 
@@ -114,7 +112,7 @@ namespace Blaster::Server
                     });
                 });
 
-            auto validateAndApply = [](NetworkId who, const std::string& path, const std::function<void(std::shared_ptr<Rigidbody>)>& function)
+            auto validateAndApply = [](NetworkId who, const std::string& path, const std::function<void(std::shared_ptr<PhysicsBody>)>& function)
                 {
                     auto optionalGameObject = GameObjectManager::GetInstance().Get(path);
 
@@ -126,7 +124,7 @@ namespace Blaster::Server
                     if (gameObject->GetOwningClient() != who)
                         return;
 
-                    auto rigidbodyOptional = gameObject->GetComponent<Rigidbody>();
+                    auto rigidbodyOptional = gameObject->GetComponent<PhysicsBody>();
 
                     if (!rigidbodyOptional)
                         return;
@@ -143,12 +141,31 @@ namespace Blaster::Server
 
                     auto command = std::any_cast<ImpulseCommand>(anyList[0]);
 
-                    validateAndApply(who, command.path, [&](auto rigidbody)
+                    validateAndApply(who, command.path, [&](auto body)
                         {
+                            auto rigidbody = std::static_pointer_cast<Rigidbody>(body);
+
                             if (command.hasPoint)
                                 rigidbody->ApplyImpulseAtPoint(command.impulse, command.point);
                             else
                                 rigidbody->ApplyCentralImpulse(command.impulse);
+                        });
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Rigidbody_SetVelocity, [validateAndApply](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto anyList = CommonNetwork::DisassembleData(data);
+
+                    if (anyList.empty())
+                        return;
+
+                    auto command = std::any_cast<SetVelocityCommand>(anyList[0]);
+
+                    validateAndApply(who, command.path, [&](auto body)
+                        {
+                            auto rigidbody = std::static_pointer_cast<Rigidbody>(body);
+
+                            rigidbody->SetHorizontalVelocity(command.velocity);
                         });
                 });
 
@@ -161,8 +178,10 @@ namespace Blaster::Server
 
                     auto command = std::any_cast<SetTransformCommand>(anyList[0]);
 
-                    validateAndApply(who, command.path, [&](auto rigidbody)
+                    validateAndApply(who, command.path, [&](auto body)
                         {
+                            auto rigidbody = std::static_pointer_cast<Rigidbody>(body);
+
                             if (rigidbody->GetBodyType() == Rigidbody::Type::STATIC)
                             {
                                 rigidbody->GetGameObject()->GetTransform()->SetLocalPosition(command.position);
@@ -170,6 +189,21 @@ namespace Blaster::Server
 
                                 rigidbody->PushTransformToPhysics();
                             }
+                        });
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_CharacterController_Input, [validateAndApply](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto command = std::any_cast<CharacterControllerInputCommand>(CommonNetwork::DisassembleData(data)[0]);
+
+                    validateAndApply(who, command.path, [&](auto body)
+                        {
+                            auto controller = std::static_pointer_cast<CharacterController>(body);
+
+                            controller->SetWalkDirection(command.walkDirection);
+
+                            if (command.wantJump)
+                                controller->Jump();
                         });
                 });
 
@@ -195,7 +229,7 @@ namespace Blaster::Server
 
             GameObjectManager::GetInstance().Update();
 
-            PhysicsWorld::GetInstance().Update();
+            PhysicsSystem::GetInstance().Update();
 
             Time::GetInstance().Update();
         }

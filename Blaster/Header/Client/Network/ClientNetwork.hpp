@@ -7,8 +7,10 @@
 #include <thread>
 #include <boost/asio.hpp>
 #include "Independent/Network/CommonNetwork.hpp"
+#include "Independent/Thread/MainThreadExecutor.hpp"
 
 using namespace Blaster::Independent::Network;
+using namespace Blaster::Independent::Thread;
 
 namespace Blaster::Client::Network
 {
@@ -130,11 +132,11 @@ namespace Blaster::Client::Network
                 toRun.swap(onServerConnectionLostCallbackList);
             }
 
-            for (auto& cb : toRun)
+            for (auto& callback : toRun)
             {
                 try
                 {
-                    cb();
+                    callback();
                 }
                 catch (std::exception exception)
                 {
@@ -242,7 +244,12 @@ namespace Blaster::Client::Network
             disconnectTimer.async_wait(boost::asio::bind_executor(strand, [this](const ErrorCode& errorCode)
                 {
                     if (!errorCode)
-                        NotifyConnectionLost();
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(this, [&]()
+                            {
+                                NotifyConnectionLost();
+                            });
+                    }
 
                     disconnectTimerActive = false;
                 }));

@@ -61,7 +61,7 @@ namespace Blaster::Client::Render
                 const auto& [colliderVertices, colliderIndices] = LoadColliderCLD1(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.cld1");
 
                 GetGameObject()->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices), false);
-                GetGameObject()->AddComponent(Rigidbody::Create(10.0f, Rigidbody::Type::STATIC), false);
+                GetGameObject()->AddComponent(Rigidbody::Create(Rigidbody::Type::STATIC, 10.0f), false);
 
                 GetGameObject()->GetComponent<ColliderMesh>().value()->SetShouldSynchronize(false);
                 GetGameObject()->GetComponent<Rigidbody>().value()->SetShouldSynchronize(false);

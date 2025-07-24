@@ -17,7 +17,7 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
-#include "Independent/Physics/PhysicsWorld.hpp"
+#include "Independent/Physics/PhysicsSystem.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
 #include "Independent/Test/PhysicsDebugger.hpp"
@@ -158,7 +158,7 @@ namespace Blaster::Client
 
             GameObjectManager::GetInstance().Update();
 
-            PhysicsWorld::GetInstance().Update();
+            PhysicsSystem::GetInstance().Update();
 
             TranslationBuffer::GetInstance().Update();
 

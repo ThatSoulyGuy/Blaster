@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <btBulletDynamicsCommon.h>
+#include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "Independent/Utility/Time.hpp"
 
 using namespace Blaster::Independent::Utility;
@@ -23,18 +24,30 @@ namespace Blaster::Independent::Physics
             collisionConfiguration = new btDefaultCollisionConfiguration();
             dispatcher = new btCollisionDispatcher(collisionConfiguration);
             broadphase = new btDbvtBroadphase();
+
+            broadphase->getOverlappingPairCache()->setInternalGhostPairCallback(new btGhostPairCallback());
+
             solver = new btSequentialImpulseConstraintSolver();
 
             world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
-            world->setGravity(btVector3(0.0f, -19.8f, 0.0f));
+            world->setGravity(btVector3(0.0f, -9.81f, 0.0f));
         }
 
         void Update()
         {
-            constexpr float fixedStep = 1.0f / 120.0f;
-            constexpr int maxSubSteps = 4;
+            constexpr double kFixedStep = 1.0 / 120.0;
+            constexpr double kMaxFrame = 0.25;
 
-            world->stepSimulation(Time::GetInstance().GetDeltaTime(), maxSubSteps, fixedStep);
+            static double accumulator = 0.0;
+            const double frameDt = std::min(static_cast<double>(Time::GetInstance().GetDeltaTime()), kMaxFrame);
+
+            accumulator += frameDt;
+
+            while (accumulator >= kFixedStep)
+            {
+                world->stepSimulation(static_cast<btScalar>(kFixedStep), 0, static_cast<btScalar>(kFixedStep));
+                accumulator -= kFixedStep;
+            }
         }
 
         void AddBody(btRigidBody* body)

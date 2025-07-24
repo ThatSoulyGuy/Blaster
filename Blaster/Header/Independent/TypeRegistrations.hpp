@@ -21,6 +21,8 @@ namespace Blaster::Independent::Physics
 {
     struct ImpulseCommand;
     struct SetTransformCommand;
+    struct SetVelocityCommand;
+    struct CharacterControllerInputCommand;
 }
 
 namespace Blaster::Independent::Math
@@ -44,6 +46,8 @@ REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpRemoveComponent, 134
 REGISTER_TYPE(Blaster::Independent::ECS::Synchronization::OpSetField, 87953)
 REGISTER_TYPE(Blaster::Independent::Physics::ImpulseCommand, 25467)
 REGISTER_TYPE(Blaster::Independent::Physics::SetTransformCommand, 17834)
+REGISTER_TYPE(Blaster::Independent::Physics::SetVelocityCommand, 92123)
+REGISTER_TYPE(Blaster::Independent::Physics::CharacterControllerInputCommand, 12686)
 
 namespace Blaster::Independent::Utility
 {

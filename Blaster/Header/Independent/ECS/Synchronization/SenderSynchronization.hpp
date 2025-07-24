@@ -139,6 +139,8 @@ namespace Blaster::Independent::ECS::Synchronization
                 {
                     if (node->IsDestroyed())
                     {
+                        ownerCacheMap.erase(node->GetAbsolutePath());
+
                         for (const auto& component : node->GetComponentMap() | std::views::values)
                             ForgetHash(component);
 
@@ -151,11 +153,16 @@ namespace Blaster::Independent::ECS::Synchronization
 
                     if (node->WasJustCreated())
                     {
+                        ownerCacheMap[node->GetAbsolutePath()] = node->GetOwningClient().value_or(0);
+
                         PushOp(templateSnapshot.operationBlob, OpCreate{ node->GetAbsolutePath(), node->GetTypeName(), node->GetOwningClient() });
                         ++templateSnapshot.header.operationCount;
 
                         for (auto& component : node->GetComponentMap() | std::views::values)
                         {
+                            if (!component->ShouldSynchronize())
+                                continue;
+
                             PushOp(templateSnapshot.operationBlob, OpAddComponent{ node->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), CommonNetwork::SerializePointerToBlob(component) });
 
                             ++templateSnapshot.header.operationCount;
@@ -191,6 +198,9 @@ namespace Blaster::Independent::ECS::Synchronization
 
                     if (const auto& component = componentIterator->second; component->WasAdded())
                     {
+                        if (!component->ShouldSynchronize())
+                            continue;
+
                         if (HasStateChanged(component))
                         {
                             PushOp(templateSnapshot.operationBlob, OpAddComponent{ gameObjectPointer->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(component->GetTypeName()).value()), CommonNetwork::SerializePointerToBlob(component) });
@@ -201,6 +211,9 @@ namespace Blaster::Independent::ECS::Synchronization
                     }
                     else
                     {
+                        if (!component->ShouldSynchronize())
+                            continue;
+
                         if (HasStateChanged(component))
                         {
                             const std::vector<std::uint8_t> blob = CommonNetwork::SerializePointerToBlob(component);
@@ -223,6 +236,12 @@ namespace Blaster::Independent::ECS::Synchronization
             for (const NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
             {
                 Snapshot snapshot = templateSnapshot;
+
+                FilterOpsForClient(id, snapshot.operationBlob, snapshot.header.operationCount);
+
+                if (snapshot.header.operationCount == 0)
+                    continue;
+
                 snapshot.header.sequence = SyncTracker::GetInstance().AllocateSequence(id);
                 snapshot.header.ack = SyncTracker::GetInstance().GetLastIncoming(id);
 
@@ -422,6 +441,53 @@ namespace Blaster::Independent::ECS::Synchronization
             return dirty;
         }
 
+        void FilterOpsForClient(NetworkId target, std::vector<uint8_t>& blob, uint32_t& opCount)
+        {
+            std::vector<uint8_t> out;
+            uint32_t kept = 0;
+
+            size_t off = 0;
+
+            while (off < blob.size())
+            {
+                const OpCode code = static_cast<OpCode>(blob[off]); off += 1;
+                const uint32_t len = *reinterpret_cast<const uint32_t*>(&blob[off]);
+                off += 4;
+
+                std::string path;
+                {
+                    std::span<const uint8_t> data(&blob[off], len);
+                    size_t pathOff = 0;
+                    path = CommonNetwork::DecodeString(data, pathOff);
+                }
+
+                const std::string root(GetRoot(path));
+                const auto it = ownerCacheMap.find(root);
+                const NetworkId owner = (it == ownerCacheMap.end()) ? 0 : it->second;
+
+                if (owner != target)
+                {
+                    CommonNetwork::WriteTrivial(out, static_cast<uint8_t>(code));
+                    CommonNetwork::WriteTrivial(out, len);
+                    CommonNetwork::WriteRaw(out, &blob[off], len);
+
+                    ++kept;
+                }
+
+                off += len;
+            }
+
+            blob.swap(out);
+            opCount = kept;
+        }
+
+        static std::string_view GetRoot(std::string_view absolutePath)
+        {
+            const size_t dot = absolutePath.find('.');
+
+            return dot == std::string_view::npos ? absolutePath : absolutePath.substr(0, dot);
+        }
+
         std::unordered_set<std::shared_ptr<IGameObjectSynchronization>> dirtyGameObjectSet;
         std::unordered_set<DirtyCompKey, DirtyCompHash, DirtyCompEqual> dirtyComponentSet;
 
@@ -431,6 +497,8 @@ namespace Blaster::Independent::ECS::Synchronization
         std::unordered_map<const Component*, std::uint64_t> lastHashMap;
 
         std::shared_mutex dirtyMutex;
+
+        std::unordered_map<std::string, NetworkId> ownerCacheMap;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<SenderSynchronization> instance;

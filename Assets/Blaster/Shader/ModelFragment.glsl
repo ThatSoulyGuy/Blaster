@@ -14,5 +14,8 @@ void main()
 {
     vec4 baseCol = texture(diffuse, fs_in.uv);
 
+    if(baseCol.a < 0.1)
+        discard;
+
     fragColor = baseCol;
 }

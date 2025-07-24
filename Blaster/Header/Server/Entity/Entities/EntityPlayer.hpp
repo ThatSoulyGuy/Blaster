@@ -26,6 +26,12 @@ namespace Blaster::Server::Entity::Entities
 
     public:
 
+        enum class Team
+        {
+            Red,
+            Blue
+        };
+
         EntityPlayer(const EntityPlayer&) = delete;
         EntityPlayer(EntityPlayer&&) = delete;
         EntityPlayer& operator=(const EntityPlayer&) = delete;
@@ -46,7 +52,10 @@ namespace Blaster::Server::Entity::Entities
                 modelGameObject->GetTransform()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
                 modelGameObject->GetTransform()->SetLocalScale({ 0.0002f, 0.0002f, 0.0002f });
 
-                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2.fbx" }, true));
+                if (team == Team::Red)
+                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
+                else
+                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
 
                 InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
             }
@@ -68,9 +77,13 @@ namespace Blaster::Server::Entity::Entities
             UpdateMovement();
         }
 
-        static std::shared_ptr<EntityPlayer> Create()
+        static std::shared_ptr<EntityPlayer> Create(const Team& team)
         {
-            return std::shared_ptr<EntityPlayer>(new EntityPlayer());
+            std::shared_ptr<EntityPlayer> result(new EntityPlayer());
+
+            result->team = team;
+
+            return result;
         }
 
     private:
@@ -177,6 +190,8 @@ namespace Blaster::Server::Entity::Entities
             if (InputManager::GetInstance().GetKeyState(KeyCode::SPACE, KeyState::PRESSED) && controller->OnGround())
                 controller->Jump();
         }
+
+        Team team;
 
         std::shared_ptr<Camera> camera;
         std::shared_ptr<GameObject> modelGameObject;

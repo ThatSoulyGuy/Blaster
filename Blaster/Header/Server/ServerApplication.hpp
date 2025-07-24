@@ -81,12 +81,19 @@ namespace Blaster::Server
                     auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
                     
                     if (randomNumber == 1)
+                    {
+                        player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Red));
+
                         player->GetTransform()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
+                    }
                     else
+                    {
+                        player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Blue));
+
                         player->GetTransform()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
+                    }
                     
                     player->AddComponent(CharacterController::Create(1.45f, 8.0f));
-                    player->AddComponent(EntityPlayer::Create());
                     
                     SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                 });

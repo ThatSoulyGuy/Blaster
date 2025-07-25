@@ -18,7 +18,7 @@ namespace Blaster::Independent::Test
 #include <iomanip>
 #include <sstream>
 #include "Independent/ECS/GameObject.hpp"
-#include "Independent/Math/Transform.hpp"
+#include "Independent/Math/Transform3d.hpp"
 #include "Independent/Physics/PhysicsCommands.hpp"
 
 #undef min
@@ -77,7 +77,7 @@ namespace Blaster::Independent::Test
             lastRot[rb] = { 0, 0, 0 };
         }
 
-        static void LogTransform(btRigidBody* rb, const Independent::Math::Transform& xf)
+        static void LogTransform(btRigidBody* rb, const Independent::Math::Transform3d& xf)
         {
             std::lock_guard lk(mutex);
 

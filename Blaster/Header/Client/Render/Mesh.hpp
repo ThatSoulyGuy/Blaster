@@ -7,6 +7,7 @@
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/unordered_map.hpp>
 #include <boost/serialization/array.hpp>
+#include "Client/Core/Window.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Shader.hpp"
 #include "Client/Render/Vertex.hpp"
@@ -124,9 +125,18 @@ namespace Blaster::Client::Render
                 CommitIfDirty();
 
                 shader.value()->Bind();
-                shader.value()->SetUniform("projectionUniform",camera->GetProjectionMatrix());
-                shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
-                shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform()->GetModelMatrix());
+
+                if (camera->GetGameObject()->HasComponent<Transform3d>())
+                {
+                    shader.value()->SetUniform("projectionUniform", camera->GetProjectionMatrix());
+                    shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
+                    shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform3d()->GetModelMatrix());
+                }
+                else
+                {
+                    shader.value()->SetUniform("projectionUniform", Matrix<float, 4, 4>::Orthographic(0.0f, Window::GetInstance().GetDimensions().x(), Window::GetInstance().GetDimensions().y(), 0.0f, 0.01f, 1000.0f));
+                    shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform2d()->GetModelMatrix());
+                }
 
                 for (const auto& [name, value] : shaderCallDeque)
                     std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);

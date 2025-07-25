@@ -2,7 +2,7 @@
 
 #include <optional>
 #include "Independent/ECS/GameObject.hpp"
-#include "Independent/Math/Transform.hpp"
+#include "Independent/Math/Transform3d.hpp"
 #include "Independent/Physics/Collider.hpp"
 #include "Independent/Physics/PhysicsBody.hpp"
 #include "Independent/Physics/PhysicsWorld.hpp"
@@ -63,7 +63,7 @@ namespace Blaster::Independent::Physics
             if (!GetGameObject()->IsLocallyControlled())
                 GetGameObject()->SetLocal(true);
             
-            GetGameObject()->GetTransform()->SetShouldSynchronize(false);
+            GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
 #endif
 
             auto colliderOptional = GetGameObject()->GetComponent<Collider>();
@@ -76,7 +76,7 @@ namespace Blaster::Independent::Physics
             }
 
             auto collider = std::static_pointer_cast<Collider>(*colliderOptional);
-            auto transform = GetGameObject()->GetTransform();
+            auto transform = GetGameObject()->GetTransform3d();
 
             btVector3 inertia(0, 0, 0);
 
@@ -221,7 +221,7 @@ namespace Blaster::Independent::Physics
 
         void PushTransformToPhysics()
         {
-            const auto transform = GetGameObject()->GetTransform();
+            const auto transform = GetGameObject()->GetTransform3d();
 
             const auto position = transform->GetWorldPosition();
             const auto rotation = transform->GetWorldRotation();
@@ -321,7 +321,7 @@ namespace Blaster::Independent::Physics
 
             btVector3 rotation = { rotationX, rotationY, rotationZ };
 
-            auto transform = GetGameObject()->GetTransform();
+            auto transform = GetGameObject()->GetTransform3d();
 
             transform->SetLocalPosition({ position.x(), position.y(), position.z() }, false);
 

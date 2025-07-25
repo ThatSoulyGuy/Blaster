@@ -84,13 +84,13 @@ namespace Blaster::Server
                     {
                         player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Red));
 
-                        player->GetTransform()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
+                        player->GetTransform3d()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
                     }
                     else
                     {
                         player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Blue));
 
-                        player->GetTransform()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
+                        player->GetTransform3d()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
                     }
                     
                     player->AddComponent(CharacterController::Create(1.45f, 8.0f));
@@ -191,8 +191,8 @@ namespace Blaster::Server
 
                             if (rigidbody->GetBodyType() == Rigidbody::Type::STATIC)
                             {
-                                rigidbody->GetGameObject()->GetTransform()->SetLocalPosition(command.position);
-                                rigidbody->GetGameObject()->GetTransform()->SetLocalRotation(command.rotation);
+                                rigidbody->GetGameObject()->GetTransform3d()->SetLocalPosition(command.position);
+                                rigidbody->GetGameObject()->GetTransform3d()->SetLocalRotation(command.rotation);
 
                                 rigidbody->PushTransformToPhysics();
                             }
@@ -218,11 +218,11 @@ namespace Blaster::Server
 
             const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
 
-            platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
+            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
             platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, false, true));
 
-            platformObject->GetTransform()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
+            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
         }
 
         bool IsRunning()

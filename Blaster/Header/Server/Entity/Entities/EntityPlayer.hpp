@@ -43,14 +43,14 @@ namespace Blaster::Server::Entity::Entities
             {
                 const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
-                cameraGameObject->GetTransform()->SetLocalPosition({ 0.0f, 16.0f, 0.0f });
+                cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 16.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
                 
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                modelGameObject->GetTransform()->SetLocalPosition({ 0.0f, 6.0f, 0.0f });
-                modelGameObject->GetTransform()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
-                modelGameObject->GetTransform()->SetLocalScale({ 0.0002f, 0.0002f, 0.0002f });
+                modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 6.0f, 0.0f });
+                modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
+                modelGameObject->GetTransform3d()->SetLocalScale({ 0.0002f, 0.0002f, 0.0002f });
 
                 if (team == Team::Red)
                     modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
@@ -69,9 +69,9 @@ namespace Blaster::Server::Entity::Entities
             modelGameObject->SetLocallyActive(false);
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
-                std::cout << "Current Position: " << GetGameObject()->GetTransform()->GetWorldPosition() << std::endl;
+                std::cout << "Current Position: " << GetGameObject()->GetTransform3d()->GetWorldPosition() << std::endl;
 
-            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform()->GetLocalRotation().y(), 0.0f });
+            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform3d()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform3d()->GetLocalRotation().y(), 0.0f });
 
             UpdateMouselook();
             UpdateMovement();
@@ -129,7 +129,7 @@ namespace Blaster::Server::Entity::Entities
 
             Vector<float, 2> mouseDelta = InputManager::GetInstance().GetMouseDelta();
 
-            const auto transform = camera->GetGameObject()->GetTransform();
+            const auto transform = camera->GetGameObject()->GetTransform3d();
             Vector<float, 3> rotation = transform->GetLocalRotation();
 
             rotation.y() -= mouseDelta.x() * MouseSensitivity;
@@ -145,7 +145,7 @@ namespace Blaster::Server::Entity::Entities
             auto animator = modelGameObject->GetComponent<Animator>().value();
             auto controller = GetGameObject()->GetComponent<CharacterController>().value();
 
-            Vector<float, 3> forward = camera->GetGameObject()->GetTransform()->GetForward();
+            Vector<float, 3> forward = camera->GetGameObject()->GetTransform3d()->GetForward();
 
             forward.y() = 0;
 

@@ -46,7 +46,7 @@ namespace Blaster::Independent::Physics
 			if (!GetGameObject()->IsLocallyControlled())
 				GetGameObject()->SetLocal(true);
 
-			GetGameObject()->GetTransform()->SetShouldSynchronize(false);
+			GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
 #endif
 
 			float total = height;
@@ -60,7 +60,7 @@ namespace Blaster::Independent::Physics
 			ghost->setCollisionFlags(btCollisionObject::CF_CHARACTER_OBJECT);
 			ghost->setUserPointer(this);
 
-			const auto worldPosition = GetGameObject()->GetTransform()->GetWorldPosition();
+			const auto worldPosition = GetGameObject()->GetTransform3d()->GetWorldPosition();
 
 			btTransform start;
 			
@@ -133,7 +133,7 @@ namespace Blaster::Independent::Physics
 
 				transform.setIdentity();
 
-				const auto p = GetGameObject()->GetTransform()->GetWorldPosition();
+				const auto p = GetGameObject()->GetTransform3d()->GetWorldPosition();
 
 				transform.setOrigin({ p.x(), p.y(), p.z() });
 
@@ -149,7 +149,7 @@ namespace Blaster::Independent::Physics
 			const btTransform& t = ghost->getWorldTransform();
 			const btVector3& o = t.getOrigin();
 
-			GetGameObject()->GetTransform()->SetLocalPosition({ o.x(), o.y(), o.z() }, false);
+			GetGameObject()->GetTransform3d()->SetLocalPosition({ o.x(), o.y(), o.z() }, false);
 		}
 
 		btCollisionObject* GetCollisionObject() const override

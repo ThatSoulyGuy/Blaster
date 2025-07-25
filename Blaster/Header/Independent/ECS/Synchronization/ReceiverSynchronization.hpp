@@ -229,17 +229,17 @@ namespace Blaster::Independent::ECS::Synchronization
             {
                 auto& existing = *gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(componentType));
 
-                if (typeid(*existing) == typeid(Transform))
+                if (typeid(*existing) == typeid(Transform3d))
                 {
                     std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(componentType);
 
                     DeserializeInto(fresh, blob);
 
-                    std::shared_ptr<Transform> incoming = std::static_pointer_cast<Transform>(fresh);
+                    std::shared_ptr<Transform3d> incoming = std::static_pointer_cast<Transform3d>(fresh);
 
-                    std::static_pointer_cast<Transform>(existing)->SetLocalPosition(incoming->GetLocalPosition(), false);
-                    std::static_pointer_cast<Transform>(existing)->SetLocalRotation(incoming->GetLocalRotation(), false);
-                    std::static_pointer_cast<Transform>(existing)->SetLocalScale(incoming->GetLocalScale(), false);
+                    std::static_pointer_cast<Transform3d>(existing)->SetLocalPosition(incoming->GetLocalPosition(), false);
+                    std::static_pointer_cast<Transform3d>(existing)->SetLocalRotation(incoming->GetLocalRotation(), false);
+                    std::static_pointer_cast<Transform3d>(existing)->SetLocalScale(incoming->GetLocalScale(), false);
 
                     existing->ClearWasAdded();
                     SenderSynchronization::GetInstance().RememberHash(existing);
@@ -300,16 +300,16 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
             
 #ifndef IS_SERVER
-            if (operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform>())
+            if (operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform3d>())
             {
                 std::shared_ptr<Component> fresh = ComponentFactory::Instantiate(operation.componentType);
 
                 DeserializeInto(fresh, operation.blob);
 
-                std::shared_ptr<Transform> temporary = std::static_pointer_cast<Transform>(fresh);
+                std::shared_ptr<Transform3d> temporary = std::static_pointer_cast<Transform3d>(fresh);
 
                 if (gameObjectOptional)
-                    TranslationBuffer::GetInstance().Enqueue(std::static_pointer_cast<Transform>(*gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(operation.componentType))), temporary->GetLocalPosition(), temporary->GetLocalRotation(), temporary->GetLocalScale());
+                    TranslationBuffer::GetInstance().Enqueue(std::static_pointer_cast<Transform3d>(*gameObjectOptional.value()->UnsafeFindComponentPointer(TypeRegistrar::GetRuntimeName(operation.componentType))), temporary->GetLocalPosition(), temporary->GetLocalRotation(), temporary->GetLocalScale());
                 
                 return;
             }

@@ -21,7 +21,7 @@ using namespace Blaster::Independent::ECS;
 
 namespace Blaster::Independent::Math
 {
-    class Transform final : public Component
+    class Transform3d final : public Component
     {
 
     public:
@@ -263,21 +263,21 @@ namespace Blaster::Independent::Math
 
             lastSentTime = now;
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Transform));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(Transform3d));
         }
 
         [[nodiscard]]
-        std::optional<std::weak_ptr<Transform>> GetParent() const
+        std::optional<std::weak_ptr<Transform3d>> GetParent() const
         {
             return parent;
         }
 
-        void SetParent(std::shared_ptr<Transform> newParent)
+        void SetParent(std::shared_ptr<Transform3d> newParent)
         {
             if (!newParent)
                 parent = std::nullopt;
             else
-                parent = std::make_optional<std::weak_ptr<Transform>>(newParent);
+                parent = std::make_optional<std::weak_ptr<Transform3d>>(newParent);
         }
 
         [[nodiscard]]
@@ -300,9 +300,9 @@ namespace Blaster::Independent::Math
             return localMatrix;
         }
 
-        static std::shared_ptr<Transform> Create(const Vector<float, 3>& position, const Vector<float, 3>& rotation, const Vector<float, 3>& scale)
+        static std::shared_ptr<Transform3d> Create(const Vector<float, 3>& position, const Vector<float, 3>& rotation, const Vector<float, 3>& scale)
         {
-            std::shared_ptr<Transform> result(new Transform());
+            std::shared_ptr<Transform3d> result(new Transform3d());
 
             result->localPosition = position;
             result->localRotation = rotation;
@@ -313,7 +313,7 @@ namespace Blaster::Independent::Math
 
     private:
 
-        Transform() = default;
+        Transform3d() = default;
 
         friend class boost::serialization::access;
         friend class Blaster::Independent::ECS::ComponentFactory;
@@ -328,7 +328,7 @@ namespace Blaster::Independent::Math
             archive & BOOST_SERIALIZATION_NVP(localScale);
         }
 
-        std::optional<std::weak_ptr<Transform>> parent;
+        std::optional<std::weak_ptr<Transform3d>> parent;
 
         std::vector<std::function<void(Vector<float, 3>)>> onPositionUpdated;
         std::vector<std::function<void(Vector<float, 3>)>> onRotationUpdated;
@@ -346,8 +346,8 @@ namespace Blaster::Independent::Math
 
         inline static constexpr std::chrono::milliseconds kSyncPeriod{ 100 };
 
-        DESCRIBE_AND_REGISTER(Transform, (Component), (), (), (parent, localPosition, localRotation, localScale))
+        DESCRIBE_AND_REGISTER(Transform3d, (Component), (), (), (parent, localPosition, localRotation, localScale))
     };
 }
 
-REGISTER_COMPONENT(Blaster::Independent::Math::Transform, 24674);
+REGISTER_COMPONENT(Blaster::Independent::Math::Transform3d, 24674);

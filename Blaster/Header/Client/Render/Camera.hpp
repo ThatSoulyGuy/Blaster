@@ -26,7 +26,7 @@ namespace Blaster::Client::Render
         [[nodiscard]]
         Matrix<float, 4, 4> GetViewMatrix() const
         {
-            return Matrix<float, 4, 4>::LookAt(GetGameObject()->GetTransform()->GetWorldPosition(), GetGameObject()->GetTransform()->GetWorldPosition() + GetGameObject()->GetTransform()->GetForward(), { 0.0f, 1.0f, 0.0f });
+            return Matrix<float, 4, 4>::LookAt(GetGameObject()->GetTransform3d()->GetWorldPosition(), GetGameObject()->GetTransform3d()->GetWorldPosition() + GetGameObject()->GetTransform3d()->GetForward(), { 0.0f, 1.0f, 0.0f });
         }
 
         static std::shared_ptr<Camera> Create(const float fieldOfView, const float nearPlane, const float farPlane)

@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <memory>
 #include <chrono>
-#include "Independent/Math/Transform.hpp"
+#include "Independent/Math/Transform3d.hpp"
 #include "Independent/Utility/Time.hpp"
 
 namespace Blaster::Independent::ECS
@@ -22,9 +22,9 @@ namespace Blaster::Independent::ECS::Synchronization
         TranslationBuffer& operator=(const TranslationBuffer&) = delete;
         TranslationBuffer& operator=(TranslationBuffer&&) = delete;
 
-        void Enqueue(const std::shared_ptr<Blaster::Independent::Math::Transform>& transform, const Blaster::Independent::Math::Vector<float, 3>& position, const Blaster::Independent::Math::Vector<float, 3>& rotation, const Blaster::Independent::Math::Vector<float, 3>& scale)
+        void Enqueue(const std::shared_ptr<Blaster::Independent::Math::Transform3d>& transform, const Blaster::Independent::Math::Vector<float, 3>& position, const Blaster::Independent::Math::Vector<float, 3>& rotation, const Blaster::Independent::Math::Vector<float, 3>& scale)
         {
-            using Transform = Blaster::Independent::Math::Transform;
+            using Transform3d = Blaster::Independent::Math::Transform3d;
 
             Entry& entry = entryMap[transform.get()];
 
@@ -48,7 +48,7 @@ namespace Blaster::Independent::ECS::Synchronization
             while (iterator != entryMap.end())
             {
                 Entry& entry = iterator->second;
-                std::shared_ptr<Math::Transform> transform = entry.transform.lock();
+                std::shared_ptr<Math::Transform3d> transform = entry.transform.lock();
 
                 if (!transform)
                 {
@@ -89,7 +89,7 @@ namespace Blaster::Independent::ECS::Synchronization
 
         struct Entry
         {
-            std::weak_ptr<Blaster::Independent::Math::Transform> transform;
+            std::weak_ptr<Blaster::Independent::Math::Transform3d> transform;
 
             Blaster::Independent::Math::Vector<float, 3> startingPosition, startingRotation, startingScale;
             Blaster::Independent::Math::Vector<float, 3> targetPosition, targetRotation, targetScale;

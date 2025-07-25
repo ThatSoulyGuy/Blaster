@@ -10,7 +10,8 @@
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
-#include "Independent/Math/Transform.hpp"
+#include "Independent/Math/Transform3d.hpp"
+#include "Independent/Math/Transform2d.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 
 #ifdef IS_SERVER
@@ -46,7 +47,7 @@ namespace Blaster::Independent::ECS
         template <typename T> requires (std::is_base_of_v<Component, T>)
         std::shared_ptr<T> AddComponent(std::shared_ptr<T> component, bool markDirty = true)
         {
-            std::shared_lock lock(mutex);
+            std::unique_lock lock(mutex);
 
             if (componentMap.contains(typeid(T)))
             {
@@ -72,7 +73,7 @@ namespace Blaster::Independent::ECS
         {
             const auto type = std::type_index(typeid(*component));
 
-            std::shared_lock lock(mutex);
+            std::unique_lock lock(mutex);
 
             if (componentMap.contains(type))
             {
@@ -162,15 +163,20 @@ namespace Blaster::Independent::ECS
             return nullptr;
         }
 
-        std::shared_ptr<Transform> GetTransform()
+        std::shared_ptr<Transform3d> GetTransform3d()
         {
-            return std::static_pointer_cast<Transform>(componentMap[typeid(Transform)]);
+            return std::static_pointer_cast<Transform3d>(componentMap[typeid(Transform3d)]);
+        }
+
+        std::shared_ptr<Transform2d> GetTransform2d()
+        {
+            return std::static_pointer_cast<Transform2d>(componentMap[typeid(Transform2d)]);
         }
 
         template <typename T> requires (std::is_base_of_v<Component, T>)
         void RemoveComponent()
         {
-            std::shared_lock lock(mutex);
+            std::unique_lock lock(mutex);
 
             if (!componentMap.contains(typeid(T)))
             {
@@ -187,7 +193,7 @@ namespace Blaster::Independent::ECS
 
         void RemoveComponentDynamic(const std::string& typeName, bool markDirty = true)
         {
-            std::shared_lock lock(mutex);
+            std::unique_lock lock(mutex);
 
             for (auto iterator = componentMap.begin(); iterator != componentMap.end(); ++iterator)
             {
@@ -210,7 +216,16 @@ namespace Blaster::Independent::ECS
             {
                 owningClient = parent->GetOwningClient();
 
-                GetTransform()->SetParent(parent->GetTransform());
+                const bool childIs3D = HasComponent<Transform3d>();
+                const bool parentIs3D = parent->HasComponent<Transform3d>();
+
+                if (childIs3D != parentIs3D)
+                    throw std::logic_error("Cannot parent 2D object to 3D object (or vice-versa)");
+
+                if (childIs3D)
+                    GetTransform3d()->SetParent(parent->GetTransform3d());
+                else
+                    GetTransform2d()->SetParent(parent->GetTransform2d());
 
                 this->parent = std::make_optional(parent);
             }
@@ -218,7 +233,10 @@ namespace Blaster::Independent::ECS
             {
                 owningClient = std::nullopt;
 
-                GetTransform()->SetParent(nullptr);
+                if (HasComponent<Transform3d>())
+                    GetTransform3d()->SetParent(nullptr);
+                else
+                    GetTransform2d()->SetParent(nullptr);
 
                 this->parent = std::nullopt;
             }
@@ -384,7 +402,7 @@ namespace Blaster::Independent::ECS
                 child->Render(camera);
         } 
 
-        static std::shared_ptr<GameObject> Create(const std::string& name, bool isLocal = false, const std::optional<NetworkId>& owningClient = std::nullopt)
+        static std::shared_ptr<GameObject> Create(const std::string& name, bool isLocal = false, const std::optional<NetworkId>& owningClient = std::nullopt, bool isUI = false)
         {
             std::shared_ptr<GameObject> result(new GameObject());
 
@@ -398,7 +416,10 @@ namespace Blaster::Independent::ECS
                 Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
 #endif
 
-            result->AddComponent(Transform::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
+            if (isUI)
+                result->AddComponent(Transform2d::Create({ 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 1.0f, 1.0f }, 0.0f));
+            else
+                result->AddComponent(Transform3d::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
 
             return result;
         }

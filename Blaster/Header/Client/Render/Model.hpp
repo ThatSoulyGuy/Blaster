@@ -342,7 +342,7 @@ namespace Blaster::Client::Render
 
             if (hasBones)
             {
-                auto transform = meshGameObject->GetTransform();
+                auto transform = meshGameObject->GetTransform3d();
 
                 Vector<float, 3> position, rotationDegrees, scale;
                 DecomposeAiMatrix(xform, position, rotationDegrees, scale);

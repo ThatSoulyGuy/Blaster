@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Independent/ECS/GameObject.hpp"
-#include "Independent/Math/Transform.hpp"
+#include "Independent/Math/Transform3d.hpp"
 #include "Independent/Physics/Collider.hpp"
 
 namespace Blaster::Independent::Physics

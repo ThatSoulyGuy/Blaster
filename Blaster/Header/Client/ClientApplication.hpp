@@ -20,6 +20,7 @@
 #include "Independent/Physics/PhysicsSystem.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
+#include "Independent/Item/ItemRegistry.hpp"
 #include "Independent/Test/PhysicsDebugger.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
@@ -31,6 +32,7 @@ using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
 using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::ECS::Synchronization;
+using namespace Blaster::Independent::Item;
 using namespace Blaster::Independent::Test;
 using namespace Blaster::Independent::Thread;
 
@@ -48,7 +50,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.86.21", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.88.23", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -60,6 +62,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_lens", { "Blaster", "Texture/Player/MtfLens.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_diffuse_red", { "Blaster", "Texture/Player/MtfDiffuseRed.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_diffuse_blue", { "Blaster", "Texture/Player/MtfDiffuseBlue.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.player.assault_rifle", { "Blaster", "Texture/Player/AssaultRifle.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.team_red", { "Blaster", "Texture/Map/TeamRed.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.team_blue", { "Blaster", "Texture/Map/TeamBlue.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.concrete_floor", { "Blaster", "Texture/Map/ConcreteFloor.png" }));
@@ -67,8 +70,16 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.wood", { "Blaster", "Texture/Resource/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.stone", { "Blaster", "Texture/Resource/Stone.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_background", { "Blaster", "Texture/UI/HotbarBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.slot_background", { "Blaster", "Texture/UI/SlotBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_wood", { "Blaster", "Texture/Item/ResourceWood.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_empty", { "Blaster", "Texture/Item/ResourceEmpty.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.item.weapon_assault_rifle", { "Blaster", "Texture/Item/WeaponAssaultRifle.png" }));
 
             InputManager::GetInstance().Initialize();
+
+            ItemRegistry::GetInstance().Initialize();
 
 #ifdef _WIN32
             PhysicsDebugger::Initialize();
@@ -176,6 +187,7 @@ namespace Blaster::Client
             Window::Clear();
 
             GameObjectManager::GetInstance().Render(camera);
+            GameObjectManager::GetInstance().RenderUI();
 
             Window::GetInstance().Present();
 

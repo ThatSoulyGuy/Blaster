@@ -311,6 +311,9 @@ namespace Blaster::Client::Core
 
             mouseDelta = newPosition - mousePosition;
             mousePosition = newPosition;
+
+            scrollDelta = pendingScroll;
+            pendingScroll = 0.0f;
         }
 
         static InputManager& GetInstance()
@@ -329,7 +332,7 @@ namespace Blaster::Client::Core
 
         static void ScrollCallback(GLFWwindow*, double, double offsetY)
         {
-            GetInstance().scrollDelta = static_cast<float>(offsetY);
+            GetInstance().pendingScroll += static_cast<float>(offsetY);
         }
 
         GLFWwindow* handle = nullptr;
@@ -343,6 +346,7 @@ namespace Blaster::Client::Core
         Vector<float, 2> mouseDelta = { 0.0f, 0.0f };
 
         float scrollDelta = 0.0f;
+        float pendingScroll = 0.0f;
 
         static std::unique_ptr<InputManager> instance;
         static std::once_flag initializationFlag;

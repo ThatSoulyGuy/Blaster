@@ -60,42 +60,45 @@ namespace Blaster::Server
                         GameObjectManager::GetInstance().Unregister(gameObjectPath);
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> data)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
                 {
-                    std::random_device device;
-                    std::mt19937 generator(device());
+                    const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(messageIn)[0]);
 
-                    constexpr int min = 1;
-                    constexpr int max = 2;
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [who, name]()
+                        {
+                            std::random_device device;
+                            std::mt19937 generator(device());
 
-                    std::uniform_int_distribution distribution(min, max);
+                            constexpr int min = 1;
+                            constexpr int max = 2;
 
-                    const int randomNumber = distribution(generator);
+                            std::uniform_int_distribution distribution(min, max);
 
-                    const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
+                            const int randomNumber = distribution(generator);
 
-                    std::cout << "Client " << who << " is '" << name << "'." << std::endl;
+                            std::cout << "Client " << who << " is '" << name << "'." << std::endl;
 
-                    ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
+                            ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
-                    auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
-                    
-                    if (randomNumber == 1)
-                    {
-                        player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Red));
+                            auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
-                        player->GetTransform3d()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
-                    }
-                    else
-                    {
-                        player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Blue));
+                            if (randomNumber == 1)
+                            {
+                                player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Red));
 
-                        player->GetTransform3d()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
-                    }
-                    
-                    player->AddComponent(CharacterController::Create(1.45f, 8.0f));
-                    
-                    SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+                                player->GetTransform3d()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
+                            }
+                            else
+                            {
+                                player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Blue));
+
+                                player->GetTransform3d()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
+                            }
+
+                            player->AddComponent(CharacterController::Create(1.45f, 8.0f));
+
+                            SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+                        });
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Snapshot, [](const NetworkId whoIn, std::vector<std::uint8_t> messageIn)

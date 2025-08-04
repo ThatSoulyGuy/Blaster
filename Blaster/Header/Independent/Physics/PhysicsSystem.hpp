@@ -52,7 +52,10 @@ namespace Blaster::Independent::Physics
                 for (const auto& [type, comp] : gameObject->GetComponentMap())
                 {
                     if (auto* body = dynamic_cast<PhysicsBody*>(comp.get()))
-                        function(*body);
+                    {
+                        if (body)
+                            function(*body);
+                    }
                 }
             }
         }

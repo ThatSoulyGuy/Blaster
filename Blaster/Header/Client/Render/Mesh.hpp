@@ -126,17 +126,39 @@ namespace Blaster::Client::Render
 
                 shader.value()->Bind();
 
-                if (camera->GetGameObject()->HasComponent<Transform3d>())
-                {
-                    shader.value()->SetUniform("projectionUniform", camera->GetProjectionMatrix());
-                    shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
-                    shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform3d()->GetModelMatrix());
-                }
-                else
-                {
-                    shader.value()->SetUniform("projectionUniform", Matrix<float, 4, 4>::Orthographic(0.0f, Window::GetInstance().GetDimensions().x(), Window::GetInstance().GetDimensions().y(), 0.0f, 0.01f, 1000.0f));
-                    shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform2d()->GetModelMatrix());
-                }
+                shader.value()->SetUniform("projectionUniform", camera->GetProjectionMatrix());
+                shader.value()->SetUniform("viewUniform", camera->GetViewMatrix());
+                shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform3d()->GetModelMatrix());
+                
+                for (const auto& [name, value] : shaderCallDeque)
+                    std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);
+
+                shaderCallDeque.clear();
+
+                for (const auto& function : renderCallDeque)
+                    function();
+
+                renderCallDeque.clear();
+
+                glBindVertexArray(VAO);
+                glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
+                glBindVertexArray(0);
+            }
+        }
+
+        void RenderUI()
+        {
+            if (const auto shader = GetGameObject()->template GetComponent<Shader>())
+            {
+                glDisable(GL_CULL_FACE);
+                glDisable(GL_DEPTH_TEST);
+
+                CommitIfDirty();
+
+                shader.value()->Bind();
+
+                shader.value()->SetUniform("projectionUniform", Matrix<float, 4, 4>::Orthographic(0.0f, Window::GetInstance().GetDimensions().x(), Window::GetInstance().GetDimensions().y(), 0.0f, -1.0f, 1.0f));
+                shader.value()->SetUniform("modelUniform", GetGameObject()->GetTransform2d()->GetModelMatrix());
 
                 for (const auto& [name, value] : shaderCallDeque)
                     std::visit([&](auto&& uniform) { shader.value()->SetUniform(name, uniform); }, value);
@@ -151,6 +173,9 @@ namespace Blaster::Client::Render
                 glBindVertexArray(VAO);
                 glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
                 glBindVertexArray(0);
+
+                glEnable(GL_CULL_FACE);
+                glEnable(GL_DEPTH_TEST);
             }
         }
 
@@ -168,12 +193,12 @@ namespace Blaster::Client::Render
 
         void SetVertices(std::vector<T> v)
         {
-            MarkVertexChanges(vertices, std::move(v));
+            MarkVertexChanges(std::move(v));
         }
 
-        void SetIndices(const std::vector<uint32_t>& i)
+        void SetIndices(std::vector<uint32_t> i)
         {
-            MarkIndexChanges(indices, std::move(i));
+            MarkIndexChanges(std::move(i));
         }
 
         [[nodiscard]]
@@ -245,7 +270,7 @@ namespace Blaster::Client::Render
             if (areIndicesResized)
             {
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bufferMap["ebo"]);
-                glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t),indices.data(), GL_STATIC_DRAW);
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
             }
             else if (areIndicesDirty)
             {

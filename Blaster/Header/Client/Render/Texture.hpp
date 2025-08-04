@@ -4,7 +4,6 @@
 #include <memory>
 #include <glad/glad.h>
 #include <FreeImage.h>
-
 #include "boost/serialization/split_member.hpp"
 #include "Independent/ComponentRegistry.hpp"
 #include "Independent/ECS/Component.hpp"
@@ -39,6 +38,12 @@ namespace Blaster::Client::Render
             return path;
         }
 
+        [[nodiscard]]
+        Vector<int, 2> GetDimensions() const
+        {
+            return dimensions;
+        }
+
         void Bind(const unsigned int slot) const
         {
             glActiveTexture(GL_TEXTURE0 + slot);
@@ -63,6 +68,20 @@ namespace Blaster::Client::Render
             result->path = path;
 
             result->Generate();
+
+            return result;
+        }
+
+        static std::shared_ptr<Texture> CreateFromMemory(const std::string& name, const Vector<std::uint32_t, 2>& dimensions, const std::vector<std::uint8_t>& data, bool generateMipMaps = true, GLenum internalFormat = GL_R8, GLenum sourceFormat = GL_RED)
+        {
+            std::shared_ptr<Texture> result(new Texture());
+
+            result->name = name;
+            result->path = { "!", "!" };
+
+            result->GenerateData(dimensions, data.data(), generateMipMaps, internalFormat, sourceFormat);
+
+            glBindTexture(GL_TEXTURE_2D, 0);
 
             return result;
         }
@@ -99,8 +118,6 @@ namespace Blaster::Client::Render
 
             if (isRegistered)
                 archive & BOOST_SERIALIZATION_NVP(id);
-            else
-                Generate();
         }
 
         BOOST_SERIALIZATION_SPLIT_MEMBER()
@@ -118,6 +135,7 @@ namespace Blaster::Client::Render
 
             FreeImage_Initialise();
             FreeImage_SetOutputMessage(FreeImageErrorHandler);
+
             FIBITMAP* bitmap = FreeImage_Load(FIF_PNG, fullPath.c_str(), PNG_DEFAULT);
 
             if (!bitmap)
@@ -127,33 +145,52 @@ namespace Blaster::Client::Render
 
             FreeImage_Unload(bitmap);
 
-            const int width = FreeImage_GetWidth(image);
-            const int height = FreeImage_GetHeight(image);
+            const std::uint32_t width = FreeImage_GetWidth(image);
+            const std::uint32_t height = FreeImage_GetHeight(image);
             const void* pixels = FreeImage_GetBits(image);
+
+            GenerateData({ width, height }, pixels);
+
+            FreeImage_Unload(image);
+            
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+            FreeImage_DeInitialise();
+        }
+
+        void GenerateData(const Vector<std::uint32_t, 2>& dimensions, const void* data, bool generateMipMaps = true, GLenum internalFormat = GL_RGBA8, GLenum sourceFormat = GL_RGBA)
+        {
+            this->dimensions = dimensions;
+
+            if (sourceFormat == GL_RED || sourceFormat == GL_LUMINANCE)
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
             glGenTextures(1, &id);
             glBindTexture(GL_TEXTURE_2D, id);
 
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-            glGenerateMipmap(GL_TEXTURE_2D);
+            glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, dimensions.x(), dimensions.y(), 0, sourceFormat, GL_UNSIGNED_BYTE, data);
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            if (generateMipMaps)
+            {
+                glGenerateMipmap(GL_TEXTURE_2D);
+
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            }
+            else
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-            FreeImage_Unload(image);
-
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            FreeImage_DeInitialise();
         }
 
         bool isRegistered = false;
 
         std::string name;
         AssetPath path;
+        Vector<int, 2> dimensions;
+
         unsigned int id = 0;
 
         DESCRIBE_AND_REGISTER(Texture, (Component), (), (), (isRegistered, name, path, id))

@@ -12,12 +12,7 @@ namespace Blaster::Client::UI
 
 		virtual ~UILayout() { }
 
-		enum class SizeMode { Content, Absolute, Stretch };
-
-		SizeMode widthMode = SizeMode::Content;
-		SizeMode heightMode = SizeMode::Content;
-
-		virtual Vector<float, 2> Measure() = 0;
+		virtual Vector<float, 2> GetMeasurement() const = 0;
 		virtual void Arrange(const Rect<float>& parentRect) = 0;
 
 	private:

@@ -260,6 +260,9 @@ namespace Blaster::Independent::ECS::Synchronization
 
             DeserializeInto(fresh, blob);
 
+            if (!fresh)
+                return;
+
             fresh->ClearWasAdded();
 
             SenderSynchronization::GetInstance().RememberHash(fresh);
@@ -341,10 +344,7 @@ namespace Blaster::Independent::ECS::Synchronization
             archive >> temporary;
 
             if (!temporary)
-            {
-                std::cerr << "Corrupt payload\n";
-                return;
-            }
+                throw std::runtime_error("Corrupt payload");
 
             temporary->gameObject = destination->GetGameObject();
 

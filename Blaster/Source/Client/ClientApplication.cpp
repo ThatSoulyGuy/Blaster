@@ -16,4 +16,6 @@ int main()
     }
 
     instance.Uninitialize();
+
+    return 0;
 }

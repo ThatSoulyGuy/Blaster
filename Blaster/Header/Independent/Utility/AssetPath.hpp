@@ -67,7 +67,7 @@ namespace Blaster::Independent::Utility
         [[nodiscard]]
         bool operator==(const AssetPath& other)
         {
-            return OPERATOR_CHECK(domain, localPath);
+            return domain == other.domain && localPath == other.localPath;
         }
 
         [[nodiscard]]
@@ -76,23 +76,17 @@ namespace Blaster::Independent::Utility
             return !(*this == other);
         }
 
-        template <typename Archive>
-        void serialize(Archive& archive)
-        {
-            archive(domain, localPath);
-        }
-
     private:
 
         friend class boost::serialization::access;
 
-        template <class Archive>
+        template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {
             archive & boost::serialization::make_nvp("domain", domain);
             archive & boost::serialization::make_nvp("localPath", localPath);
         }
-
+        
         std::string domain;
         std::string localPath;
 

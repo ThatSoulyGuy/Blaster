@@ -55,6 +55,8 @@ FetchContent_MakeAvailable(glfw)
 
 add_library(GLFW::GLFW ALIAS glfw)
 
+set(FREEIMAGE_BUILD_WRAPPER OFF CACHE BOOL "" FORCE)
+
 set(FREEIMAGE_BUILD_STATIC ON  CACHE BOOL "" FORCE)
 set(FREEIMAGE_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 
@@ -740,6 +742,24 @@ else()
         "names for this commit.")
 endif()
 
+set(FT_WITH_ZLIB      ON  CACHE BOOL "" FORCE)
+set(FT_WITH_BZip2     OFF CACHE BOOL "" FORCE)
+set(FT_WITH_PNG       OFF CACHE BOOL "" FORCE)
+set(FT_WITH_HARFBUZZ  OFF CACHE BOOL "" FORCE)
+set(FT_DISABLE_ZLIB   OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    freetype
+    GIT_REPOSITORY  https://github.com/freetype/freetype.git
+    GIT_TAG         master
+)
+
+FetchContent_MakeAvailable(freetype)
+
+if(TARGET freetype AND NOT TARGET freetype::freetype)
+    add_library(freetype::freetype ALIAS freetype)
+endif()
+
 set(BUILD_SHARED_LIBS OFF)
 
 set(EXTRA_PLATFORM_LIBS "")
@@ -797,6 +817,7 @@ function(blaster_add_executable target source_glob)
             Boost::asio
             assimp::assimp
             ZSTD::ZSTD
+            freetype::freetype
             ${EXTRA_PLATFORM_LIBS}
     )
 

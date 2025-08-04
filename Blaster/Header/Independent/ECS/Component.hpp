@@ -109,6 +109,7 @@ namespace Blaster::Independent::ECS
         virtual void Initialize() { }
         virtual void Update() { }
         virtual void Render(const std::shared_ptr<Client::Render::Camera>&) { }
+        virtual void RenderUI() { }
 
         [[nodiscard]]
         std::string GetTypeName() const

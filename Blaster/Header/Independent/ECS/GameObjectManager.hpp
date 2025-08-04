@@ -4,6 +4,10 @@
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Utility/SingletonManager.hpp"
 
+#ifdef IS_SERVER
+#include "Server/Network/ServerNetwork.hpp"
+#endif
+
 using namespace Blaster::Independent::Utility;
 
 namespace Blaster::Independent::ECS
@@ -56,7 +60,14 @@ namespace Blaster::Independent::ECS
             if (markDirty)
                 Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
 
-            return parentOptional.value()->AddChild(std::move(gameObject));
+            auto result = parentOptional.value()->AddChild(std::move(gameObject));
+
+#ifdef IS_SERVER
+            if (result->GetOwningClient().has_value() && result->GetOwningClient().value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).has_value())
+                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
+#endif
+
+            return result;
         }
 
         void Unregister(const std::string& path) override
@@ -136,6 +147,18 @@ namespace Blaster::Independent::ECS
 
             for (const auto& gameObject : rootGameObjectMap | std::views::values)
                 gameObject->Render(camera.value());
+        }
+
+        void RenderUI()
+        {
+            std::vector<std::shared_ptr<GameObject>> ordered{ rootGameObjectMap.size() };
+
+            std::ranges::transform(rootGameObjectMap, ordered.begin(), [](const auto& pair) { return pair.second; });
+
+            std::ranges::sort(ordered, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
+
+            for (const auto& object : ordered)
+                object->RenderUI();
         }
 
         void Clear()

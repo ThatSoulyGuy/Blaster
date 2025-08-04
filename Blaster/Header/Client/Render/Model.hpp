@@ -180,8 +180,8 @@ namespace Blaster::Client::Render
 
                 std::shared_ptr<Animator> animator;
 
-                if (auto found = GetGameObject()->GetComponent<Animator>())
-                    animator = found.value();
+                if (GetGameObject()->HasComponent<Animator>())
+                    animator = GetGameObject()->GetComponent<Animator>().value();
                 else
                     animator = GetGameObject()->AddComponent(Animator::Create(&skeleton));
 

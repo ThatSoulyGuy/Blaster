@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Independent/ECS/Component.hpp"
-#include "Independent/Utility/Builder.hpp"
 
 using namespace Blaster::Independent::ECS;
 using namespace Blaster::Independent::Utility;
@@ -15,76 +14,29 @@ namespace Blaster::Server::Entity
     public:
 
         [[nodiscard]]
-        std::string GetRegistryName() const
-        {
-            return RegistryName;
-        }
+        virtual std::string GetRegistryName() const = 0;
 
         [[nodiscard]]
-        float GetCurrentHealth() const
-        {
-            return CurrentHealth;
-        }
+        virtual float GetCurrentHealth() const = 0;
 
         [[nodiscard]]
-        float GetMaximumHealth() const
-        {
-            return MaximumHealth;
-        }
+        virtual float GetMaximumHealth() const = 0;
 
         [[nodiscard]]
-        float GetMovementSpeed() const
-        {
-            return MovementSpeed;
-        }
+        virtual float GetMovementSpeed() const = 0;
 
         [[nodiscard]]
-        float GetRunningMultiplier() const
-        {
-            return RunningMultiplier;
-        }
+        virtual float GetRunningMultiplier() const = 0;
 
         [[nodiscard]]
-        float GetJumpHeight() const
-        {
-            return JumpHeight;
-        }
+        virtual float GetJumpHeight() const { return 0.0f; }
 
         [[nodiscard]]
-        bool GetCanJump() const
-        {
-            return CanJump;
-        }
+        virtual bool GetCanJump() const = 0;
 
-        void TakeDamage(const float amount)
-        {
-            CurrentHealth -= abs(amount);
-        }
+    private:
 
-        void Heal(const float amount)
-        {
-            CurrentHealth += abs(amount);
-        }
-
-    protected:
-
-        friend class Builder<EntityBase>;
-
-        template <typename Class, typename MemberType, MemberType Class::* MemberPtr>
-        friend struct Setter;
-
-        BUILDABLE_PROPERTY(RegistryName, std::string, EntityBase)
-
-        BUILDABLE_PROPERTY(CurrentHealth, float, EntityBase)
-        BUILDABLE_PROPERTY(MaximumHealth, float, EntityBase)
-
-        BUILDABLE_PROPERTY(MovementSpeed, float, EntityBase)
-        BUILDABLE_PROPERTY(RunningMultiplier, float, EntityBase)
-
-        BUILDABLE_PROPERTY(JumpHeight, float, EntityBase)
-        BUILDABLE_PROPERTY(CanJump, bool, EntityBase)
-
-        DESCRIBE_AND_REGISTER(EntityBase<T>, (Component), (), (), (RegistryName, CurrentHealth, MaximumHealth, MovementSpeed, RunningMultiplier, JumpHeight, CanJump))
+        DESCRIBE_AND_REGISTER(EntityBase<T>, (Component), (), (), ())
 
     };
 }

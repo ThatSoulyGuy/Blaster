@@ -47,21 +47,24 @@ namespace Blaster::Independent::ECS
         template <typename T> requires (std::is_base_of_v<Component, T>)
         std::shared_ptr<T> AddComponent(std::shared_ptr<T> component, bool markDirty = true)
         {
-            std::unique_lock lock(mutex);
-
-            if (componentMap.contains(typeid(T)))
             {
-                std::cout << "Component map for game object '" << name << "' already contains component '" << typeid(T).name() << "'!" << std::endl;
-                return nullptr;
+                std::unique_lock lock(mutex);
+
+                if (componentMap.contains(typeid(T)))
+                {
+                    std::cout << "Component map for game object '" << name << "' already contains component '" << typeid(T).name() << "'!" << std::endl;
+                    return nullptr;
+                }
+
+                component->gameObject = shared_from_this();
+
+                componentMap.insert({ typeid(T), std::move(component) });
+                componentOrder.push_back(componentMap[typeid(T)]);
+
+                componentMap[typeid(T)]->wasAdded = true;
             }
 
-            component->gameObject = shared_from_this();
-            component->Initialize();
-
-            componentMap.insert({ typeid(T), std::move(component) });
-            componentOrder.push_back(componentMap[typeid(T)]);
-
-            componentMap[typeid(T)]->wasAdded = true;
+            componentMap[typeid(T)]->Initialize();
 
             if (markDirty)
                 Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
@@ -73,21 +76,24 @@ namespace Blaster::Independent::ECS
         {
             const auto type = std::type_index(typeid(*component));
 
-            std::unique_lock lock(mutex);
-
-            if (componentMap.contains(type))
             {
-                std::cout << "Component map for game object '" << name << "' already contains component '" << type.name() << "'!" << std::endl;
-                return nullptr;
+                std::unique_lock lock(mutex);
+
+                if (componentMap.contains(type))
+                {
+                    std::cout << "Component map for game object '" << name << "' already contains component '" << type.name() << "'!" << std::endl;
+                    return nullptr;
+                }
+
+                component->gameObject = shared_from_this();
+
+                componentMap.insert({ type, std::move(component) });
+                componentOrder.push_back(componentMap[type]);
+
+                componentMap[type]->wasAdded = markDirty;
             }
 
-            component->gameObject = shared_from_this();
-            component->Initialize();
-
-            componentMap.insert({ type, std::move(component) });
-            componentOrder.push_back(componentMap[type]);
-
-            componentMap[type]->wasAdded = markDirty;
+            componentMap[type]->Initialize();
 
             if (markDirty)
                 Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), type);
@@ -98,11 +104,24 @@ namespace Blaster::Independent::ECS
         template <typename T> requires (std::is_base_of_v<Component, T>)
         bool HasComponent() const
         {
-            return componentMap.contains(typeid(T));
+            std::shared_lock lock(mutex);
+
+            if (const auto exactHit = componentMap.find(typeid(T)); exactHit != componentMap.end())
+                return true;
+
+            for (const auto& [storedType, storedComponent] : componentMap)
+            {
+                if (std::dynamic_pointer_cast<T>(storedComponent) != nullptr)
+                    return true;
+            }
+
+            return false;
         }
 
         bool HasComponentDynamic(const std::string& typeName) const
         {
+            std::shared_lock lock(mutex);
+
             return [this, typeName]
             {
                 for (const auto& component : componentMap | std::views::values)
@@ -123,7 +142,6 @@ namespace Blaster::Independent::ECS
             if (const auto exactHit = componentMap.find(typeid(T)); exactHit != componentMap.end())
                 return std::make_optional(std::static_pointer_cast<T>(exactHit->second));
 
-
             for (const auto& [storedType, storedComponent] : componentMap)
             {
                 if (auto casted = std::dynamic_pointer_cast<T>(storedComponent); casted != nullptr)
@@ -137,6 +155,8 @@ namespace Blaster::Independent::ECS
 
         std::optional<std::shared_ptr<Component>> GetComponentDynamic(const std::string& typeName)
         {
+            std::shared_lock lock(mutex);
+
             std::optional<std::type_index> typeIndex = std::nullopt;
 
             for (auto& [type, component] : componentMap)
@@ -156,6 +176,8 @@ namespace Blaster::Independent::ECS
 
         std::shared_ptr<Component>* UnsafeFindComponentPointer(const std::string& typeName)
         {
+            std::shared_lock lock(mutex);
+
             for (auto& [type, comp] : componentMap)
                 if (comp->GetTypeName() == typeName)
                     return &comp;
@@ -303,6 +325,12 @@ namespace Blaster::Independent::ECS
             return owningClient;
         }
 
+        [[nodiscard]]
+        std::uint64_t GetCreationIndex() const noexcept
+        {
+            return creationIndex;
+        }
+
         void SetOwningClient(const std::optional<NetworkId> owningClient)
         {
             this->owningClient = owningClient;
@@ -390,7 +418,7 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::shared_ptr<Client::Render::Camera>& camera)
         {
-            if (!isLocallyActive)
+            if (!isLocallyActive || !HasComponent<Transform3d>())
                 return;
 
             std::shared_lock lock(mutex);
@@ -400,7 +428,27 @@ namespace Blaster::Independent::ECS
 
             for (const auto& child : childMap | std::views::values)
                 child->Render(camera);
-        } 
+        }
+
+        void RenderUI()
+        {
+            if (!isLocallyActive || !HasComponent<Transform2d>())
+                return;
+
+            for (const auto& component : componentOrder)
+                component->RenderUI();
+
+            std::vector<std::shared_ptr<GameObject>> orderedChildren;
+
+            orderedChildren.reserve(childMap.size());
+
+            std::ranges::transform(childMap, std::back_inserter(orderedChildren), [](const auto& pair) { return pair.second; });
+
+            std::ranges::sort(orderedChildren, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
+
+            for (const auto& child : orderedChildren)
+                child->RenderUI();
+        }
 
         static std::shared_ptr<GameObject> Create(const std::string& name, bool isLocal = false, const std::optional<NetworkId>& owningClient = std::nullopt, bool isUI = false)
         {
@@ -411,13 +459,10 @@ namespace Blaster::Independent::ECS
             result->owningClient = owningClient;
 #ifdef IS_SERVER
             result->isAuthoritative = true;
-
-            if (owningClient.has_value() && owningClient.value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).has_value())
-                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(owningClient.value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
 #endif
 
             if (isUI)
-                result->AddComponent(Transform2d::Create({ 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f }, { 1.0f, 1.0f }, 0.0f));
+                result->AddComponent(Transform2d::Create({ 0.0f, 0.0f }, 0.0f, { 16.0f, 16.0f }));
             else
                 result->AddComponent(Transform3d::Create({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }));
 
@@ -426,7 +471,7 @@ namespace Blaster::Independent::ECS
 
     private:
 
-        GameObject() = default;
+        GameObject() : creationIndex(++NextCreationIndex) {}
 
         friend class Blaster::Independent::ECS::Synchronization::SenderSynchronization;
         friend class Blaster::Independent::ECS::GameObjectManager;
@@ -490,6 +535,10 @@ namespace Blaster::Independent::ECS
         bool destroyed = false;
 
         bool isLocallyActive = true;
+
+        std::uint64_t creationIndex;
+
+        inline static std::atomic<std::uint64_t> NextCreationIndex{ 0 };
 
         std::optional<NetworkId> owningClient = std::nullopt;
 

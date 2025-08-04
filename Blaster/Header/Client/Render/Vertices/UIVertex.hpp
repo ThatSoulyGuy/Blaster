@@ -36,9 +36,9 @@ namespace Blaster::Client::Render::Vertices
         template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive& boost::serialization::make_nvp("position", position);
-            archive& boost::serialization::make_nvp("color", color);
-            archive& boost::serialization::make_nvp("uvs", uvs);
+            archive & boost::serialization::make_nvp("position", position);
+            archive & boost::serialization::make_nvp("color", color);
+            archive & boost::serialization::make_nvp("uvs", uvs);
         }
 
         Vector<float, 3> position;

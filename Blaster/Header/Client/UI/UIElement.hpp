@@ -24,10 +24,14 @@ namespace Blaster::Client::UI
 				throw std::runtime_error(std::string("UIElement '") + GetGameObject()->GetAbsolutePath() + "' does not have required component 'Mesh<UIVertex>'!");
 		}
 
+		virtual void Generate() = 0;
+
 		std::shared_ptr<Mesh<UIVertex>> GetMesh() const
 		{
 			return GetGameObject()->GetComponent<Mesh<UIVertex>>().value();
 		}
+
+		virtual std::optional<std::shared_ptr<Shader>> GetShader() const = 0;
 
 	private:
 

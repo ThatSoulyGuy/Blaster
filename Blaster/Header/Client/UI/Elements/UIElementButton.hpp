@@ -12,7 +12,7 @@
 
 using namespace Blaster::Client::Render;
 
-namespace Blaster::Client::UI
+namespace Blaster::Client::UI::Elements
 {
     class UIElementButton : public UIElement
     {
@@ -21,14 +21,19 @@ namespace Blaster::Client::UI
 
         using Callback = std::function<void()>;
 
-        void SetOnClick(Callback cb)
+        UIElementButton(const UIElementButton&) = delete;
+        UIElementButton(UIElementButton&&) = delete;
+        UIElementButton& operator=(const UIElementButton&) = delete;
+        UIElementButton& operator=(UIElementButton&&) = delete;
+
+        void SetOnClick(Callback callback)
         {
-            onClick = std::move(cb);
+            onClick = std::move(callback);
         }
 
-        void SetOnHover(Callback cb)
+        void SetOnHover(Callback callback)
         {
-            onHover = std::move(cb);
+            onHover = std::move(callback);
         }
 
         void Update() override
@@ -51,7 +56,7 @@ namespace Blaster::Client::UI
             else if (!inside && hovered)
                 hovered = false;
             
-            if (inside && InputManager::GetInstance().GetMouseButtonDown(Input::MouseButton::LEFT))
+            if (inside && InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
             {
                 if (onClick)
                     onClick();
@@ -63,22 +68,38 @@ namespace Blaster::Client::UI
             return hovered;
         }
 
+        std::optional<std::shared_ptr<Shader>> GetShader() const override
+        {
+            return std::nullopt;
+        }
+
+        void Generate() override { }
+
+        static std::shared_ptr<UIElementButton> Create()
+        {
+            return std::shared_ptr<UIElementButton>(new UIElementButton());
+        }
+
     private:
+
+        UIElementButton() = default;
+
+        friend class Blaster::Independent::ECS::ComponentFactory;
+        friend class boost::serialization::access;
+
+        template <typename Archive>
+        void serialize(Archive& archive, const unsigned)
+        {
+            archive & boost::serialization::base_object<Component>(*this);
+        }
 
         bool hovered = false;
 
         Callback onClick;
         Callback onHover;
 
-        friend class boost::serialization::access;
-
-        template<typename Archive> void serialize(Archive& archive, const unsigned)
-        {
-            archive & boost::serialization::base_object<Component>(*this);
-        }
-
         DESCRIBE_AND_REGISTER(UIElementButton, (UIElement), (), (), ())
     };
 }
 
-REGISTER_COMPONENT(Blaster::Client::UI::UIElementImage, 21712)
+REGISTER_COMPONENT(Blaster::Client::UI::Elements::UIElementButton, 21792)

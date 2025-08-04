@@ -12,6 +12,16 @@ namespace Blaster::Independent::Math
 
     public:
 
+        Rect() = default;
+
+        Rect(T x0, T y0, T x1, T y1)
+        {
+            min = { x0, y0 };
+            max = { x1, y1 };
+        }
+
+        Rect(const Vector<T, 2>& min, const Vector<T, 2>& max) : min(min), max(max) { }
+
         [[nodiscard]]
         Vector<T, 2> GetMin() const
         {
@@ -104,14 +114,8 @@ namespace Blaster::Independent::Math
 
         friend class boost::serialization::access;
 
-        Rect(T x0, T y0, T x1, T y1)
-        {
-            min = { x0, y0 };
-            max = { x1, y1 };
-        }
-
         template <typename Archive>
-        void serialize(Archvie& archive, const unsigned)
+        void serialize(Archive& archive, const unsigned)
         {
             archive & BOOST_SERIALIZATION_NVP(min);
             archive & BOOST_SERIALIZATION_NVP(max);

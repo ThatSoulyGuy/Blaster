@@ -10,63 +10,6 @@
 
 namespace Blaster::Independent::Item
 {
-	class ItemAir final : public ItemBase
-	{
-
-	public:
-
-		ItemAir() = default;
-
-		std::string GetRegistryName() const override
-		{
-			return "item_air";
-		}
-
-		std::string GetDisplayName() const override
-		{
-			return "Air";
-		}
-
-		std::string GetTextureName() const override
-		{
-			return "blaster.item.resource_empty";
-		}
-
-		std::optional<AssetPath> GetModelPath() const override
-		{
-			return std::nullopt;
-		}
-
-	};
-
-	class ItemAssaultRifle final : public ItemBase
-	{
-
-	public:
-
-		ItemAssaultRifle() = default;
-
-		std::string GetRegistryName() const override
-		{
-			return "item_assault_rifle";
-		}
-
-		std::string GetDisplayName() const override
-		{
-			return "Assault Rifle";
-		}
-
-		std::string GetTextureName() const override
-		{
-			return "blaster.item.weapon_assault_rifle";
-		}
-
-		std::optional<AssetPath> GetModelPath() const override
-		{
-			return std::make_optional<AssetPath>({ "Blaster", "Model/AssaultRifle.fbx" });
-		}
-	};
-
 	template <typename T>
 	concept ItemKeyType = std::same_as<T, std::string> || std::same_as<T, std::uint32_t>;
 
@@ -79,12 +22,6 @@ namespace Blaster::Independent::Item
 		ItemRegistry(ItemRegistry&&) = delete;
 		ItemRegistry& operator=(const ItemRegistry&) = delete;
 		ItemRegistry& operator=(ItemRegistry&&) = delete;
-
-		void Initialize()
-		{
-			Register(std::make_shared<ItemAir>());
-			Register(std::make_shared<ItemAssaultRifle>());
-		}
 
 		void Register(std::shared_ptr<ItemBase> object)
 		{

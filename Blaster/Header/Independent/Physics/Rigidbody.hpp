@@ -156,6 +156,23 @@ namespace Blaster::Independent::Physics
             QueueToServer(PacketType::C2S_Rigidbody_SetVelocity, SetVelocityCommand{ GetGameObject()->GetAbsolutePath(), desiredVelocity });
         }
 
+        void TeleportTo(const Vector<float, 3>& position) override
+        {
+            btTransform transform = body->getWorldTransform();
+
+            transform.setOrigin({ position.x(), position.y(), position.z() });
+
+            body->setWorldTransform(transform);
+
+            if (auto* motionState = body->getMotionState())
+                motionState->setWorldTransform(transform);
+
+            body->setLinearVelocity({ 0,0,0 });
+            body->setAngularVelocity({ 0,0,0 });
+
+            GetGameObject()->GetTransform3d()->SetLocalPosition(position, false);
+        }
+
         void SyncToBullet() override
         {
             if (IsAuthoritative())

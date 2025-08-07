@@ -228,9 +228,9 @@ namespace Blaster::Client::Network
                 return;
             }
 
-            if (const auto hit = packetHandlerMap.find(header.type); hit != packetHandlerMap.end())
+            if (const auto resul = packetHandlerMap.find(header.type); resul != packetHandlerMap.end())
             {
-                for (auto& function: hit->second)
+                for (auto& function: resul->second)
                     function(std::move(data));
             }
         }

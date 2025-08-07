@@ -9,7 +9,6 @@
 #include <thread>
 #include <iostream>
 #include <boost/asio.hpp>
-#include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Network/CommonNetwork.hpp"
 
 using namespace Blaster::Independent::ECS;
@@ -68,14 +67,14 @@ namespace Blaster::Server::Network
         template <typename... Args> requires DataConvertible<Args...>
         void SendTo(const NetworkId id, const PacketType type, Args&&... args)
         {
-            const auto hit = clientMap.find(id);
+            const auto resul = clientMap.find(id);
 
-            if (hit == clientMap.end())
+            if (resul == clientMap.end())
                 return;
 
             auto buf = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(type, 0, std::forward<Args>(args)...));
 
-            boost::asio::post(hit->second->strand, [this, client = hit->second, buf]()
+            boost::asio::post(resul->second->strand, [this, client = resul->second, buf]()
             {
                 client->writeQueue.push_back(buf);
 
@@ -86,14 +85,14 @@ namespace Blaster::Server::Network
         
         void ForwardTo(const NetworkId id, const PacketType type, std::vector<std::uint8_t> dataIn)
         {
-            const auto hit = clientMap.find(id);
+            const auto resul = clientMap.find(id);
 
-            if (hit == clientMap.end())
+            if (resul == clientMap.end())
                 return;
 
             auto data = std::make_shared<std::vector<std::uint8_t>>(dataIn);
 
-            boost::asio::post(hit->second->strand, [this, client = hit->second, data]()
+            boost::asio::post(resul->second->strand, [this, client = resul->second, data]()
                 {
                     client->writeQueue.push_back(data);
 

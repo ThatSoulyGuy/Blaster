@@ -54,10 +54,13 @@ namespace Blaster::Server
             
             ServerNetwork::GetInstance().Initialize(port);
 
-            ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto client)
+            ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto clientIn)
                 {
-                    for (const auto& gameObjectPath : client->ownedGameObjectList | std::views::keys)
-                        GameObjectManager::GetInstance().Unregister(gameObjectPath);
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [client = clientIn]
+                        {
+                            for (const auto& gameObjectPath : client->ownedGameObjectList | std::views::keys)
+                                GameObjectManager::GetInstance().Unregister(gameObjectPath);
+                        });
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
@@ -84,18 +87,18 @@ namespace Blaster::Server
 
                             if (randomNumber == 1)
                             {
-                                player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Red));
+                                player->AddComponent(EntityPlayer::Create(EntityBase::Team::RED));
 
-                                player->GetTransform3d()->SetLocalPosition({ 418.87f, -190.0f, 13.19f });
+                                player->GetTransform3d()->SetLocalPosition({ 420.0f, -190.0f, 15.0f });
                             }
                             else
                             {
-                                player->AddComponent(EntityPlayer::Create(EntityPlayer::Team::Blue));
+                                player->AddComponent(EntityPlayer::Create(EntityBase::Team::BLUE));
 
-                                player->GetTransform3d()->SetLocalPosition({ -411.66f, -190.0f, 7.50f });
+                                player->GetTransform3d()->SetLocalPosition({ -420.0f, -190.0f, 15.0f });
                             }
 
-                            player->AddComponent(CharacterController::Create(1.45f, 8.0f));
+                            player->AddComponent(CharacterController::Create(1.45f, 18.0f));
 
                             SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
                         });
@@ -217,6 +220,39 @@ namespace Blaster::Server
                         });
                 });
 
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Damage, [](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto anyList = CommonNetwork::DisassembleData(data);
+
+                    if (anyList.empty())
+                        return;
+
+                    auto command = std::any_cast<DamageCommand>(anyList[0]);
+
+                    if (command.isDamage)
+                        GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->DealDamage(command.damage);
+                    else
+                        GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->HealDamage(command.damage);
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)
+                {
+                    auto command = std::any_cast<QueryTransformCommand>(CommonNetwork::DisassembleData(msg)[0]);
+
+                    auto gameObject = GameObjectManager::GetInstance().Get(command.path);
+
+                    if (!gameObject)
+                        return;
+
+                    if (gameObject.value()->GetOwningClient() != who)
+                        return;
+
+                    const auto serverPosition = gameObject.value()->GetTransform3d()->GetWorldPosition();
+
+                    if (const float delta = Vector<float, 3>::Distance(serverPosition, command.position); delta > 0.5f)
+                        ServerNetwork::GetInstance().SendTo(who, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ command.path, serverPosition });
+                });
+
             PhysicsWorld::GetInstance().Initialize();
 
             const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
@@ -226,6 +262,20 @@ namespace Blaster::Server
             platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, false, true));
 
             platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
+
+
+            const auto redTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("red_beacon"));
+
+            redTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::RED));
+            redTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
+            redTeamBeaconObject->AddComponent(Rigidbody::Create());
+
+
+            const auto blueTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("blue_beacon"));
+
+            blueTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::BLUE));
+            blueTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
+            blueTeamBeaconObject->AddComponent(Rigidbody::Create());
         }
 
         bool IsRunning()

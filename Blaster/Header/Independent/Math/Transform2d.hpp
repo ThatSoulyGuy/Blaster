@@ -6,12 +6,15 @@
 #include <chrono>
 #include <functional>
 #include "Client/Core/Window.hpp"
+#include "Independent/ECS/Component.hpp"
+#include "Independent/ECS/ComponentFactory.hpp"
+#include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Math/Vector.hpp"
 #include "Independent/Math/Matrix.hpp"
-#include "Independent/ECS/Component.hpp"
-#include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
+#include "Independent/ComponentRegistry.hpp"
 
 using namespace Blaster::Client::Core;
+using namespace Blaster::Independent::ECS;
 
 namespace Blaster::Independent::Math
 {

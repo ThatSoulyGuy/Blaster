@@ -1,5 +1,6 @@
 #pragma once
 
+#include <typeindex>
 #include "Independent/Network/CommonNetwork.hpp"
 
 using namespace Blaster::Independent::Network;

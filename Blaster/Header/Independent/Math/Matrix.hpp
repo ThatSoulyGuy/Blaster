@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <numbers>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -379,6 +380,114 @@ namespace Blaster::Independent::Math
 					result[col][row] = matrix[row][col];
 
 			return result;
+		}
+
+		static void Decompose(const Matrix& matrix, Vector<T, 3>& outPos, Vector<T, 3>& outRotDeg, Vector<T, 3>& outScale)
+		{
+			static_assert(R == 4 && C == 4, "Decompose only defined for 4x4");
+
+			outPos = { matrix.data[3][0], matrix.data[3][1], matrix.data[3][2] };
+
+			Vector<T, 3> col0{ matrix.data[0][0], matrix.data[0][1], matrix.data[0][2] };
+			Vector<T, 3> col1{ matrix.data[1][0], matrix.data[1][1], matrix.data[1][2] };
+			Vector<T, 3> col2{ matrix.data[2][0], matrix.data[2][1], matrix.data[2][2] };
+
+			outScale = { Vector<T,3>::Magnitude(col0), Vector<T,3>::Magnitude(col1), Vector<T,3>::Magnitude(col2) };
+
+			if (outScale.x() == 0 || outScale.y() == 0 || outScale.z() == 0)
+			{
+				outRotDeg = { 0, 0, 0 };
+
+				return;
+			}
+
+			col0 /= outScale.x();
+			col1 /= outScale.y();
+			col2 /= outScale.z();
+
+			T pitch, yaw, roll;
+
+			constexpr T pi = std::numbers::pi_v<T>;
+
+			pitch = std::asin(std::clamp(-col2.y(), T(-1), T(1)));
+
+			if (std::fabs(std::cos(pitch)) > T(1e-6))
+			{
+				roll = std::atan2(col2.z(), col2.x());
+				yaw = std::atan2(col1.y(), col0.y());
+			}
+			else
+			{
+				roll = 0;
+				yaw = std::atan2(-col0.z(), col1.x());
+			}
+
+			constexpr T rad2deg = T(180) / pi;
+
+			outRotDeg = { roll * rad2deg, pitch * rad2deg, yaw * rad2deg };
+		}
+
+		static Matrix Inverse(const Matrix& m) requires (R == C)
+		{
+			constexpr std::size_t N = R;
+
+			Matrix<T, N, N> a = m;
+			Matrix<T, N, N> inv = Identity();
+
+			for (std::size_t col = 0; col < N; ++col)
+			{
+				std::size_t pivot = col;
+
+				T maxAbs = std::abs(a[col][col]);
+
+				for (std::size_t row = col + 1; row < N; ++row)
+				{
+					T v = std::abs(a[col][row]);
+
+					if (v > maxAbs)
+					{
+						maxAbs = v;
+						pivot = row;
+					}
+				}
+
+				if (maxAbs == T(0))
+					throw std::runtime_error("Matrix::Inverse – singular matrix");
+
+				if (pivot != col)
+				{
+					for (std::size_t c = 0; c < N; ++c)
+						std::swap(a[c][col], a[c][pivot]);
+
+					for (std::size_t c = 0; c < N; ++c)
+						std::swap(inv[c][col], inv[c][pivot]);
+				}
+
+				T diag = a[col][col];
+				for (std::size_t c = 0; c < N; ++c)
+				{
+					a[c][col] /= diag;
+					inv[c][col] /= diag;
+				}
+
+				for (std::size_t row = 0; row < N; ++row)
+				{
+					if (row == col)
+						continue;
+
+					T f = a[col][row];
+
+					if (f == T(0))
+						continue;
+
+					for (std::size_t c = 0; c < N; ++c)
+					{
+						a[c][row] -= f * a[c][col];
+						inv[c][row] -= f * inv[c][col];
+					}
+				}
+			}
+			return inv;
 		}
 
 		static constexpr size_t Rows()

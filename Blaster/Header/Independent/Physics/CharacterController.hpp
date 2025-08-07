@@ -47,12 +47,14 @@ namespace Blaster::Independent::Physics
 				GetGameObject()->SetLocal(true);
 
 			GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
+			
+			if (GetGameObject()->IsLocallyControlled())
+				shape = new btCapsuleShape(radius, height);
+			else
+				shape = new btCapsuleShape(radius, height);
+#else
+			shape = new btCapsuleShapeZ(radius, height);
 #endif
-
-			float total = height;
-			float cyl = std::max(0.f, total - 2.f * radius);
-
-			shape = new btCapsuleShape(radius, cyl);
 
 			ghost = new btPairCachingGhostObject();
 
@@ -72,9 +74,12 @@ namespace Blaster::Independent::Physics
 
 			kinematicCharacterController = new btKinematicCharacterController(ghost, shape, stepHeight);
 
-			kinematicCharacterController->setMaxJumpHeight(jumpSpeed * jumpSpeed / (2 * gravity));
 			kinematicCharacterController->setGravity(btVector3(0.0f, gravity, 0.0f));
+			
+			kinematicCharacterController->setMaxJumpHeight(jumpSpeed * jumpSpeed / (2 * gravity));
 			kinematicCharacterController->setMaxSlope(btRadians(maxSlopeDeg));
+
+			kinematicCharacterController->getGhostObject()->setUserPointer(this);
 
 			auto* world = PhysicsWorld::GetInstance().GetHandle();
 
@@ -87,6 +92,11 @@ namespace Blaster::Independent::Physics
 			requestedDirection = directionNormalized;
 
 			QueueToServer(PacketType::C2S_CharacterController_Input, CharacterControllerInputCommand{ GetGameObject()->GetAbsolutePath(), false, directionNormalized });
+		}
+
+		Vector<float, 3> GetWalkDirection() const
+		{
+			return requestedDirection;
 		}
 
 		void Jump()
@@ -123,6 +133,14 @@ namespace Blaster::Independent::Physics
 
 				wantJump = false;
 			}
+		}
+
+		void TeleportTo(const Vector<float, 3>& position) override
+		{
+			Warp(position);
+			SetWalkDirection({ 0.0f, 0.0f, 0.0f });
+
+			GetGameObject()->GetTransform3d()->SetLocalPosition(position, false);
 		}
 
 		void SyncToBullet() override
@@ -214,7 +232,7 @@ namespace Blaster::Independent::Physics
 		float jumpSpeed;
 		float gravity;
 
-		DESCRIBE_AND_REGISTER(CharacterController, (PhysicsBody), (), (), ())
+		DESCRIBE_AND_REGISTER(CharacterController, (PhysicsBody), (), (), (radius, height, stepHeight, maxSlopeDeg, jumpSpeed, gravity))
 
 	};
 }

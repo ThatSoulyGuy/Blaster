@@ -14,7 +14,8 @@ namespace Blaster::Client::UI::Layouts
 
         enum class Orientation
         {
-            Horizontal, Vertical
+            HORIZONTAL,
+            VERTICAL
         };
 
         UILayoutStack(const UILayoutStack&) = delete;
@@ -24,82 +25,59 @@ namespace Blaster::Client::UI::Layouts
 
         Vector<float, 2> GetMeasurement() const override
         {
-            Vector<float, 2> result = { 0.0f, 0.0f };
+            const std::size_t childCount = GetGameObject()->GetChildMap().size();
 
-            for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
+            if (childCount == 0)
+                return fixedSize + padding * 2.0f;
+
+            Vector<float, 2> result{ 0.0f, 0.0f };
+
+            if (orientation == Orientation::VERTICAL)
             {
-                Vector<float, 2> childDimensions;
-
-                if (auto childLayout = child->GetComponent<UILayout>(); childLayout)
-                    childDimensions = childLayout.value()->GetMeasurement();
-                else
-                    childDimensions = child->GetTransform2d()->GetWorldRect().second - child->GetTransform2d()->GetWorldRect().first;
-
-                if (orientation == Orientation::Vertical)
-                {
-                    result.x() = std::max(result.x(), childDimensions.x());
-                    result.y() += childDimensions.y() + spacing;
-                }
-                else
-                {
-                    result.y() = std::max(result.y(), childDimensions.y());
-                    result.x() += childDimensions.x() + spacing;
-                }
+                result.x() = fixedSize.x();
+                result.y() = fixedSize.y() * float(childCount) + spacing * float(childCount - 1);
+            }
+            else
+            {
+                result.x() = fixedSize.x() * float(childCount) + spacing * float(childCount - 1);
+                result.y() = fixedSize.y();
             }
 
-            if (orientation == Orientation::Vertical && result.y() > 0)
-                result.y() -= spacing;
-
-            if (orientation == Orientation::Horizontal && result.x() > 0)
-                result.x() -= spacing;
-
-            result += padding * 2.f;
+            result += padding * 2.0f;
 
             return result;
         }
 
         void Arrange(const Rect<float>& parentRect) override
         {
-            const auto avail = parentRect.GetDimensions() - padding * 2.f;
             Vector<float, 2> cursor = parentRect.GetMin() + padding;
-
 
             for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
             {
-                Vector<float, 2> childDimensions;
-
-                if (auto childLayout = child->GetComponent<UILayout>(); childLayout)
-                    childDimensions = childLayout.value()->GetMeasurement();
-                else
-                    childDimensions = child->GetTransform2d()->GetWorldRect().second - child->GetTransform2d()->GetWorldRect().first;
-
-                Rect<float> rect;
-
-                if (orientation == Orientation::Vertical)
-                {
-                    rect = { cursor, cursor + Vector<float, 2>{ avail.x(), childDimensions.y() } };
-                    cursor.y() += childDimensions.y() + spacing;
-                }
-                else
-                {
-                    rect = { cursor, cursor + Vector<float, 2>{ childDimensions.x(), avail.y() } };
-                    cursor.x() += childDimensions.x() + spacing;
-                }
+                Rect<float> rect{ cursor, cursor + fixedSize };
 
                 auto transform = child->GetTransform2d();
 
-                transform->SetDimensions(rect.GetMin());
+                transform->SetPosition(rect.GetMin());
+                transform->SetDimensions(fixedSize);
+                transform->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::LEFT);
 
                 if (auto childLayout = child->GetComponent<UILayout>(); childLayout)
                     childLayout.value()->Arrange(rect);
+
+                if (orientation == Orientation::VERTICAL)
+                    cursor.y() += fixedSize.y() + spacing;
+                else
+                    cursor.x() += fixedSize.x() + spacing;
             }
         }
 
-        static std::shared_ptr<UILayoutStack> Create(const Orientation& orientation, const Vector<float, 2>& padding, float spacing)
+        static std::shared_ptr<UILayoutStack> Create(const Orientation& orientation, const Vector<float, 2>& fixedSize, const Vector<float, 2>& padding, float spacing)
         {
             std::shared_ptr<UILayoutStack> result(new UILayoutStack());
 
             result->orientation = orientation;
+            result->fixedSize = fixedSize;
             result->padding = padding;
             result->spacing = spacing;
 
@@ -119,7 +97,8 @@ namespace Blaster::Client::UI::Layouts
             archive & boost::serialization::base_object<Component>(*this);
         }
 
-        Orientation orientation = Orientation::Vertical;
+        Orientation orientation = Orientation::VERTICAL;
+        Vector<float, 2> fixedSize = { 128.0f, 64.0f };
         Vector<float, 2> padding = { 4.0f, 4.0f };
 
         float spacing = 4.0f;

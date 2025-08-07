@@ -12,10 +12,11 @@
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
+#include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Math/Matrix.hpp"
+#include "Independent/Math/TransformCommands.hpp"
 #include "Independent/Math/Vector.hpp"
 #include "Independent/ComponentRegistry.hpp"
-#include "Independent/ECS/GameObject.hpp"
 
 using namespace Blaster::Independent::ECS;
 
@@ -122,6 +123,23 @@ namespace Blaster::Independent::Math
         }
 
         [[nodiscard]]
+        Vector<float, 3> GetLocalPivot() const
+        {
+            return localPivot;
+        }
+
+        void SetLocalPivot(const Vector<float, 3>& value, bool update = true)
+        {
+            localPivot = value;
+
+            if (!update)
+                return;
+
+            for (auto& function : onPivotUpdated)
+                function(localPivot);
+        }
+
+        [[nodiscard]]
         Vector<float, 3> GetWorldPosition() const
         {
             auto M = GetModelMatrix();
@@ -145,6 +163,32 @@ namespace Blaster::Independent::Math
                 length(M[1][0], M[1][1], M[1][2]),
                 length(M[2][0], M[2][1], M[2][2])
             };
+        }
+
+        [[nodiscard]]
+        Vector<float, 3> GetWorldPivot() const
+        {
+            Matrix<float, 4, 4> parentMat = Matrix<float, 4, 4>::Identity();
+
+            if (parent.has_value())
+            {
+                if (const auto p = parent.value().lock())
+                    parentMat = p->GetModelMatrix();
+            }
+
+            const auto T = Matrix<float, 4, 4>::Translation(localPosition);
+
+            Vector<float, 4> p{ localPivot.x(), localPivot.y(), localPivot.z(), 1.f };
+
+            Vector<float, 4> w
+            {
+                parentMat[0][0] * p.x() + parentMat[1][0] * p.y() + parentMat[2][0] * p.z() + parentMat[3][0] * p.w(),
+                parentMat[0][1] * p.x() + parentMat[1][1] * p.y() + parentMat[2][1] * p.z() + parentMat[3][1] * p.w(),
+                parentMat[0][2] * p.x() + parentMat[1][2] * p.y() + parentMat[2][2] * p.z() + parentMat[3][2] * p.w(),
+                1.f
+            };
+
+            return { w.x(), w.y(), w.z() };
         }
 
         [[nodiscard]]
@@ -229,8 +273,33 @@ namespace Blaster::Independent::Math
             onScaleUpdated.push_back(function);
         }
 
+        void AddOnPivotChangedCallback(const std::function<void(Vector<float, 3>)>& function)
+        {
+            onPivotUpdated.push_back(function);
+        }
+
         void Update() override
         {
+#ifndef IS_SERVER
+            static constexpr std::chrono::seconds kQueryPeriod{ 2 };
+
+            auto gameObject = std::static_pointer_cast<IGameObjectSynchronization>(GetGameObject());
+
+            if (gameObject->IsLocallyControlled())
+            {
+                static std::chrono::steady_clock::time_point lastQuery = std::chrono::steady_clock::now();
+
+                const auto now = std::chrono::steady_clock::now();
+
+                if (now - lastQuery >= kQueryPeriod)
+                {
+                    lastQuery = now;
+
+                    Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_QueryTransform, QueryTransformCommand{ gameObject->GetAbsolutePath(), GetWorldPosition() });
+                }
+            }
+#endif
+
             using Clock = std::chrono::steady_clock;
 
             {
@@ -284,17 +353,20 @@ namespace Blaster::Independent::Math
         Matrix<float, 4, 4> GetModelMatrix() const
         {
             const auto T = Matrix<float, 4, 4>::Translation(localPosition);
+            const auto Tp = Matrix<float, 4, 4>::Translation(localPivot);
+            const auto Tn = Matrix<float, 4, 4>::Translation(-localPivot);
+
             const auto RX = Matrix<float, 4, 4>::RotationX(localRotation.x() * (std::numbers::pi_v<float> / 180.0f));
             const auto RY = Matrix<float, 4, 4>::RotationY(localRotation.y() * (std::numbers::pi_v<float> / 180.0f));
             const auto RZ = Matrix<float, 4, 4>::RotationZ(localRotation.z() * (std::numbers::pi_v<float> / 180.0f));
             const auto S = Matrix<float, 4, 4>::Scale(localScale);
 
-            const Matrix<float, 4, 4> localMatrix = T * RZ * RY * RX * S;
+            const Matrix<float, 4, 4> localMatrix = T * Tp * RZ * RY * RX * S * Tn;
 
             if (parent.has_value())
             {
-                if (const auto parentPtr = parent.value().lock())
-                    return parentPtr->GetModelMatrix() * localMatrix;
+                if (const auto p = parent.value().lock())
+                    return p->GetModelMatrix() * localMatrix;
             }
 
             return localMatrix;
@@ -326,6 +398,7 @@ namespace Blaster::Independent::Math
             archive & BOOST_SERIALIZATION_NVP(localPosition);
             archive & BOOST_SERIALIZATION_NVP(localRotation);
             archive & BOOST_SERIALIZATION_NVP(localScale);
+            archive & BOOST_SERIALIZATION_NVP(localPivot);
         }
 
         std::optional<std::weak_ptr<Transform3d>> parent;
@@ -333,10 +406,12 @@ namespace Blaster::Independent::Math
         std::vector<std::function<void(Vector<float, 3>)>> onPositionUpdated;
         std::vector<std::function<void(Vector<float, 3>)>> onRotationUpdated;
         std::vector<std::function<void(Vector<float, 3>)>> onScaleUpdated;
+        std::vector<std::function<void(Vector<float, 3>)>> onPivotUpdated;
 
         Vector<float, 3> localPosition = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localRotation = { 0.0f, 0.0f, 0.0f };
         Vector<float, 3> localScale = { 1.0f, 1.0f, 1.0f };
+        Vector<float, 3> localPivot = { 0.0f, 0.0f, 0.0f };
 
         Vector<float, 3> lastSyncedPosition = localPosition;
         Vector<float, 3> lastSyncedRotation = localRotation;

@@ -300,8 +300,11 @@ namespace Blaster::Independent::ECS::Synchronization
             auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
 
             if (gameObjectOptional && gameObjectOptional.value()->IsLocallyControlled())
-                return;
-            
+            {
+                if (operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform3d>() || operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform2d>())
+                    return;
+            }
+
 #ifndef IS_SERVER
             if (operation.componentType == TypeRegistrar::GetTypeId<Blaster::Independent::Math::Transform3d>())
             {

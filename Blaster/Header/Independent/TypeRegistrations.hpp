@@ -31,6 +31,11 @@ namespace Blaster::Independent::Math
     class Vector;
 }
 
+namespace Blaster::Server::Entity::Entities
+{
+    struct DamageCommand;
+}
+
 REGISTER_TYPE(std::int32_t, 37387)
 REGISTER_TYPE(std::uint32_t, 25266)
 REGISTER_TYPE(std::uint64_t, 42775)
@@ -48,6 +53,7 @@ REGISTER_TYPE(Blaster::Independent::Physics::ImpulseCommand, 25467)
 REGISTER_TYPE(Blaster::Independent::Physics::SetTransformCommand, 17834)
 REGISTER_TYPE(Blaster::Independent::Physics::SetVelocityCommand, 92123)
 REGISTER_TYPE(Blaster::Independent::Physics::CharacterControllerInputCommand, 12686)
+REGISTER_TYPE(Blaster::Server::Entity::Entities::DamageCommand, 62289)
 
 namespace Blaster::Independent::Utility
 {

@@ -6,6 +6,7 @@
 #include <boost/archive/text_oarchive.hpp>
 #include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SyncTracker.hpp"
+#include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/IGameObjectSynchronization.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 
@@ -452,6 +453,22 @@ namespace Blaster::Independent::ECS::Synchronization
 
             size_t off = 0;
 
+            const auto shouldStrip = [&](OpCode code, NetworkId owner) noexcept
+                {
+                    if (owner != target)
+                        return false;
+
+                    switch (code)
+                    {
+                        case OpCode::Create:
+                        case OpCode::AddComponent:
+                        case OpCode::RemoveComponent:
+                            return true;
+                        default:
+                            return false;
+                    }
+                };
+
             while (off < blob.size())
             {
                 const OpCode code = static_cast<OpCode>(blob[off]); off += 1;
@@ -469,7 +486,7 @@ namespace Blaster::Independent::ECS::Synchronization
                 const auto it = ownerCacheMap.find(root);
                 const NetworkId owner = (it == ownerCacheMap.end()) ? 0 : it->second;
 
-                if (owner != target)
+                if (!shouldStrip(code, owner))
                 {
                     CommonNetwork::WriteTrivial(out, static_cast<uint8_t>(code));
                     CommonNetwork::WriteTrivial(out, len);

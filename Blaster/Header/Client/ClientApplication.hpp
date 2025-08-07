@@ -50,7 +50,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.88.23", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.95.26", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -67,19 +67,20 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.team_blue", { "Blaster", "Texture/Map/TeamBlue.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.concrete_floor", { "Blaster", "Texture/Map/ConcreteFloor.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.metal_wall", { "Blaster", "Texture/Map/MetalWall.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.map.beacon", { "Blaster", "Texture/Map/Beacon.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.wood", { "Blaster", "Texture/Resource/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.stone", { "Blaster", "Texture/Resource/Stone.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_background", { "Blaster", "Texture/UI/HotbarBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.slot_background", { "Blaster", "Texture/UI/SlotBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.menu_background", { "Blaster", "Texture/UI/MenuBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_wood", { "Blaster", "Texture/Item/ResourceWood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_empty", { "Blaster", "Texture/Item/ResourceEmpty.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.weapon_assault_rifle", { "Blaster", "Texture/Item/WeaponAssaultRifle.png" }));
 
             InputManager::GetInstance().Initialize();
-
-            ItemRegistry::GetInstance().Initialize();
 
 #ifdef _WIN32
             PhysicsDebugger::Initialize();
@@ -120,6 +121,26 @@ namespace Blaster::Client
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [message = std::move(messageIn)]
                         {
                             ReceiverSynchronization::GetInstance().HandleSnapshotPayload(message);
+                        });
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_CorrectTransform, [](std::vector<std::uint8_t> msg)
+                {
+                    auto commandIn = std::any_cast<CorrectTransformCommand>(CommonNetwork::DisassembleData(msg)[0]);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [command = std::move(commandIn)]
+                        {
+                            auto gameObjectOptional = GameObjectManager::GetInstance().Get(command.path);
+
+                            if (!gameObjectOptional)
+                                return;
+
+                            auto gameObject = gameObjectOptional.value();
+
+                            if (gameObject->HasComponent<PhysicsBody>())
+                                gameObject->GetComponent<PhysicsBody>().value()->TeleportTo(command.position);
+                            else
+                                gameObject->GetTransform3d()->SetLocalPosition(command.position, false);
                         });
                 });
 
@@ -188,6 +209,9 @@ namespace Blaster::Client
 
             GameObjectManager::GetInstance().Render(camera);
             GameObjectManager::GetInstance().RenderUI();
+
+            if (camera.has_value())
+                PhysicsWorld::GetInstance().Render(*camera);
 
             Window::GetInstance().Present();
 

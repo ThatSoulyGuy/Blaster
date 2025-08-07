@@ -1,6 +1,7 @@
-#pragma once
+﻿#pragma once
 
 #include "Client/Core/InputManager.hpp"
+#include "Client/Network/ClientNetwork.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Model.hpp"
@@ -15,8 +16,10 @@
 #include "Independent/Utility/Time.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Physics/CharacterController.hpp"
+#include "Independent/Physics/Raycast.hpp"
 #include "Independent/ComponentRegistry.hpp"
-#include "Server/Entity/EntityBase.hpp"
+#include "Server/Entity/Entities/EntityCommands.hpp"
+#include "Server/Entity/LivingEntity.hpp"
 
 using namespace std::chrono_literals;
 using namespace Blaster::Client::Network;
@@ -30,21 +33,20 @@ using namespace Blaster::Independent::Item;
 
 namespace Blaster::Server::Entity::Entities
 {
-    class EntityPlayer final : public EntityBase<EntityPlayer>
+    class EntityPlayer final : public LivingEntity
     {
 
     public:
-
-        enum class Team
-        {
-            Red,
-            Blue
-        };
 
         struct Hotbar
         {
             std::uint8_t index;
             std::array<std::uint32_t, 5> slots;
+
+            std::uint32_t GetCurrentSlot() const
+            {
+                return slots[index - 1];
+            }
 
             template <typename Archive>
             void serialize(Archive& archive, const unsigned)
@@ -67,111 +69,148 @@ namespace Blaster::Server::Entity::Entities
             {
                 const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
 
-                cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 16.0f, 0.0f });
+                cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
                 
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-                modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 6.0f, 0.0f });
+                modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, -2.5f, 0.0f });
                 modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
-                modelGameObject->GetTransform3d()->SetLocalScale({ 0.0002f, 0.0002f, 0.0002f });
+                modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
 
-                if (team == Team::Red)
+                if (team == Team::RED)
                     modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
                 else
                     modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
 
                 InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
-            }
 
 #ifndef IS_SERVER
-            hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
-                    .AddElement<UIElementText>("ui_health_text")
-                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetPosition({ 10.0f, -10.0f });
-                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
-                            })
-                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
-                        .Call<&UIElementText::SetText>("Current Health: -1")
-                        .Call<&UIElementText::Generate>()
-                    .MoveDown()
-                    .AddElement<UIElementImage>("ui_hotbar_background")
-                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
-                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                            })
-                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_background").value())
-                        .Call<&UIElementImage::Generate>()
-                    .MoveDown()
-                    .AddElement<UIElementImage>("ui_hotbar_selector")
-                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -20.0f });
-                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                            })
-                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_selector").value())
-                        .Call<&UIElementImage::Generate>()
-                    .MoveDown()
-                    .AddLayout<UILayoutGrid>("ui_hotbar_grid", Vector<float, 2>{ 205, 205 }, Vector<float, 2>{ 20, 20 }, Vector<float, 2>{ 20, 20 }, 5)
-                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
-                                gameObject->GetTransform2d()->SetDimensions({ 1280, 256 });
-                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                            })
-                        .AddElement<UIElementImage>("ui_slot_0")
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                        .AddElement<UIElementText>("ui_health_text")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetPosition({ 10.0f, -10.0f });
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                                })
+                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                            .Call<&UIElementText::SetText>("Current Health: -1")
+                            .Call<&UIElementText::Generate>()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_hotbar_background")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                                })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_background").value())
                             .Call<&UIElementImage::Generate>()
-                            .AddElement<UIElementImage>("ui_slot_image")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_hotbar_selector")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -20.0f });
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                                })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_selector").value())
+                            .Call<&UIElementImage::Generate>()
+                        .MoveDown()
+                        .AddLayout<UILayoutGrid>("ui_hotbar_grid", Vector<float, 2>{ 205, 205 }, Vector<float, 2>{ 20, 20 }, Vector<float, 2>{ 20, 20 }, 5)
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
+                                    gameObject->GetTransform2d()->SetDimensions({ 1280, 256 });
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                                })
+                            .AddElement<UIElementImage>("ui_slot_0")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
                                 .Call<&UIElementImage::Generate>()
+                                .AddElement<UIElementImage>("ui_slot_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                            .MoveDown()
+                            .AddElement<UIElementImage>("ui_slot_1")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                                .Call<&UIElementImage::Generate>()
+                                .AddElement<UIElementImage>("ui_slot_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                            .MoveDown()
+                            .AddElement<UIElementImage>("ui_slot_2")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                                .Call<&UIElementImage::Generate>()
+                                .AddElement<UIElementImage>("ui_slot_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                            .MoveDown()
+                            .AddElement<UIElementImage>("ui_slot_3")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                                .Call<&UIElementImage::Generate>()
+                                .AddElement<UIElementImage>("ui_slot_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                            .MoveDown()
+                            .AddElement<UIElementImage>("ui_slot_4")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                                .Call<&UIElementImage::Generate>()
+                                .AddElement<UIElementImage>("ui_slot_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
                             .MoveDown()
                         .MoveDown()
-                        .AddElement<UIElementImage>("ui_slot_1")
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                            .Call<&UIElementImage::Generate>()
-                            .AddElement<UIElementImage>("ui_slot_image")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                .Call<&UIElementImage::Generate>()
-                            .MoveDown()
-                        .MoveDown()
-                        .AddElement<UIElementImage>("ui_slot_2")
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                            .Call<&UIElementImage::Generate>()
-                            .AddElement<UIElementImage>("ui_slot_image")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                .Call<&UIElementImage::Generate>()
-                            .MoveDown()
-                        .MoveDown()
-                        .AddElement<UIElementImage>("ui_slot_3")
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                            .Call<&UIElementImage::Generate>()
-                            .AddElement<UIElementImage>("ui_slot_image")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                .Call<&UIElementImage::Generate>()
-                            .MoveDown()
-                        .MoveDown()
-                        .AddElement<UIElementImage>("ui_slot_4")
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                            .Call<&UIElementImage::Generate>()
-                            .AddElement<UIElementImage>("ui_slot_image")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                .Call<&UIElementImage::Generate>()
-                            .MoveDown()
-                        .MoveDown()
-                    .MoveDown()
-                .Finish();
+                    .Finish();
 
-            healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
-            hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
+                healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
+                hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
 
-            const auto& slotContainer = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_grid").value();
+                const auto& slotContainer = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_grid").value();
 
-            for (const auto& child : slotContainer->GetChildMap() | std::views::values)
-                hotbarSlotImageList.push_back(child->GetChildMap().at("ui_slot_image")->GetComponent<UIElementImage>().value());
+                for (const auto& child : slotContainer->GetChildMap() | std::views::values)
+                    hotbarSlotImageList.push_back(child->GetChildMap().at("ui_slot_image")->GetComponent<UIElementImage>().value());
+
+                pauseMenuRoot = UIBuilder::NewMenu("ui_pause_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                        .AddElement<UIElementImage>()
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                                })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                            .Call<&UIElementImage::Generate>()
+                        .MoveDown()
+                    .Finish();
+
+                pauseMenuRoot->SetLocallyActive(false);
+
+
+                deathMenuRoot = UIBuilder::NewMenu("ui_death_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                        .AddElement<UIElementImage>("ui_background")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                            })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.death_background").value())
+                            .Call<&UIElementImage::Generate>()
+                        .MoveDown()
+                        .AddElement<UIElementText>("ui_death_text")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                                })
+                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 88, 0, 8))
+                            .Call<&UIElementText::SetText>("YOU DIED!")
+                            .Call<&UIElementText::Generate>()
+                        .MoveDown()
+                    .Finish();
+
+                deathMenuRoot->SetLocallyActive(false);
 #endif
+            }
         }
 
         void Update() override
@@ -179,30 +218,29 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
+            if (currentHealth <= 0)
+            {
+#ifndef IS_SERVER
+                deathMenuRoot->SetLocallyActive(true);
+#endif
+                auto animator = modelGameObject->GetComponent<Animator>().value();
+
+                if (!hasPlayedDeath)
+                {
+                    animator->Play("mtf2.death", 0.2f, 1.0f, WrapMode::ONCE);
+
+                    hasPlayedDeath = true;
+                }
+            }
+            
             modelGameObject->SetLocallyActive(false);
 
             GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform3d()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform3d()->GetLocalRotation().y(), 0.0f });
-
+            
             UpdateControls();
             UpdateMouselook();
             UpdateMovement();
-
-#ifndef IS_SERVER
-            if (float(std::atoi(healthText->GetText().substr(17).data())) != GetCurrentHealth())
-            {
-                healthText->SetText("Current Health: " + std::to_string(int(GetCurrentHealth())));
-                healthText->Generate();
-            }
-
-            for (int i = 0; i < 5; ++i)
-            {
-                if (hotbarSlotImageList[i]->GetTexture().value()->GetName() != ItemRegistry::GetInstance().Get(hotbar.slots[i]).value()->GetTextureName())
-                {
-                    hotbarSlotImageList[i]->SetTexture(TextureManager::GetInstance().Get(ItemRegistry::GetInstance().Get(hotbar.slots[i]).value()->GetTextureName()).value());
-                    hotbarSlotImageList[i]->Generate();
-                }
-            }
-#endif
+            UpdateViewModel();
         }
 
         std::string GetRegistryName() const override
@@ -210,14 +248,41 @@ namespace Blaster::Server::Entity::Entities
             return "entity_player";
         }
 
-        float GetCurrentHealth() const override
+        Team GetTeam() const override
+        {
+            return team;
+        }
+
+        std::uint8_t GetCurrentHealth() const override
         {
             return currentHealth;
         }
 
-        float GetMaximumHealth() const override
+        std::uint8_t GetMaximumHealth() const override
         {
             return 100.0f;
+        }
+
+        void DealDamage(std::uint8_t damage) override
+        {
+            if ((int(currentHealth) - damage) <= 0)
+                currentHealth = 0;
+            else
+                currentHealth -= abs(damage);
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
+
+        void HealDamage(std::uint8_t damage) override
+        {
+            currentHealth += abs(damage);
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
+
+        std::optional<std::shared_ptr<GameObject>> GetEntityModel() const override
+        {
+            return modelGameObject;
         }
 
         float GetMovementSpeed() const override
@@ -261,7 +326,6 @@ namespace Blaster::Server::Entity::Entities
         {
             archive & boost::serialization::base_object<Component>(*this);
 
-
             archive & BOOST_SERIALIZATION_NVP(currentHealth);
             archive & BOOST_SERIALIZATION_NVP(team);
             archive & BOOST_SERIALIZATION_NVP(hotbar);
@@ -269,6 +333,17 @@ namespace Blaster::Server::Entity::Entities
 
         void UpdateControls()
         {
+#ifndef IS_SERVER
+            if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
+            {
+                pauseMenuRoot->SetLocallyActive(!pauseMenuRoot->IsLocallyActive());
+                InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
+            }
+
+            if (IsMenuActive())
+                return;
+#endif
+
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
                 std::cout << "Current Position: " << GetGameObject()->GetTransform3d()->GetWorldPosition() << std::endl;
 
@@ -289,13 +364,42 @@ namespace Blaster::Server::Entity::Entities
 
 #ifndef IS_SERVER
             hotbarSelector->GetTransform2d()->SetPosition({ ((int)hotbar.index - 3) * (float)225, -20 });
+            
+            if (InputManager::GetInstance().GetKeyState(KeyCode::X, KeyState::PRESSED))
+                PhysicsWorld::GetInstance().ToggleDrawDebug();
 #endif
+
+            if (InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
+            {
+                constexpr float kRayDistance = 100.f;
+
+                const auto cameraGameObject = camera->GetGameObject();
+                const auto origin = cameraGameObject->GetTransform3d()->GetWorldPosition();
+                const auto direction = cameraGameObject->GetTransform3d()->GetForward();
+
+                auto selfControlOptional = GetGameObject()->GetComponent<CharacterController>();
+                auto* self = dynamic_cast<PhysicsBody*>(selfControlOptional ? selfControlOptional->get() : nullptr);
+
+                const btCollisionObject* selfObj = self ? self->GetCollisionObject() : nullptr;
+
+                auto hit = Raycast::Fire(origin, direction, kRayDistance, selfObj);
+
+                if (!hit.success)
+                    return;
+
+                auto* other = static_cast<PhysicsBody*>(hit.object->getUserPointer());
+
+                if (self != other && other->GetGameObject()->HasComponent<EntityBase>())
+                    ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value()->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
+            }
         }
 
         void UpdateMouselook() const
         {
-            if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
-                InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
+#ifndef IS_SERVER
+            if (IsMenuActive())
+                return;
+#endif
 
             Vector<float, 2> mouseDelta = InputManager::GetInstance().GetMouseDelta();
 
@@ -308,8 +412,13 @@ namespace Blaster::Server::Entity::Entities
             transform->SetLocalRotation(rotation);
         }
 
-        void UpdateMovement() const
+        void UpdateMovement()
         {
+#ifndef IS_SERVER
+            if (pauseMenuRoot->IsLocallyActive())
+                return;
+#endif
+
             constexpr float epsilon = 1e-6f;
 
             auto animator = modelGameObject->GetComponent<Animator>().value();
@@ -346,20 +455,203 @@ namespace Blaster::Server::Entity::Entities
 
                 controller->SetWalkDirection(direction * GetMovementSpeed());
 
-                if (!animator->IsPlaying("mtf2.walk"))
-                    animator->Play("mtf2.walk", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
+                if (currentViewModelItem == 0)
+                {
+                    if (!animator->IsPlaying("mtf2.walk"))
+                        animator->Play("mtf2.walk", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
+                }
+                else
+                {
+                    if (!animator->IsPlaying("mtf2.walk_hold"))
+                        animator->Play("mtf2.walk_hold", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
+                }
             }
             else
             {
                 controller->SetWalkDirection({ 0.0f, 0.0f, 0.0f });
 
-                if (!animator->IsPlaying("mtf2.idle"))
-                    animator->Play("mtf2.idle", blendTime);
+                if (currentViewModelItem == 0)
+                {
+                    if (!animator->IsPlaying("mtf2.idle"))
+                        animator->Play("mtf2.idle", blendTime);
+                }
+                else
+                {
+                    if (!animator->IsPlaying("mtf2.idle_hold"))
+                        animator->Play("mtf2.idle_hold", blendTime);
+                }
             }
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::SPACE, KeyState::PRESSED) && controller->OnGround())
                 controller->Jump();
         }
+
+        void UpdateViewModel()
+        {
+#ifndef IS_SERVER
+            PresentHealthIfChanged();
+            PresentHotbarIfChanged();
+            PresentViewModelIfChanged();
+#endif
+        }
+
+#ifndef IS_SERVER
+        void PresentHealthIfChanged()
+        {
+            if (lastPresentedHealth == currentHealth)
+                return;
+
+            lastPresentedHealth = currentHealth;
+
+            healthText->SetText("Current Health: " + std::to_string(currentHealth));
+            healthText->Generate();
+        }
+
+        void PresentHotbarIfChanged()
+        {
+            for (std::size_t i = 0; i < hotbar.slots.size(); ++i)
+            {
+                const uint32_t itemId = hotbar.slots[i];
+
+                if (itemId == lastSlotIds[i])
+                    continue;
+
+                lastSlotIds[i] = itemId;
+
+                const auto item = ItemRegistry::GetInstance().Get(itemId).value();
+                const auto tex = TextureManager::GetInstance().Get(item->GetTextureName()).value();
+
+                auto slotImage = hotbarSlotImageList[i];
+
+                slotImage->SetTexture(tex);
+                slotImage->Generate();
+            }
+        }
+
+        void PresentViewModelIfChanged()
+        {
+            const uint32_t wanted = hotbar.GetCurrentSlot();
+            
+            const std::string viewModelPath = camera->GetGameObject()->GetAbsolutePath() + ".view_model";
+            const std::string worldModelPath = GetGameObject()->GetAbsolutePath() + ".world_model";
+
+            std::shared_ptr<GameObject> viewModelObject = GameObjectManager::GetInstance().Has(viewModelPath) ? GameObjectManager::GetInstance().Get(viewModelPath).value() : nullptr;
+            std::shared_ptr<GameObject> worldModelObject = GameObjectManager::GetInstance().Has(worldModelPath) ? GameObjectManager::GetInstance().Get(worldModelPath).value() : nullptr;
+
+            if (worldModelObject)
+                worldModelObject->GetTransform3d()->SetLocalRotation({ 0.0f, modelGameObject->GetTransform3d()->GetLocalRotation().y(), 0.0f});
+
+            if (wanted != currentViewModelItem)
+            {
+                if (currentViewModelItem != 0)
+                {
+                    if (GameObjectManager::GetInstance().Has(viewModelPath))
+                        GameObjectManager::GetInstance().Unregister(viewModelPath);
+
+                    if (GameObjectManager::GetInstance().Has(worldModelPath))
+                        GameObjectManager::GetInstance().Unregister(worldModelPath);
+                }
+
+                currentViewModelItem = wanted;
+
+                if (wanted == 0)
+                    return;
+
+                auto item = ItemRegistry::GetInstance().Get(wanted).value();
+
+                if (!item->GetModelPath())
+                    return;
+                
+                viewModelObject = GameObjectManager::GetInstance().Register(GameObject::Create("view_model", true, std::nullopt, false), camera->GetGameObject()->GetAbsolutePath());
+
+                viewModelBasePosition = item->GetModelViewPosition().has_value() ? item->GetModelViewPosition().value() : Vector<float, 3>{ 0.0f, 0.0f, 0.0f };
+
+                viewModelObject->GetTransform3d()->SetLocalPosition(viewModelBasePosition);
+                viewModelObject->GetTransform3d()->SetLocalRotation(item->GetModelViewRotation().has_value() ? item->GetModelViewRotation().value() : Vector<float, 3>{ 0.0f, 0.0f, 0.0f });
+                viewModelObject->AddComponent(Model::Create(item->GetModelPath().value()));
+
+                worldModelObject = GameObjectManager::GetInstance().Register(GameObject::Create("world_model"), GetGameObject()->GetAbsolutePath());
+
+                worldModelObject->GetTransform3d()->SetLocalPosition({ 1.0f, 9.0f, 3.5f });
+                worldModelObject->GetTransform3d()->SetLocalScale({ 1.0f, 1.0f, 1.0f });
+                worldModelObject->GetTransform3d()->SetLocalPivot(modelGameObject->GetTransform3d()->GetLocalPosition());
+
+                worldModelObject->AddComponent(Model::Create(item->GetModelPath().value()));
+
+                worldModelObject->SetLocallyActive(false);
+                
+                for (auto child : viewModelObject->GetChildMap() | std::views::values)
+                {
+                    if (child->HasComponent<Mesh<ModelVertex>>())
+                        child->GetComponent<Mesh<ModelVertex>>().value()->SetRenderInFront(true);
+                }
+            }
+
+            if (!viewModelObject)
+                return;
+
+            const float deltaTime = Time::GetInstance().GetDeltaTime();
+
+            constexpr float kSwayFactor = 0.068f;
+            constexpr float kSwaySmooth = 9.0f;
+
+            constexpr float kBreathAmp = 0.015f;
+            constexpr float kBreathFreq = 1.2f;
+
+            constexpr float kWalkAmp = 0.125f;
+            constexpr float kWalkFreq = 1.7f;
+            constexpr float kFreqClamp = 0.2f;
+
+            constexpr float kBobSmooth = 7.5f;
+
+            const Vector<float, 3> camEuler = camera->GetGameObject()->GetTransform3d()->GetLocalRotation();
+
+            Vector<float, 2> cameraAngles{ camEuler.x(), camEuler.y() };
+            Vector<float, 2> cameraAnglesDelta = cameraAngles - lastCameraAngles;
+
+            auto wrap = [](float a)
+                {
+                    a = std::fmod(a + 180.f, 360.f);
+
+                    if (a < 0.f)
+                        a += 360.f;
+
+                    return a - 180.f;
+                };
+
+            cameraAnglesDelta.x() = wrap(cameraAnglesDelta.x());
+            cameraAnglesDelta.y() = wrap(cameraAnglesDelta.y());
+
+            lastCameraAngles = cameraAngles;
+
+            Vector<float, 3> targetSway = { -cameraAnglesDelta.y() * kSwayFactor, cameraAnglesDelta.x() * kSwayFactor, 0.f };
+
+            swayOffset = Vector<float, 3>::Lerp(swayOffset, targetSway, std::clamp(kSwaySmooth * deltaTime, 0.f, 1.f));
+
+            auto controller = GetGameObject()->GetComponent<CharacterController>().value();
+            const float speed = Vector<float, 3>::Magnitude(controller->GetWalkDirection());
+
+            const bool moving = speed > 0.1f;
+            const float amp = moving ? kWalkAmp : kBreathAmp;
+            const float baseFreq = moving ? kWalkFreq : kBreathFreq;
+            const float freq = std::max(baseFreq * (moving ? speed : 1.f), kFreqClamp);
+
+            bobTimer += deltaTime;
+
+            const float phase = bobTimer * freq * 2.f * std::numbers::pi_v<float>;
+
+            Vector<float, 3> targetBob = { std::sin(phase + std::numbers::pi_v<float> / 2.f) * amp * 0.25f, std::sin(phase) * amp, std::cos(phase) * amp * 0.6f };
+
+            bobOffset = Vector<float, 3>::Lerp(bobOffset, targetBob, std::clamp(kBobSmooth * deltaTime, 0.f, 1.f));
+
+            viewModelObject->GetTransform3d()->SetLocalPosition(viewModelBasePosition + swayOffset + bobOffset);
+        }
+
+        bool IsMenuActive() const
+        {
+            return pauseMenuRoot->IsLocallyActive() || deathMenuRoot->IsLocallyActive();
+        }
+#endif
 
         Team team;
 
@@ -367,6 +659,9 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<GameObject> modelGameObject;
 
 #ifndef IS_SERVER
+        std::shared_ptr<GameObject> pauseMenuRoot = nullptr;
+        std::shared_ptr<GameObject> deathMenuRoot = nullptr;
+
         std::shared_ptr<GameObject> hudRoot = nullptr;
         std::shared_ptr<UIElementText> healthText = nullptr;
 
@@ -377,13 +672,26 @@ namespace Blaster::Server::Entity::Entities
 
         Hotbar hotbar;
 
-        float currentHealth;
+        bool hasPlayedDeath = false;
+
+        std::uint8_t currentHealth;
+
+        std::uint8_t lastPresentedHealth = 255;
+        std::array<std::uint32_t, 5> lastSlotIds{};
+        std::uint32_t currentViewModelItem = 0;
+        Vector<float, 3> viewModelBasePosition{ 0,0,0 };
+
+        Vector<float, 2> lastCameraAngles{ 0,0 };
+        Vector<float, 3> swayOffset{ 0,0,0 };
+
+        float bobTimer = 0.f;
+        Vector<float, 3> bobOffset{ 0,0,0 };
 
         constexpr static float blendTime = 0.20f;
 
         constexpr static float mouseSensitivity = 0.1f;
 
-        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase<EntityPlayer>), (), (), (team, hotbar, currentHealth))
+        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase), (), (), (team, hotbar, currentHealth))
 
     };
 }

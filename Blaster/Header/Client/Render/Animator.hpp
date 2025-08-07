@@ -1,9 +1,8 @@
 #pragma once
 
 #include "Client/Render/Skeleton.hpp"
-#include "Independent/ComponentRegistry.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
-#include "Independent/ECS/Component.hpp"
+#include "Independent/ECS/GameObject.hpp"
 #include "Independent/Utility/Time.hpp"
 
 using namespace Blaster::Independent::ECS;
@@ -103,7 +102,10 @@ namespace Blaster::Client::Render
             auto iterator = clips.find(name);
 
             if (iterator == clips.end())
+            {
+                std::cerr << "Animation '" << name << "' not found on game object '" << GetGameObject()->GetAbsolutePath() << "'!";
                 return;
+            }
 
             Active instance;
 
@@ -115,10 +117,15 @@ namespace Blaster::Client::Render
             instance.weight = fadeSeconds <= 0.0f ? 1.0f : 0.0f;
             instance.fadeVelocity = fadeSeconds <= 0.0f ? 0.0f : 1.0f / fadeSeconds;
 
-            if (fadeSeconds > 0.0f)
+            if (fadeSeconds > 0.0f && mode == BlendMode::OVERWRITE)
             {
+                const float v = -1.0f / fadeSeconds;
+
                 for (auto& active : activeList)
-                    active.fadeVelocity = -1.0f / fadeSeconds;
+                {
+                    if (active.clip && active.clip->name != name)
+                        active.fadeVelocity = v;
+                }
             }
 
             activeList.push_back(instance);
@@ -213,7 +220,6 @@ namespace Blaster::Client::Render
                     if (active.blend == BlendMode::ADDITIVE)
                     {
                         translations[id] += samp.translation * w;
-                        scales[id] += (samp.scale - Vector<float, 3>{1, 1, 1})* w;
                         rotations[id] = Slerp(rotations[id], samp.rotation, w);
                     }
                     else
@@ -257,6 +263,42 @@ namespace Blaster::Client::Render
         void OnAfterMerge() override
         {
             ResolvePending();
+        }
+
+        std::optional<Matrix<float, 4, 4>> GetBoneWorldMatrix(const std::string& bone) const
+        {
+            if (!skeleton)
+                return std::nullopt;
+
+            auto iterator = skeleton->boneIndex.find(bone);
+
+            if (iterator == skeleton->boneIndex.end())
+            {
+                std::cerr << "Bone '" << bone << "' not found on game object '" << GetGameObject()->GetAbsolutePath() << "'!\n";
+
+                return std::nullopt;
+            }
+
+            const uint32_t id = iterator->second;
+
+            const Matrix<float, 4, 4>& boneLocal = skeleton->bones[id].globalAnimated;
+            const Matrix<float, 4, 4> worldMat = GetGameObject()->GetTransform3d()->GetModelMatrix();
+
+            return worldMat * boneLocal;
+        }
+
+        std::optional<Matrix<float, 4, 4>> GetBoneWorldMatrixLocal(const std::string& bone, const std::shared_ptr<GameObject>& dstGO) const
+        {
+            auto matrix = GetBoneWorldMatrix(bone);
+
+            if (!matrix)
+                return std::nullopt;
+
+            const auto parentToWorld = dstGO->GetTransform3d()->GetParent() ? dstGO->GetTransform3d()->GetParent()->lock()->GetModelMatrix() : Matrix<float, 4, 4>::Identity();
+
+            const auto worldToParent = Matrix<float, 4, 4>::Inverse(parentToWorld);
+
+            return worldToParent * (*matrix);
         }
 
         static std::shared_ptr<Animator> Create(Skeleton* skeleton)
@@ -471,9 +513,9 @@ namespace Blaster::Client::Render
 
             return Matrix<float, 4, 4>
             {
-                { 1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0},
-                { 2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx),0 },
-                { 2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy),0 },
+                { 1 - 2 * (yy + zz), 2 * (xy + wz), 2 * (xz - wy), 0 },
+                { 2 * (xy - wz), 1 - 2 * (xx + zz), 2 * (yz + wx), 0 },
+                { 2 * (xz + wy), 2 * (yz - wx), 1 - 2 * (xx + yy), 0 },
                 { 0, 0, 0, 1 }
             };
         }

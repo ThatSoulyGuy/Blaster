@@ -14,7 +14,7 @@ namespace Blaster::Independent::Physics::Colliders
 
         void Initialize() override
         {
-            shape = new btCapsuleShape(radius, height);
+            shape = new btCapsuleShapeZ(radius, height);
         }
 
         static std::shared_ptr<ColliderCapsule> Create(float radius, float height)

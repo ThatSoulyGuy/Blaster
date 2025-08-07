@@ -16,6 +16,8 @@ namespace Blaster::Independent::Physics
         
         virtual ~PhysicsBody() = default;
 
+        virtual void TeleportTo(const Vector<float, 3>&) = 0;
+
         virtual void SyncToBullet() { }
         virtual void SyncFromBullet() { }
 

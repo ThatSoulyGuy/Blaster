@@ -14,6 +14,10 @@
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/ComponentFactory.hpp"
 
+#ifndef IS_SERVER
+#include "Independent/Physics/PhysicsWorld.hpp"
+#endif
+
 namespace Blaster::Client::Render
 {
     using UniformValue = std::variant<int, float, Vector<float, 2>, Vector<float, 3>, Matrix<float, 4, 4>, std::vector<Matrix<float, 4, 4>>>;
@@ -120,6 +124,11 @@ namespace Blaster::Client::Render
 
         void Render(const std::shared_ptr<Camera>& camera) override
         {
+#ifndef IS_SERVER
+            if (Blaster::Independent::Physics::PhysicsWorld::GetInstance().IsDrawingDebug())
+                return;
+#endif
+
             if (const auto shader = GetGameObject()->template GetComponent<Shader>())
             {
                 CommitIfDirty();
@@ -138,11 +147,29 @@ namespace Blaster::Client::Render
                 for (const auto& function : renderCallDeque)
                     function();
 
+                GLboolean previousDepthMask = GL_TRUE;
+                GLint previousDepthFunction = GL_LESS;
+
+                if (renderInFront)
+                {
+                    glGetBooleanv(GL_DEPTH_WRITEMASK, &previousDepthMask);
+                    glGetIntegerv(GL_DEPTH_FUNC, &previousDepthFunction);
+
+                    glDepthMask(GL_FALSE);
+                    glDepthFunc(GL_ALWAYS);
+                }
+
                 renderCallDeque.clear();
 
                 glBindVertexArray(VAO);
                 glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indices.size()), GL_UNSIGNED_INT, nullptr);
                 glBindVertexArray(0);
+
+                if (renderInFront)
+                {
+                    glDepthMask(previousDepthMask);
+                    glDepthFunc(previousDepthFunction);
+                }
             }
         }
 
@@ -201,6 +228,16 @@ namespace Blaster::Client::Render
             MarkIndexChanges(std::move(i));
         }
 
+        void SetRenderInFront(bool renderInFront)
+        {
+            this->renderInFront = renderInFront;
+        }
+
+        bool GetRenderInFront() const
+        {
+            return renderInFront;
+        }
+
         [[nodiscard]]
         bool operator==(const Mesh& other) const
         {
@@ -241,8 +278,8 @@ namespace Blaster::Client::Render
 
             archive & boost::serialization::make_nvp("vertices", vertices);
             archive & boost::serialization::make_nvp("indices", indices);
-
             archive & boost::serialization::make_nvp("bufferMap", bufferMap);
+            archive & boost::serialization::make_nvp("renderInFront", renderInFront);
         }
 
         void CommitIfDirty()
@@ -350,6 +387,8 @@ namespace Blaster::Client::Render
 
         bool areVerticesDirty = false, areIndicesDirty = false;
         bool areVerticesResized = false, areIndicesResized = false;
+
+        bool renderInFront = false;
 
         size_t firstVerticeDirty = std::numeric_limits<size_t>::max(), lastVerticeDirty = 0;
         size_t firstIndiceDirty = std::numeric_limits<size_t>::max(), lastIndiceDirty = 0;

@@ -185,6 +185,15 @@ namespace Blaster::Independent::Math
 			return result;
 		}
 
+		Vector operator-() const
+		{
+			Vector result;
+
+			std::transform(data.begin(), data.end(), result.data.begin(), std::negate<T>());
+
+			return result;
+		}
+
 		template <ArrayType U>
 		Vector operator*(const U& operand) const
 		{
@@ -594,6 +603,11 @@ namespace Blaster::Independent::Math
 			std::transform(first.data.begin(), first.data.end(), second.data.begin(), result.data.begin(), [&](T a, T b) { return a + time * (b - a); });
 
 			return result;
+		}
+
+		static float Distance(const Vector<float, 3>& first, const Vector<float, 3>& second)
+		{
+			return std::sqrt(Vector<float, 3>::LengthSquared(first - second));
 		}
 
 		template <ArrayType U>

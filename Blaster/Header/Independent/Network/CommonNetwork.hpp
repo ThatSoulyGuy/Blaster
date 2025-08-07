@@ -23,7 +23,10 @@ namespace Blaster::Independent::Network
         C2S_Rigidbody_Impulse = 7,
         C2S_Rigidbody_SetVelocity = 8,
         C2S_Rigidbody_SetTransform = 9,
-        C2S_CharacterController_Input
+        C2S_CharacterController_Input = 10,
+        C2S_EntityPlayer_Damage = 11,
+        C2S_QueryTransform = 12,
+        S2C_CorrectTransform = 13
     };
 
     struct PacketHeader

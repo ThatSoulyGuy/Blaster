@@ -5,6 +5,11 @@
 #include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "Independent/Utility/Time.hpp"
 
+#ifndef IS_SERVER
+#include "Client/Render/Camera.hpp"
+#include "Independent/Test/DebugDrawer.hpp"
+#endif
+
 using namespace Blaster::Independent::Utility;
 
 namespace Blaster::Independent::Physics
@@ -31,6 +36,11 @@ namespace Blaster::Independent::Physics
 
             world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
             world->setGravity(btVector3(0.0f, -9.81f, 0.0f));
+
+#ifndef IS_SERVER
+            drawer = new Blaster::Independent::Test::DebugDrawer();
+            world->setDebugDrawer(drawer);
+#endif
         }
 
         void Update()
@@ -49,6 +59,17 @@ namespace Blaster::Independent::Physics
                 accumulator -= kFixedStep;
             }
         }
+
+#ifndef IS_SERVER
+        void Render(std::shared_ptr<Blaster::Client::Render::Camera> camera)
+        {
+            if (drawDebug)
+            {
+                world->debugDrawWorld();
+                drawer->flush(camera->GetProjectionMatrix() * camera->GetViewMatrix());
+            }
+        }
+#endif
 
         void AddBody(btRigidBody* body)
         {
@@ -72,6 +93,18 @@ namespace Blaster::Independent::Physics
             return world;
         }
 
+#ifndef IS_SERVER
+        void ToggleDrawDebug()
+        {
+            drawDebug = !drawDebug;
+        }
+
+        bool IsDrawingDebug() const
+        {
+            return drawDebug;
+        }
+#endif
+        
         void Uninitialize()
         {
             delete world;
@@ -79,6 +112,10 @@ namespace Blaster::Independent::Physics
             delete dispatcher;
             delete broadphase;
             delete solver;
+
+#ifndef IS_SERVER
+            delete drawer;
+#endif
         }
 
         static PhysicsWorld& GetInstance()
@@ -100,6 +137,11 @@ namespace Blaster::Independent::Physics
         btBroadphaseInterface* broadphase;
         btSequentialImpulseConstraintSolver* solver;
         btDiscreteDynamicsWorld* world;
+
+#ifndef IS_SERVER
+        Blaster::Independent::Test::DebugDrawer* drawer;
+        bool drawDebug;
+#endif
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<PhysicsWorld> instance;

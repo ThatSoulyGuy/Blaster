@@ -143,13 +143,15 @@ namespace Blaster::Client::Render
 
             FIBITMAP* image = FreeImage_ConvertTo32Bits(bitmap);
 
+            FreeImage_FlipVertical(image);
+
             FreeImage_Unload(bitmap);
 
             const std::uint32_t width = FreeImage_GetWidth(image);
             const std::uint32_t height = FreeImage_GetHeight(image);
             const void* pixels = FreeImage_GetBits(image);
 
-            GenerateData({ width, height }, pixels);
+            GenerateData({ width, height }, pixels, true, GL_RGBA8, GL_BGRA);
 
             FreeImage_Unload(image);
             

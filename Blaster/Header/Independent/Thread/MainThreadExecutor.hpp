@@ -18,7 +18,8 @@ namespace Blaster::Independent::Thread
         MainThreadExecutor& operator=(const MainThreadExecutor&) = delete;
         MainThreadExecutor& operator=(MainThreadExecutor&&) = delete;
 
-        void EnqueueTask(void* holder, std::function<void()> task)
+        template <typename Callable> requires std::invocable<void()>
+        void EnqueueTask(void* holder, Callable&& task)
         {
             std::scoped_lock guard(mutex);
 

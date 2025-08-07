@@ -31,17 +31,158 @@ namespace Blaster::Independent::ECS
         {
             assert(gameObject != nullptr && "Cannot register a null GameObject");
 
+            if (IsIterating())
+            {
+                registrationQueue.push({ std::move(gameObject), path, markDirty });
+
+                return registrationQueue.back().gameObject;
+            }
+
+            return RegisterImmediate(std::move(gameObject), path, markDirty);
+        }
+
+        void Unregister(const std::string& path) override
+        {
+            if (IsIterating())
+            {
+                unregistrationQueue.push(path);
+                return;
+            }
+
+            UnregisterImmediate(path);
+        }
+
+        bool Has(const std::string& path) const override
+        {
+            return GetInternal(path).has_value();
+        }
+
+        std::optional<std::shared_ptr<GameObject>> Get(const std::string& path) override
+        {
+            return GetInternal(path);
+        }
+
+        std::vector<std::shared_ptr<GameObject>> GetAll() const override
+        {
+            std::vector<std::shared_ptr<GameObject>> result;
+
+            result.reserve(rootGameObjectMap.size());
+
+            std::ranges::transform(rootGameObjectMap, std::back_inserter(result), [](const auto& pair) { return pair.second; });
+
+            return result;
+        }
+
+        void Update()
+        {
+            IterationGuard guard(*this);
+
+            for (const auto& gameObject : rootGameObjectMap | std::views::values)
+                gameObject->Update();
+        }
+
+        void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
+        {
+            if (!camera.has_value())
+            {
+                std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
+                return;
+            }
+
+            IterationGuard guard(*this);
+
+            for (const auto& gameObject : rootGameObjectMap | std::views::values)
+                gameObject->Render(camera.value());
+        }
+
+        void RenderUI()
+        {
+            IterationGuard guard(*this);
+
+            std::vector<std::shared_ptr<GameObject>> ordered{ rootGameObjectMap.size() };
+
+            std::ranges::transform(rootGameObjectMap, ordered.begin(), [](const auto& pair) { return pair.second; });
+            std::ranges::sort(ordered, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
+
+            for (const auto& object : ordered)
+                object->RenderUI();
+        }
+
+        void Clear()
+        {
+            rootGameObjectMap.clear();
+
+            registrationQueue = {};
+            unregistrationQueue = {};
+        }
+
+        static GameObjectManager& GetInstance()
+        {
+            std::call_once(initializationFlag, []()
+            {
+                instance = std::unique_ptr<GameObjectManager>(new GameObjectManager());
+            });
+
+            return *instance;
+        }
+
+    private:
+
+        GameObjectManager() = default;
+
+        struct PendingRegistration
+        {
+            std::shared_ptr<GameObject> gameObject;
+            std::string path;
+
+            bool markDirty;
+        };
+
+        std::queue<PendingRegistration> registrationQueue;
+        std::queue<std::string> unregistrationQueue;
+
+        std::uint32_t iterationDepth{ 0 };
+
+        [[nodiscard]]
+        bool IsIterating() const { return iterationDepth != 0; }
+
+        class IterationGuard
+        {
+
+        public:
+
+            explicit IterationGuard(GameObjectManager& m) : manager(m)
+            {
+                ++manager.iterationDepth;
+            }
+
+            ~IterationGuard()
+            {
+                --manager.iterationDepth;
+
+                if (manager.iterationDepth == 0)
+                    manager.FlushQueues();
+            }
+
+        private:
+
+            GameObjectManager& manager;
+
+        };
+
+        std::shared_ptr<GameObject> RegisterImmediate(std::shared_ptr<GameObject> gameObject, const std::string& path, bool markDirty)
+        {
             if (path == ".")
             {
                 std::string name = gameObject->GetName();
 
-                if (rootGameObjectMap.contains(gameObject->GetName()))
+                if (rootGameObjectMap.contains(name))
                 {
-                    std::cout << "Root map already contains game object '" << gameObject->GetName() << "'!" << std::endl;
+                    std::cout << "Root map already contains game object '" << name << "'!" << std::endl;
                     return nullptr;
                 }
 
-                rootGameObjectMap.insert({ gameObject->GetName(), std::move(gameObject) });
+                rootGameObjectMap.insert({ name, std::move(gameObject) });
 
                 if (markDirty)
                     Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(rootGameObjectMap[name]);
@@ -63,14 +204,21 @@ namespace Blaster::Independent::ECS
             auto result = parentOptional.value()->AddChild(std::move(gameObject));
 
 #ifdef IS_SERVER
-            if (result->GetOwningClient().has_value() && result->GetOwningClient().value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).has_value())
-                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
+            if (result->GetOwningClient().has_value() && result->GetOwningClient().value() != 0 &&
+                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).has_value())
+            {
+                Blaster::Server::Network::ServerNetwork::GetInstance()
+                    .GetClient(result->GetOwningClient().value())
+                    .value()
+                    ->ownedGameObjectList
+                    .insert({ result->GetAbsolutePath(),
+                              std::static_pointer_cast<IGameObjectSynchronization>(result) });
+            }
 #endif
-
             return result;
         }
 
-        void Unregister(const std::string& path) override
+        void UnregisterImmediate(const std::string& path)
         {
             auto gameObjectOptional = Get(path);
 
@@ -81,7 +229,6 @@ namespace Blaster::Independent::ECS
             }
 
             const auto gameObject = gameObjectOptional.value();
-
             gameObject->MarkDestroyed();
 
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
@@ -104,89 +251,39 @@ namespace Blaster::Independent::ECS
 
             if (!parentOptional.has_value())
             {
-                std::cout << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
+                std::cerr << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
                 return;
             }
 
             parentOptional.value()->RemoveChild(childName);
         }
 
-        bool Has(const std::string& path) const override
+        void FlushQueues()
         {
-            return GetInternal(path).has_value();
-        }
-
-        std::optional<std::shared_ptr<GameObject>> Get(const std::string& path) override
-        {
-            return GetInternal(path);
-        }
-
-        std::vector<std::shared_ptr<GameObject>> GetAll() const override
-        {
-            std::vector<std::shared_ptr<GameObject>> result;
-
-            result.reserve(rootGameObjectMap.size());
-            std::ranges::transform(rootGameObjectMap, std::back_inserter(result), [](const auto& pair) { return pair.second; });
-
-            return result;
-        }
-
-        void Update()
-        {
-            for (const auto& gameObject : rootGameObjectMap | std::views::values)
-                gameObject->Update();
-        }
-
-        void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
-        {
-            if (!camera.has_value())
+            while (!unregistrationQueue.empty())
             {
-                std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
-                return;
+                const std::string path = std::move(unregistrationQueue.front());
+                unregistrationQueue.pop();
+                UnregisterImmediate(path);
             }
 
-            for (const auto& gameObject : rootGameObjectMap | std::views::values)
-                gameObject->Render(camera.value());
+            while (!registrationQueue.empty())
+            {
+                auto [object, path, markDirty] = std::move(registrationQueue.front());
+
+                registrationQueue.pop();
+                RegisterImmediate(std::move(object), path, markDirty);
+            }
         }
-
-        void RenderUI()
-        {
-            std::vector<std::shared_ptr<GameObject>> ordered{ rootGameObjectMap.size() };
-
-            std::ranges::transform(rootGameObjectMap, ordered.begin(), [](const auto& pair) { return pair.second; });
-
-            std::ranges::sort(ordered, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
-
-            for (const auto& object : ordered)
-                object->RenderUI();
-        }
-
-        void Clear()
-        {
-            rootGameObjectMap.clear();
-        }
-
-        static GameObjectManager& GetInstance()
-        {
-            std::call_once(initializationFlag, []()
-                {
-                    instance = std::unique_ptr<GameObjectManager>(new GameObjectManager());
-                });
-
-            return *instance;
-        }
-
-    private:
-
-        GameObjectManager() = default;
 
         static std::vector<std::string> SplitPath(const std::string& path)
         {
             std::vector<std::string> segments;
-            std::string segment;
-            std::stringstream stringStream(path);
 
-            while (std::getline(stringStream, segment, '.'))
+            std::string segment;
+            std::stringstream stream(path);
+
+            while (std::getline(stream, segment, '.'))
             {
                 if (!segment.empty())
                     segments.push_back(segment);
@@ -212,18 +309,18 @@ namespace Blaster::Independent::ECS
 
             std::shared_ptr<GameObject> current = rootIterator->second;
 
-            for (std::size_t index = 1; index < segments.size(); ++index)
+            for (std::size_t i = 1; i < segments.size(); ++i)
             {
-                if (!current->HasChild(segments[index]))
+                if (!current->HasChild(segments[i]))
                     return std::nullopt;
 
-                current = current->GetChild(segments[index]).value();
+                current = current->GetChild(segments[i]).value();
             }
 
             return current;
         }
 
-        std::unordered_map<std::string, std::shared_ptr<GameObject>> rootGameObjectMap = {};
+        std::unordered_map<std::string, std::shared_ptr<GameObject>> rootGameObjectMap;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<GameObjectManager> instance;

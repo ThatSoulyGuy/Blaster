@@ -117,6 +117,11 @@ namespace Blaster::Client::Render
             }
         }
 
+        AssetPath GetPath() const
+        {
+            return path;
+        }
+
         static std::shared_ptr<Model> Create(const AssetPath& path, bool hasBones = false, bool buildCollider = false)
         {
             std::shared_ptr<Model> result(new Model());

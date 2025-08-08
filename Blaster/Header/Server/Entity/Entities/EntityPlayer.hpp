@@ -28,6 +28,8 @@ using namespace Blaster::Client::Render;
 using namespace Blaster::Client::UI::Elements;
 using namespace Blaster::Client::UI::Layouts;
 using namespace Blaster::Client::UI;
+using namespace Blaster::Independent::Physics::Colliders;
+using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::Thread;
 using namespace Blaster::Independent::Item;
 
@@ -45,7 +47,10 @@ namespace Blaster::Server::Entity::Entities
 
             std::uint32_t GetCurrentSlot() const
             {
-                return slots[index - 1];
+                if (index == 0)
+                    return slots[0];
+                else
+                    return slots[index - 1];
             }
 
             template <typename Archive>
@@ -71,6 +76,8 @@ namespace Blaster::Server::Entity::Entities
 
                 cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
+
+                GameObjectManager::GetInstance().SetCamera(camera);
                 
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
@@ -198,13 +205,54 @@ namespace Blaster::Server::Entity::Entities
                         .MoveDown()
                         .AddElement<UIElementText>("ui_death_text")
                             .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
-                                })
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                            })
                             .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 88, 0, 8))
                             .Call<&UIElementText::SetText>("YOU DIED!")
                             .Call<&UIElementText::Generate>()
+                        .MoveDown()
+                        .AddLayout<UILayoutStack>("ui_button_layout", UILayoutStack::Orientation::VERTICAL, Vector<float, 2>{ 768.0f, 96.0f }, Vector<float, 2>{ 4.0f, 4.0f }, 10.0f)
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetDimensions({ 768.0f, 288.0f });
+                            })
+                            .AddElement<UIElementButton>("ui_respawn_button")
+                                .Call<&UIElementButton::SetOnClick>([absolutePath = GetGameObject()->GetAbsolutePath()]
+                                {
+                                    Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Respawn, RespawnCommand{ absolutePath });
+                                    
+                                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []
+                                    {
+                                        GameObjectManager::GetInstance().Clear();
+                                    });
+                                })
+                                .AddElement<UIElementImage>("ui_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                                .AddElement<UIElementText>("ui_text")
+                                    .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                    .Call<&UIElementText::SetText>("RESPAWN")
+                                    .Call<&UIElementText::Generate>()
+                                .MoveDown()
+                            .MoveDown()
+                            .AddElement<UIElementButton>("ui_quit_button")
+                                .Call<&UIElementButton::SetOnClick>([]
+                                {
+                                    std::terminate();
+                                })
+                                .AddElement<UIElementImage>("ui_image")
+                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                    .Call<&UIElementImage::Generate>()
+                                .MoveDown()
+                                .AddElement<UIElementText>("ui_text")
+                                    .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                    .Call<&UIElementText::SetText>("RAGE QUIT")
+                                    .Call<&UIElementText::Generate>()
+                                .MoveDown()
+                            .MoveDown()
                         .MoveDown()
                     .Finish();
 
@@ -335,13 +383,16 @@ namespace Blaster::Server::Entity::Entities
         {
 #ifndef IS_SERVER
             if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
-            {
                 pauseMenuRoot->SetLocallyActive(!pauseMenuRoot->IsLocallyActive());
-                InputManager::GetInstance().SetMouseMode(!InputManager::GetInstance().GetMouseMode());
-            }
 
             if (IsMenuActive())
+            {
+                InputManager::GetInstance().SetMouseMode(MouseMode::FREE);
+
                 return;
+            }
+            else
+                InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
 #endif
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
@@ -415,7 +466,7 @@ namespace Blaster::Server::Entity::Entities
         void UpdateMovement()
         {
 #ifndef IS_SERVER
-            if (pauseMenuRoot->IsLocallyActive())
+            if (IsMenuActive())
                 return;
 #endif
 

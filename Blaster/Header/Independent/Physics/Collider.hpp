@@ -1,7 +1,7 @@
 #pragma once
 
-#include <btBulletDynamicsCommon.h>
 #include "Independent/ECS/Component.hpp"
+#include "Independent/Utility/BulletSterilized.hpp"
 
 using namespace Blaster::Independent::ECS;
 

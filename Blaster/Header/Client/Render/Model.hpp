@@ -59,10 +59,10 @@ namespace Blaster::Client::Render
             if (buildCollider)
             {
                 const auto& [colliderVertices, colliderIndices] = LoadColliderCLD1(std::regex_replace(path.GetFullPath(), std::regex(".fbx"), "") + "_data.cld1");
-
+            
                 GetGameObject()->AddComponent(ColliderMesh::Create(colliderVertices, colliderIndices), false);
                 GetGameObject()->AddComponent(Rigidbody::Create(Rigidbody::Type::STATIC, 10.0f), false);
-
+            
                 GetGameObject()->GetComponent<ColliderMesh>().value()->SetShouldSynchronize(false);
                 GetGameObject()->GetComponent<Rigidbody>().value()->SetShouldSynchronize(false);
             }
@@ -369,8 +369,8 @@ namespace Blaster::Client::Render
             {
                 BoneInformation& information = skeleton.bones[iterator->second];
 
-                information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(local);
-                information.globalAnimated = Matrix<float, 4, 4>::FromAssimpMatrix(global);
+                information.localBind = FromAssimpMatrix(local);
+                information.globalAnimated = FromAssimpMatrix(global);
             }
 
             for (unsigned c = 0; c < node->mNumChildren; ++c)
@@ -508,6 +508,17 @@ namespace Blaster::Client::Render
             aiVector3D tmp = nMat * v;
 
             return {tmp.x, tmp.y, tmp.z};
+        }
+
+        static Matrix<float, 4, 4> FromAssimpMatrix(const aiMatrix4x4& matrix)
+        {
+            Matrix<float, 4, 4> result;
+
+            for (int row = 0; row < 4; ++row)
+                for (int col = 0; col < 4; ++col)
+                    result[col][row] = matrix[row][col];
+
+            return result;
         }
 
         static void DecomposeAiMatrix(const aiMatrix4x4& matrix, Vector<float, 3>& outPosition, Vector<float, 3>& outRotationDegrees, Vector<float, 3>& outScale)

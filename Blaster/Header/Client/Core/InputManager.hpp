@@ -242,6 +242,9 @@ namespace Blaster::Client::Core
 
         void SetMouseMode(const MouseMode& mode) const
         {
+            if (GetMouseMode() == mode)
+                return;
+
             switch (mode)
             {
 

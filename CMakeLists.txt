@@ -76,16 +76,18 @@ if(NOT TARGET FreeImage::FreeImage)
     add_library(FreeImage::FreeImage ALIAS FreeImage)
 endif()
 
-set(BUILD_BULLET3           ON  CACHE BOOL "" FORCE)
-set(BUILD_BULLET2_DEMOS     OFF CACHE BOOL "" FORCE)
-set(BUILD_BULLET3_DEMOS     OFF CACHE BOOL "" FORCE)
-set(BUILD_EXTRAS            OFF CACHE BOOL "" FORCE)
-set(BUILD_UNIT_TESTS        OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS         OFF CACHE BOOL "" FORCE)
+set(USE_DOUBLE_PRECISION      OFF CACHE BOOL "" FORCE)
+set(BUILD_BULLET3             ON  CACHE BOOL "" FORCE)
+set(BUILD_BULLET2_DEMOS       OFF CACHE BOOL "" FORCE)
+set(BUILD_BULLET3_DEMOS       OFF CACHE BOOL "" FORCE)
+set(BUILD_EXTRAS              OFF CACHE BOOL "" FORCE)
+set(BUILD_UNIT_TESTS          OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
         bullet
         GIT_REPOSITORY https://github.com/bulletphysics/bullet3.git
-        GIT_TAG        master
+        GIT_TAG        3.24
 )
 FetchContent_MakeAvailable(bullet)
 

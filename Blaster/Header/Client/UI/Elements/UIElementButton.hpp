@@ -19,19 +19,17 @@ namespace Blaster::Client::UI::Elements
 
     public:
 
-        using Callback = std::function<void()>;
-
         UIElementButton(const UIElementButton&) = delete;
         UIElementButton(UIElementButton&&) = delete;
         UIElementButton& operator=(const UIElementButton&) = delete;
         UIElementButton& operator=(UIElementButton&&) = delete;
 
-        void SetOnClick(Callback callback)
+        void SetOnClick(std::function<void()>&& callback)
         {
             onClick = std::move(callback);
         }
 
-        void SetOnHover(Callback callback)
+        void SetOnHover(std::function<void()>&& callback)
         {
             onHover = std::move(callback);
         }
@@ -95,8 +93,8 @@ namespace Blaster::Client::UI::Elements
 
         bool hovered = false;
 
-        Callback onClick;
-        Callback onHover;
+        std::function<void()> onClick;
+        std::function<void()> onHover;
 
         DESCRIBE_AND_REGISTER(UIElementButton, (UIElement), (), (), ())
     };

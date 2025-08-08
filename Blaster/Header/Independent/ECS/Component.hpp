@@ -120,7 +120,10 @@ namespace Blaster::Independent::ECS
         [[nodiscard]]
         std::shared_ptr<GameObject> GetGameObject() const
         {
-            return gameObject.lock();
+            if (gameObject.expired())
+                return nullptr;
+            else
+                return gameObject.lock();
         }
 
     private:

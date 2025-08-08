@@ -49,9 +49,9 @@ namespace Blaster::Independent::Physics
         {
             for (const auto& gameObject : ECS::GameObjectManager::GetInstance().GetAll())
             {
-                for (const auto& [type, comp] : gameObject->GetComponentMap())
+                for (const auto& component : gameObject->GetComponentMap() | std::views::values)
                 {
-                    if (auto* body = dynamic_cast<PhysicsBody*>(comp.get()))
+                    if (auto* body = dynamic_cast<PhysicsBody*>(component.get()))
                     {
                         if (body)
                             function(*body);

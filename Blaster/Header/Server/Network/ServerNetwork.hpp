@@ -55,7 +55,18 @@ namespace Blaster::Server::Network
 
             DoAccept();
 
-            ioThread = std::thread([this]{ ioContext.run(); });
+            ioThread = std::thread([this]
+            {
+                try
+                {
+                    ioContext.run();
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr << "io_context.run() aborted: " << e.what() << '\n';
+                }
+            });
+
             running  = true;
         }
 
@@ -279,13 +290,16 @@ namespace Blaster::Server::Network
             for (auto& callback : onClientDisconnectedCallbackList)
                 callback(client);
 
-            client->socket.shutdown(boost::asio::socket_base::shutdown_both);
-            client->socket.close();
+            boost::system::error_code ignored;
+
+            client->socket.shutdown(boost::asio::socket_base::shutdown_both, ignored);
+            client->socket.close(ignored);
 
             clientMap.erase(client->id);
 
-            std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!" << std::endl;
+            std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!\n";
         }
+
 
         void HandlePacket(const NetworkId from, const PacketHeader& header, std::vector<std::uint8_t>&& data)
         {

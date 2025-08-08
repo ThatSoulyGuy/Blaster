@@ -1,9 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <btBulletDynamicsCommon.h>
-#include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "Independent/Utility/Time.hpp"
+#include "Independent/Utility/BulletSterilized.hpp"
 
 #ifndef IS_SERVER
 #include "Client/Render/Camera.hpp"
@@ -41,23 +40,6 @@ namespace Blaster::Independent::Physics
             drawer = new Blaster::Independent::Test::DebugDrawer();
             world->setDebugDrawer(drawer);
 #endif
-        }
-
-        void Update()
-        {
-            constexpr double kFixedStep = 1.0 / 120.0;
-            constexpr double kMaxFrame = 0.25;
-
-            static double accumulator = 0.0;
-            const double frameDt = std::min(static_cast<double>(Time::GetInstance().GetDeltaTime()), kMaxFrame);
-
-            accumulator += frameDt;
-
-            while (accumulator >= kFixedStep)
-            {
-                world->stepSimulation(static_cast<btScalar>(kFixedStep), 0, static_cast<btScalar>(kFixedStep));
-                accumulator -= kFixedStep;
-            }
         }
 
 #ifndef IS_SERVER

@@ -16,6 +16,13 @@ namespace Blaster::Server::Entity::Entities
 
         static constexpr std::uint8_t CODE = 72;
     };
+
+    struct RespawnCommand
+    {
+        std::string path;
+
+        static constexpr std::uint8_t CODE = 73;
+    };
 }
 
 namespace Blaster::Independent::Network
@@ -41,6 +48,28 @@ namespace Blaster::Independent::Network
             result.path = CommonNetwork::DecodeString(bytes, offset);
             result.isDamage = CommonNetwork::ReadTrivial<bool>(bytes, offset);
             result.damage = CommonNetwork::ReadTrivial<float>(bytes, offset);
+
+            return result;
+        }
+    };
+
+    template <>
+    struct DataConversion<Blaster::Server::Entity::Entities::RespawnCommand> : DataConversionBase<DataConversion<Blaster::Server::Entity::Entities::RespawnCommand>, Blaster::Server::Entity::Entities::RespawnCommand>
+    {
+        using Type = Blaster::Server::Entity::Entities::RespawnCommand;
+
+        static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
+        {
+            CommonNetwork::EncodeString(buffer, operation.path);
+        }
+
+        static std::any Decode(std::span<const std::uint8_t> bytes)
+        {
+            std::size_t offset = 0;
+
+            Type result;
+
+            result.path = CommonNetwork::DecodeString(bytes, offset);
 
             return result;
         }

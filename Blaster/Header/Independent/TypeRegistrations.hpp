@@ -28,7 +28,10 @@ namespace Blaster::Independent::Physics
 namespace Blaster::Independent::Math
 {
     template <Arithmetic, std::size_t N> requires (N > 1)
-    class Vector;
+        class Vector;
+
+    struct QueryTransformCommand;
+    struct CorrectTransformCommand;
 }
 
 namespace Blaster::Server::Entity::Entities
@@ -53,12 +56,14 @@ REGISTER_TYPE(Blaster::Independent::Physics::ImpulseCommand, 25467)
 REGISTER_TYPE(Blaster::Independent::Physics::SetTransformCommand, 17834)
 REGISTER_TYPE(Blaster::Independent::Physics::SetVelocityCommand, 92123)
 REGISTER_TYPE(Blaster::Independent::Physics::CharacterControllerInputCommand, 12686)
+REGISTER_TYPE(Blaster::Independent::Math::QueryTransformCommand, 21576)
+REGISTER_TYPE(Blaster::Independent::Math::CorrectTransformCommand, 11399)
 REGISTER_TYPE(Blaster::Server::Entity::Entities::DamageCommand, 62289)
 
 namespace Blaster::Independent::Utility
 {
     template <>
-    struct TypeIdFromType<Blaster::Independent::Math::Vector<float, 3>> : std::integral_constant<std::size_t, 616402872> { };
+    struct TypeIdFromType<Blaster::Independent::Math::Vector<float, 3>> : std::integral_constant<std::size_t, 616402872> {};
 
     template <>
     struct TypeFromId<616402872>

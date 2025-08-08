@@ -25,7 +25,6 @@
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
 
-using namespace std::chrono_literals;
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
@@ -76,6 +75,8 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.menu_background", { "Blaster", "Texture/UI/MenuBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_default", { "Blaster", "Texture/UI/ButtonDefault.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_selected", { "Blaster", "Texture/UI/ButtonSelected.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_wood", { "Blaster", "Texture/Item/ResourceWood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_empty", { "Blaster", "Texture/Item/ResourceEmpty.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.weapon_assault_rifle", { "Blaster", "Texture/Item/WeaponAssaultRifle.png" }));
@@ -112,7 +113,6 @@ namespace Blaster::Client
 
             ClientNetwork::GetInstance().AddOnServerConnectionLostCallback([&]()
                 {
-                    camera = std::nullopt;
                     GameObjectManager::GetInstance().Clear();
                 });
 
@@ -145,44 +145,6 @@ namespace Blaster::Client
                 });
 
             PhysicsWorld::GetInstance().Initialize();
-
-            camera = std::nullopt;
-
-            std::thread([this]() mutable
-            {
-                while (!camera.has_value())
-                {
-                    std::this_thread::sleep_for(1s);
-
-                    const auto optionalPlayer = GameObjectManager::GetInstance().Get("player-" + ClientNetwork::GetInstance().GetStringId());
-
-                    if (!optionalPlayer.has_value())
-                    {
-                        std::cerr << "Failed to find player game object!" << std::endl;
-                        continue;
-                    } 
-
-                    const auto& player = optionalPlayer.value();
-
-                    const auto optionalCamera = GameObjectManager::GetInstance().Get(player->GetAbsolutePath() + ".camera");
-
-                    if (!optionalCamera.has_value())
-                    {
-                        std::cerr << "Failed to find player's camera game object!" << std::endl;
-                        continue;
-                    }
-
-                    const auto& camera = optionalCamera.value();
-
-                    if (!camera->HasComponent<Camera>())
-                    {
-                        std::cerr << "Failed to find player's camera's camera component!" << std::endl;
-                        continue;
-                    }
-
-                    this->camera = camera->GetComponent<Camera>();
-                }
-            }).detach();
         }
 
         bool IsRunning()
@@ -207,11 +169,11 @@ namespace Blaster::Client
         {
             Window::Clear();
 
-            GameObjectManager::GetInstance().Render(camera);
+            GameObjectManager::GetInstance().Render(GameObjectManager::GetInstance().GetCamera());
             GameObjectManager::GetInstance().RenderUI();
 
-            if (camera.has_value())
-                PhysicsWorld::GetInstance().Render(*camera);
+            if (GameObjectManager::GetInstance().GetCamera().has_value())
+                PhysicsWorld::GetInstance().Render(*GameObjectManager::GetInstance().GetCamera());
 
             Window::GetInstance().Present();
 
@@ -241,8 +203,6 @@ namespace Blaster::Client
     private:
 
         ClientApplication() = default;
-
-        std::optional<std::shared_ptr<Camera>> camera;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientApplication> instance;

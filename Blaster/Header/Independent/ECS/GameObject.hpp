@@ -511,7 +511,7 @@ namespace Blaster::Independent::ECS
             return std::make_optional(childMap[childName]);
         }
 
-        void RemoveChild(const std::string& childName)
+        void RemoveChild(const std::string& childName, bool markDirty = true)
         {
             if (!childMap.contains(childName))
             {
@@ -519,7 +519,8 @@ namespace Blaster::Independent::ECS
                 return;
             }
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this());
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this());
 
             childMap.erase(childName);
         }

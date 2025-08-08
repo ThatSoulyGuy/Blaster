@@ -33,13 +33,25 @@ namespace Blaster::Client::UI
 
         static UIBuilder NewMenu(const std::string& name = "ui_root", const std::string& parent = ".")
         {
-            auto root = GameObjectManager::GetInstance().Register(GameObject::Create(name, true, ClientNetwork::GetInstance().GetNetworkId(), true), parent, false);
+            bool alreadyExists = false;
+            std::shared_ptr<GameObject> root;
+
+            if (GameObjectManager::GetInstance().Has(name))
+            {
+                alreadyExists = true;
+                root = GameObjectManager::GetInstance().Get(name).value();
+            }
+            else
+                root = GameObjectManager::GetInstance().Register(GameObject::Create(name, true, ClientNetwork::GetInstance().GetNetworkId(), true), parent, false);
 
             auto transform = root->GetTransform2d();
 
             transform->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
 
-            return UIBuilder(root, nullptr);
+            if (alreadyExists)
+                return UIBuilder(root->GetAbsolutePath(), nullptr, nullptr);
+            else
+                return UIBuilder(root->GetAbsolutePath(), root, nullptr);
         }
 
         template <class LayoutT, class... Args> requires std::is_base_of_v<UILayout, LayoutT>
@@ -47,15 +59,22 @@ namespace Blaster::Client::UI
         {
             auto child = CreateChildGameObject(name);
 
+            if (!child)
+                return LayoutBuilder<LayoutT>(rootName, child, this);
+
             child->AddComponent(LayoutT::Create(std::forward<Args>(args)...));
 
-            return LayoutBuilder<LayoutT>(child, this);
+            return LayoutBuilder<LayoutT>(rootName, child, this);
         }
 
         template <class ElementT, class... Args> requires std::is_base_of_v<UIElement, ElementT>
         auto AddElement(const std::string& name = "", Args&&... args)
         {
             auto child = CreateChildGameObject(name);
+
+            if (!child)
+                return ElementBuilder<ElementT>(rootName, child, this);
+
             auto element = ElementT::Create(std::forward<Args>(args)...);
 
             if (element->GetShader().has_value())
@@ -64,7 +83,7 @@ namespace Blaster::Client::UI
             child->AddComponent(Mesh<UIVertex>::Create({}, {}));
             child->AddComponent(element);
 
-            return ElementBuilder<ElementT>(child, this);
+            return ElementBuilder<ElementT>(rootName, child, this);
         }
 
         UIBuilder& MoveDown()
@@ -77,6 +96,9 @@ namespace Blaster::Client::UI
 
         std::shared_ptr<GameObject> Finish()
         {
+            if (!node)
+                return GameObjectManager::GetInstance().Get(rootName).value();
+
             RunLayout(node);
 
             return node;
@@ -90,11 +112,14 @@ namespace Blaster::Client::UI
         template <class E>
         friend class ElementBuilder;
 
-        UIBuilder(std::shared_ptr<GameObject> n, UIBuilder* p) : node(std::move(n)), parent(p) { }
+        UIBuilder(std::string rootName, std::shared_ptr<GameObject> n, UIBuilder* p) : rootName(rootName), node(std::move(n)), parent(p) { }
 
         std::shared_ptr<GameObject> CreateChildGameObject(const std::string& name)
         {
             static size_t counter{};
+
+            if (!node)
+                return nullptr;
 
             return GameObjectManager::GetInstance().Register(GameObject::Create(name == "" ? "ui_" + std::to_string(counter++) : name, true, ClientNetwork::GetInstance().GetNetworkId(), true), node->GetAbsolutePath(), false);
         }
@@ -117,6 +142,7 @@ namespace Blaster::Client::UI
                 RunLayout(child);
         }
 
+        std::string rootName;
         std::shared_ptr<GameObject> node;
         UIBuilder* parent;
     };

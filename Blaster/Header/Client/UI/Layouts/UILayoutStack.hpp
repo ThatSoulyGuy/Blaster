@@ -50,11 +50,21 @@ namespace Blaster::Client::UI::Layouts
 
         void Arrange(const Rect<float>& parentRect) override
         {
+            const Vector<float, 2> available = parentRect.GetDimensions() - padding * 2.0f;
             Vector<float, 2> cursor = parentRect.GetMin() + padding;
 
-            for (auto& child : GetGameObject()->GetChildMap() | std::views::values)
+            std::vector<std::shared_ptr<GameObject>> children;
+
+            children.reserve(GetGameObject()->GetChildMap().size());
+
+            for (auto& childPtr : GetGameObject()->GetChildMap() | std::views::values)
+                children.push_back(childPtr);
+            
+            std::ranges::sort(children, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
+
+            for (auto& child : children)
             {
-                Rect<float> rect{ cursor, cursor + fixedSize };
+                Rect<float> rect = { cursor, cursor + fixedSize };
 
                 auto transform = child->GetTransform2d();
 
@@ -62,8 +72,8 @@ namespace Blaster::Client::UI::Layouts
                 transform->SetDimensions(fixedSize);
                 transform->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::LEFT);
 
-                if (auto childLayout = child->GetComponent<UILayout>(); childLayout)
-                    childLayout.value()->Arrange(rect);
+                if (child->HasComponent<UILayout>())
+                    child->GetComponent<UILayout>().value()->Arrange(rect);
 
                 if (orientation == Orientation::VERTICAL)
                     cursor.y() += fixedSize.y() + spacing;

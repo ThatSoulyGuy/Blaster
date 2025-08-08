@@ -8,6 +8,7 @@
 #include "Server/Network/ServerNetwork.hpp"
 #endif
 
+using namespace std::chrono_literals;
 using namespace Blaster::Independent::Utility;
 
 namespace Blaster::Independent::ECS
@@ -43,13 +44,18 @@ namespace Blaster::Independent::ECS
 
         void Unregister(const std::string& path) override
         {
+            Unregister(path, true);
+        }
+
+        void Unregister(const std::string& path, bool markDirty)
+        {
             if (IsIterating())
             {
-                unregistrationQueue.push(path);
+                unregistrationQueue.push({ path, markDirty });
                 return;
             }
 
-            UnregisterImmediate(path);
+            UnregisterImmediate(path, markDirty);
         }
 
         bool Has(const std::string& path) const override
@@ -83,7 +89,7 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
         {
-            if (!camera.has_value())
+            if (!camera.has_value() || (camera.has_value() && !camera.value()->GetGameObject()))
             {
                 std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
                 return;
@@ -108,12 +114,25 @@ namespace Blaster::Independent::ECS
                 object->RenderUI();
         }
 
+        void SetCamera(std::optional<std::shared_ptr<Client::Render::Camera>> camera)
+        {
+            this->camera = camera;
+        }
+
+        [[nodiscard]]
+        std::optional<std::shared_ptr<Client::Render::Camera>> GetCamera() const
+        {
+            return camera;
+        }
+
         void Clear()
         {
             rootGameObjectMap.clear();
 
             registrationQueue = {};
             unregistrationQueue = {};
+
+            camera = std::nullopt;
         }
 
         static GameObjectManager& GetInstance()
@@ -137,9 +156,16 @@ namespace Blaster::Independent::ECS
 
             bool markDirty;
         };
+        
+        struct PendingUnregistration
+        {
+            std::string path;
+
+            bool markDirty;
+        };
 
         std::queue<PendingRegistration> registrationQueue;
-        std::queue<std::string> unregistrationQueue;
+        std::queue<PendingUnregistration> unregistrationQueue;
 
         std::uint32_t iterationDepth{ 0 };
 
@@ -218,7 +244,7 @@ namespace Blaster::Independent::ECS
             return result;
         }
 
-        void UnregisterImmediate(const std::string& path)
+        void UnregisterImmediate(const std::string& path, bool markDirty)
         {
             auto gameObjectOptional = Get(path);
 
@@ -231,7 +257,8 @@ namespace Blaster::Independent::ECS
             const auto gameObject = gameObjectOptional.value();
             gameObject->MarkDestroyed();
 
-            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
 
             const std::string absolutePath = gameObject->GetAbsolutePath();
             const bool isRoot = absolutePath.find('.') == std::string::npos;
@@ -255,21 +282,22 @@ namespace Blaster::Independent::ECS
                 return;
             }
 
-            parentOptional.value()->RemoveChild(childName);
+            parentOptional.value()->RemoveChild(childName, markDirty);
         }
 
         void FlushQueues()
         {
             while (!unregistrationQueue.empty())
             {
-                const std::string path = std::move(unregistrationQueue.front());
+                const auto& [path, markDirty] = std::move(unregistrationQueue.front());
+
                 unregistrationQueue.pop();
-                UnregisterImmediate(path);
+                UnregisterImmediate(path, markDirty);
             }
 
             while (!registrationQueue.empty())
             {
-                auto [object, path, markDirty] = std::move(registrationQueue.front());
+                const auto& [object, path, markDirty] = std::move(registrationQueue.front());
 
                 registrationQueue.pop();
                 RegisterImmediate(std::move(object), path, markDirty);
@@ -321,6 +349,8 @@ namespace Blaster::Independent::ECS
         }
 
         std::unordered_map<std::string, std::shared_ptr<GameObject>> rootGameObjectMap;
+
+        std::optional<std::shared_ptr<Client::Render::Camera>> camera;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<GameObjectManager> instance;

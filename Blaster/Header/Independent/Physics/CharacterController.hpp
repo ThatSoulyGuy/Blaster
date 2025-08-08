@@ -1,7 +1,5 @@
 #pragma once
 
-#include <BulletDynamics/Character/btKinematicCharacterController.h>
-#include <BulletCollision/CollisionDispatch/btGhostObject.h>
 #include "Independent/ECS/ComponentFactory.hpp"
 #include "Independent/Physics/PhysicsBody.hpp"
 #include "Independent/Physics/PhysicsCommands.hpp"
@@ -47,14 +45,8 @@ namespace Blaster::Independent::Physics
 				GetGameObject()->SetLocal(true);
 
 			GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
-			
-			if (GetGameObject()->IsLocallyControlled())
-				shape = new btCapsuleShape(radius, height);
-			else
-				shape = new btCapsuleShape(radius, height);
-#else
-			shape = new btCapsuleShapeZ(radius, height);
 #endif
+			shape = new btCapsuleShape(radius, height);
 
 			ghost = new btPairCachingGhostObject();
 
@@ -72,9 +64,9 @@ namespace Blaster::Independent::Physics
 
 			ghost->setWorldTransform(start);
 
-			kinematicCharacterController = new btKinematicCharacterController(ghost, shape, stepHeight);
+			kinematicCharacterController = new btKinematicCharacterController(ghost, shape, stepHeight, { 0.0f, 1.0f, 0.0f });
 
-			kinematicCharacterController->setGravity(btVector3(0.0f, gravity, 0.0f));
+			kinematicCharacterController->setGravity(btVector3(0.0f, -gravity, 0.0f));
 			
 			kinematicCharacterController->setMaxJumpHeight(jumpSpeed * jumpSpeed / (2 * gravity));
 			kinematicCharacterController->setMaxSlope(btRadians(maxSlopeDeg));
@@ -115,6 +107,19 @@ namespace Blaster::Independent::Physics
 		{
 			if (kinematicCharacterController)
 				kinematicCharacterController->warp({ position.x(), position.y(), position.z() });
+		}
+
+		void PreStep(float dt)
+		{
+			if (!IsAuthoritative() || !kinematicCharacterController)
+				return;
+
+			const btVector3 v{ requestedDirection.x(), requestedDirection.y(), requestedDirection.z() };
+
+			if (v.fuzzyZero())
+				kinematicCharacterController->setWalkDirection(btVector3(0, 0, 0));
+			else
+				kinematicCharacterController->setVelocityForTimeInterval(v, dt);
 		}
 
 		void Update() override
@@ -184,7 +189,7 @@ namespace Blaster::Independent::Physics
 #endif
 		}
 
-		static std::shared_ptr<CharacterController> Create(float radius = 0.6f, float height = 1.8f, float stepHeight = 0.4f, float maxSlopeDeg = 45.0f, float jumpSpeed = 10.0f, float gravity = -9.81f)
+		static std::shared_ptr<CharacterController> Create(float radius = 0.6f, float height = 1.8f, float stepHeight = 0.4f, float maxSlopeDeg = 45.0f, float jumpSpeed = 10.0f, float gravity = 9.81f)
 		{
 			std::shared_ptr<CharacterController> result(new CharacterController());
 
@@ -193,7 +198,7 @@ namespace Blaster::Independent::Physics
 			result->stepHeight = stepHeight;
 			result->maxSlopeDeg = maxSlopeDeg;
 			result->jumpSpeed = jumpSpeed;
-			result->gravity = gravity;
+			result->gravity = std::abs(gravity);
 
 			return result;
 		}

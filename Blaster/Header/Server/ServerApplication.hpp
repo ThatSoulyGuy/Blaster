@@ -10,6 +10,7 @@
 #include "Independent/Physics/Colliders/ColliderCapsule.hpp"
 #include "Independent/Physics/CharacterController.hpp"
 #include "Independent/Physics/PhysicsSystem.hpp"
+#include "Independent/Physics/Rigidbody.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/Synchronization/SenderSynchronization.hpp"
 #include "Independent/Test/PhysicsDebugger.hpp"
@@ -57,10 +58,19 @@ namespace Blaster::Server
             ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto clientIn)
                 {
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [client = clientIn]
-                        {
-                            for (const auto& gameObjectPath : client->ownedGameObjectList | std::views::keys)
-                                GameObjectManager::GetInstance().Unregister(gameObjectPath);
-                        });
+                    {
+                        std::vector<std::string> paths;
+
+                        paths.reserve(client->ownedGameObjectList.size());
+
+                        for (const auto& path : client->ownedGameObjectList | std::views::keys)
+                            paths.push_back(path);
+
+                        client->ownedGameObjectList.clear();
+
+                        for (auto& path : paths)
+                            GameObjectManager::GetInstance().Unregister(path);
+                    });
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
@@ -233,6 +243,36 @@ namespace Blaster::Server
                         GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->DealDamage(command.damage);
                     else
                         GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->HealDamage(command.damage);
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Respawn, [](NetworkId who, std::vector<std::uint8_t> msg)
+                {
+                    auto command = std::any_cast<RespawnCommand>(CommonNetwork::DisassembleData(msg)[0]);
+
+                    auto gameObjectIn = GameObjectManager::GetInstance().Get(command.path);
+
+                    if (!gameObjectIn)
+                        return;
+
+                    if (gameObjectIn.value()->GetOwningClient() != who)
+                        return;
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [who, gameObject = gameObjectIn]
+                    {
+                        const std::string name = gameObject.value()->GetName();
+                        const auto team = gameObject.value()->GetComponent<EntityPlayer>().value()->GetTeam();
+
+                        GameObjectManager::GetInstance().Unregister(gameObject.value()->GetAbsolutePath(), false);
+
+                        auto player = GameObjectManager::GetInstance().Register(GameObject::Create(name, false, who));
+
+                        player->AddComponent(EntityPlayer::Create(team));
+
+                        player->GetTransform3d()->SetLocalPosition(team == EntityBase::Team::RED ? Vector<float, 3>{ 420.f, -190.f, 15.f } : Vector<float, 3>{ -420.f, -190.f, 15.f });
+                        player->AddComponent(CharacterController::Create(1.45f, 18.f));
+
+                        SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+                    });
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)

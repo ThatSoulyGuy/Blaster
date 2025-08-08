@@ -42,8 +42,8 @@ namespace Blaster::Client::Render
             BoneInformation information;
 
             information.parent = parent;
-            information.offset = Matrix<float, 4, 4>::FromAssimpMatrix(offset);
-            information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(localBind);
+            information.offset = FromAssimpMatrix(offset);
+            information.localBind = FromAssimpMatrix(localBind);
             information.globalAnimated = Matrix<float, 4, 4>::Identity();
 
             bones.push_back(information);
@@ -58,10 +58,10 @@ namespace Blaster::Client::Render
                 BoneInformation& information = bones[iterator->second];
 
                 if (information.offset == Matrix<float, 4, 4>::Identity())
-                    information.offset = Matrix<float, 4, 4>::FromAssimpMatrix(offset);
+                    information.offset = FromAssimpMatrix(offset);
 
                 if (information.localBind == Matrix<float, 4, 4>::Identity())
-                    information.localBind = Matrix<float, 4, 4>::FromAssimpMatrix(localBind);
+                    information.localBind = FromAssimpMatrix(localBind);
 
                 if (information.parent == std::numeric_limits<uint32_t>::max() && parent != std::numeric_limits<uint32_t>::max())
                     information.parent = parent;
@@ -70,6 +70,17 @@ namespace Blaster::Client::Render
             }
 
             return AddBone(name, offset, localBind, parent);
+        }
+
+        static Matrix<float, 4, 4> FromAssimpMatrix(const aiMatrix4x4& matrix)
+        {
+            Matrix<float, 4, 4> result;
+
+            for (int row = 0; row < 4; ++row)
+                for (int col = 0; col < 4; ++col)
+                    result[col][row] = matrix[row][col];
+
+            return result;
         }
 
         template <typename Archive>

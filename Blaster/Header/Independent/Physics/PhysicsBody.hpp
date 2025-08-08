@@ -1,6 +1,5 @@
 #pragma once
 
-#include <btBulletDynamicsCommon.h>
 #include "Independent/ECS/Component.hpp"
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Physics/PhysicsWorld.hpp"

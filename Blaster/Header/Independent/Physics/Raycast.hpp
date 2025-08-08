@@ -1,7 +1,6 @@
 #pragma once
 
 #include <optional>
-#include <btBulletDynamicsCommon.h>
 #include "Independent/Math/Vector.hpp"
 #include "Independent/Physics/PhysicsWorld.hpp"
 #include "Independent/Physics/PhysicsBody.hpp" 

@@ -25,8 +25,9 @@ namespace Blaster::Independent::Network
         C2S_Rigidbody_SetTransform = 9,
         C2S_CharacterController_Input = 10,
         C2S_EntityPlayer_Damage = 11,
-        C2S_QueryTransform = 12,
-        S2C_CorrectTransform = 13
+        C2S_EntityPlayer_Respawn = 12,
+        C2S_QueryTransform = 13,
+        S2C_CorrectTransform = 14
     };
 
     struct PacketHeader

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <btBulletCollisionCommon.h>
 #include <glad/glad.h>
 #include <glfw/glfw3.h>
 #include "Independent/Math/Matrix.hpp"
+#include "Independent/Utility/BulletSterilized.hpp"
 
 namespace Blaster::Independent::Test
 {

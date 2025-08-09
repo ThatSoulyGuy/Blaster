@@ -34,10 +34,8 @@ namespace Blaster::Client::UI::Elements
             onHover = std::move(callback);
         }
 
-        void Update() override
+        void RenderUI() override
         {
-            UIElement::Update();
-
             const auto [min, max] = GetGameObject()->GetTransform2d()->GetWorldRect();
 
             const Vector<float, 2> mouse = { float(InputManager::GetInstance().GetMousePosition().x()), float(InputManager::GetInstance().GetMousePosition().y()) };
@@ -53,7 +51,7 @@ namespace Blaster::Client::UI::Elements
             }
             else if (!inside && hovered)
                 hovered = false;
-            
+
             if (inside && InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
             {
                 if (onClick)

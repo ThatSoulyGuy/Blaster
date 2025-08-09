@@ -62,8 +62,11 @@ namespace Blaster::Independent::Item
 
 		ItemAssaultRifle() = default;
 
-		void OnUsed(void* interator, void* interactee, const MouseCode& code) override
+		void OnUsed(void* interactor, void* interactee, const MouseCode& code) override
 		{
+			if (static_cast<EntityBase*>(interactor)->GetTeam() == static_cast<EntityBase*>(interactee)->GetTeam())
+				return;
+
 			if (auto player = static_cast<EntityBase*>(interactee); code == MouseCode::LEFT && player)
 				Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Damage, Entities::DamageCommand{ player->GetGameObject()->GetAbsolutePath(), true, 5.0f });
 		}

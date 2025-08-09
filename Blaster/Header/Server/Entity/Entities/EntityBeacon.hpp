@@ -49,7 +49,7 @@ namespace Blaster::Server::Entity::Entities
 		void Update() override
 		{
 			if (currentHealth <= 0)
-				GameObjectManager::GetInstance().Unregister(GetGameObject()->GetAbsolutePath());
+				GameObjectManager::GetInstance().UnregisterDeferred(GetGameObject()->GetAbsolutePath());
 		}
 
 		std::string GetRegistryName() const override
@@ -74,7 +74,10 @@ namespace Blaster::Server::Entity::Entities
 
 		void DealDamage(std::uint8_t damage) override
 		{
-			currentHealth -= abs(damage);
+			if ((int(currentHealth) - damage) <= 0)
+				currentHealth = 0;
+			else
+				currentHealth -= abs(damage);
 
 			Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityBeacon));
 		}

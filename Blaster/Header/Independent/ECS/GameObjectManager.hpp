@@ -32,14 +32,43 @@ namespace Blaster::Independent::ECS
         {
             assert(gameObject != nullptr && "Cannot register a null GameObject");
 
-            if (IsIterating())
+            if (path == ".")
             {
-                registrationQueue.push({ std::move(gameObject), path, markDirty });
+                std::string name = gameObject->GetName();
 
-                return registrationQueue.back().gameObject;
+                if (rootGameObjectMap.contains(gameObject->GetName()))
+                {
+                    std::cout << "Root map already contains game object '" << gameObject->GetName() << "'!" << std::endl;
+                    return nullptr;
+                }
+
+                rootGameObjectMap.insert({ gameObject->GetName(), std::move(gameObject) });
+
+                if (markDirty)
+                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(rootGameObjectMap[name]);
+
+                return rootGameObjectMap[name];
             }
 
-            return RegisterImmediate(std::move(gameObject), path, markDirty);
+            auto parentOptional = Get(path);
+
+            if (!parentOptional.has_value())
+            {
+                std::cout << "Parent path '" << path << "' does not exist; cannot register child '" << gameObject->GetName() << "'!" << std::endl;
+                return nullptr;
+            }
+
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
+
+            auto result = parentOptional.value()->AddChild(std::move(gameObject));
+
+#ifdef IS_SERVER
+            if (result->GetOwningClient().has_value() && result->GetOwningClient().value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).has_value())
+                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).value()->ownedGameObjectList.insert({ result->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(result) });
+#endif
+
+            return result;
         }
 
         void Unregister(const std::string& path) override
@@ -49,13 +78,49 @@ namespace Blaster::Independent::ECS
 
         void Unregister(const std::string& path, bool markDirty)
         {
-            if (IsIterating())
+            auto gameObjectOptional = Get(path);
+
+            if (!gameObjectOptional.has_value())
             {
-                unregistrationQueue.push({ path, markDirty });
+                std::cout << "Cannot unregister; path '" << path << "' does not exist!" << std::endl;
                 return;
             }
 
-            UnregisterImmediate(path, markDirty);
+            const auto gameObject = gameObjectOptional.value();
+
+            gameObject->MarkDestroyed();
+
+            if (markDirty)
+                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
+
+            const std::string absolutePath = gameObject->GetAbsolutePath();
+            const bool isRoot = absolutePath.find('.') == std::string::npos;
+
+            if (isRoot)
+            {
+                rootGameObjectMap.erase(gameObject->GetName());
+                return;
+            }
+
+            const std::string_view absoluteView = absolutePath;
+            const std::string_view parentPathView = absoluteView.substr(0, absoluteView.rfind('.'));
+            const std::string parentPath(parentPathView);
+            const std::string childName = gameObject->GetName();
+
+            auto parentOptional = Get(parentPath);
+
+            if (!parentOptional.has_value())
+            {
+                std::cout << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
+                return;
+            }
+
+            parentOptional.value()->RemoveChild(childName, markDirty);
+        }
+
+        void UnregisterDeferred(const std::string& path, bool markDirty = true)
+        {
+            unregistrationQueue.push({ path, markDirty });
         }
 
         bool Has(const std::string& path) const override
@@ -73,10 +138,20 @@ namespace Blaster::Independent::ECS
             std::vector<std::shared_ptr<GameObject>> result;
 
             result.reserve(rootGameObjectMap.size());
-
             std::ranges::transform(rootGameObjectMap, std::back_inserter(result), [](const auto& pair) { return pair.second; });
 
             return result;
+        }
+
+        void SetCamera(std::optional<std::shared_ptr<Client::Render::Camera>> camera)
+        {
+            this->camera = camera;
+        }
+
+        [[nodiscard]]
+        std::optional<std::shared_ptr<Client::Render::Camera>> GetCamera() const
+        {
+            return camera;
         }
 
         void Update()
@@ -89,7 +164,7 @@ namespace Blaster::Independent::ECS
 
         void Render(const std::optional<std::shared_ptr<Client::Render::Camera>>& camera)
         {
-            if (!camera.has_value() || (camera.has_value() && !camera.value()->GetGameObject()))
+            if (!camera.has_value())
             {
                 std::cerr << "No camera! Skipping rendering this frame..." << std::endl;
                 return;
@@ -108,29 +183,18 @@ namespace Blaster::Independent::ECS
             std::vector<std::shared_ptr<GameObject>> ordered{ rootGameObjectMap.size() };
 
             std::ranges::transform(rootGameObjectMap, ordered.begin(), [](const auto& pair) { return pair.second; });
+
             std::ranges::sort(ordered, [](const auto& a, const auto& b) { return a->GetCreationIndex() < b->GetCreationIndex(); });
 
             for (const auto& object : ordered)
                 object->RenderUI();
         }
 
-        void SetCamera(std::optional<std::shared_ptr<Client::Render::Camera>> camera)
-        {
-            this->camera = camera;
-        }
-
-        [[nodiscard]]
-        std::optional<std::shared_ptr<Client::Render::Camera>> GetCamera() const
-        {
-            return camera;
-        }
-
         void Clear()
         {
-            rootGameObjectMap.clear();
-
-            registrationQueue = {};
             unregistrationQueue = {};
+
+            rootGameObjectMap.clear();
 
             camera = std::nullopt;
         }
@@ -138,39 +202,14 @@ namespace Blaster::Independent::ECS
         static GameObjectManager& GetInstance()
         {
             std::call_once(initializationFlag, []()
-            {
-                instance = std::unique_ptr<GameObjectManager>(new GameObjectManager());
-            });
+                {
+                    instance = std::unique_ptr<GameObjectManager>(new GameObjectManager());
+                });
 
             return *instance;
         }
 
     private:
-
-        GameObjectManager() = default;
-
-        struct PendingRegistration
-        {
-            std::shared_ptr<GameObject> gameObject;
-            std::string path;
-
-            bool markDirty;
-        };
-        
-        struct PendingUnregistration
-        {
-            std::string path;
-
-            bool markDirty;
-        };
-
-        std::queue<PendingRegistration> registrationQueue;
-        std::queue<PendingUnregistration> unregistrationQueue;
-
-        std::uint32_t iterationDepth{ 0 };
-
-        [[nodiscard]]
-        bool IsIterating() const { return iterationDepth != 0; }
 
         class IterationGuard
         {
@@ -196,122 +235,22 @@ namespace Blaster::Independent::ECS
 
         };
 
-        std::shared_ptr<GameObject> RegisterImmediate(std::shared_ptr<GameObject> gameObject, const std::string& path, bool markDirty)
+        struct PendingUnregistration
         {
-            if (path == ".")
-            {
-                std::string name = gameObject->GetName();
+            std::string path;
 
-                if (rootGameObjectMap.contains(name))
-                {
-                    std::cout << "Root map already contains game object '" << name << "'!" << std::endl;
-                    return nullptr;
-                }
+            bool markDirty;
+        };
 
-                rootGameObjectMap.insert({ name, std::move(gameObject) });
-
-                if (markDirty)
-                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(rootGameObjectMap[name]);
-
-                return rootGameObjectMap[name];
-            }
-
-            auto parentOptional = Get(path);
-
-            if (!parentOptional.has_value())
-            {
-                std::cout << "Parent path '" << path << "' does not exist; cannot register child '" << gameObject->GetName() << "'!" << std::endl;
-                return nullptr;
-            }
-
-            if (markDirty)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
-
-            auto result = parentOptional.value()->AddChild(std::move(gameObject));
-
-#ifdef IS_SERVER
-            if (result->GetOwningClient().has_value() && result->GetOwningClient().value() != 0 &&
-                Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(result->GetOwningClient().value()).has_value())
-            {
-                Blaster::Server::Network::ServerNetwork::GetInstance()
-                    .GetClient(result->GetOwningClient().value())
-                    .value()
-                    ->ownedGameObjectList
-                    .insert({ result->GetAbsolutePath(),
-                              std::static_pointer_cast<IGameObjectSynchronization>(result) });
-            }
-#endif
-            return result;
-        }
-
-        void UnregisterImmediate(const std::string& path, bool markDirty)
-        {
-            auto gameObjectOptional = Get(path);
-
-            if (!gameObjectOptional.has_value())
-            {
-                std::cout << "Cannot unregister; path '" << path << "' does not exist!" << std::endl;
-                return;
-            }
-
-            const auto gameObject = gameObjectOptional.value();
-            gameObject->MarkDestroyed();
-
-            if (markDirty)
-                Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(gameObject);
-
-            const std::string absolutePath = gameObject->GetAbsolutePath();
-            const bool isRoot = absolutePath.find('.') == std::string::npos;
-
-            if (isRoot)
-            {
-                rootGameObjectMap.erase(gameObject->GetName());
-                return;
-            }
-
-            const std::string_view absoluteView = absolutePath;
-            const std::string_view parentPathView = absoluteView.substr(0, absoluteView.rfind('.'));
-            const std::string parentPath(parentPathView);
-            const std::string childName = gameObject->GetName();
-
-            auto parentOptional = Get(parentPath);
-
-            if (!parentOptional.has_value())
-            {
-                std::cerr << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
-                return;
-            }
-
-            parentOptional.value()->RemoveChild(childName, markDirty);
-        }
-
-        void FlushQueues()
-        {
-            while (!unregistrationQueue.empty())
-            {
-                const auto& [path, markDirty] = std::move(unregistrationQueue.front());
-
-                unregistrationQueue.pop();
-                UnregisterImmediate(path, markDirty);
-            }
-
-            while (!registrationQueue.empty())
-            {
-                const auto& [object, path, markDirty] = std::move(registrationQueue.front());
-
-                registrationQueue.pop();
-                RegisterImmediate(std::move(object), path, markDirty);
-            }
-        }
+        GameObjectManager() = default;
 
         static std::vector<std::string> SplitPath(const std::string& path)
         {
             std::vector<std::string> segments;
-
             std::string segment;
-            std::stringstream stream(path);
+            std::stringstream stringStream(path);
 
-            while (std::getline(stream, segment, '.'))
+            while (std::getline(stringStream, segment, '.'))
             {
                 if (!segment.empty())
                     segments.push_back(segment);
@@ -337,20 +276,41 @@ namespace Blaster::Independent::ECS
 
             std::shared_ptr<GameObject> current = rootIterator->second;
 
-            for (std::size_t i = 1; i < segments.size(); ++i)
+            for (std::size_t index = 1; index < segments.size(); ++index)
             {
-                if (!current->HasChild(segments[i]))
+                if (!current->HasChild(segments[index]))
                     return std::nullopt;
 
-                current = current->GetChild(segments[i]).value();
+                current = current->GetChild(segments[index]).value();
             }
 
             return current;
         }
 
-        std::unordered_map<std::string, std::shared_ptr<GameObject>> rootGameObjectMap;
+        void FlushQueues()
+        {
+            while (!unregistrationQueue.empty())
+            {
+                const auto [path, markDirty] = std::move(unregistrationQueue.front());
+
+                unregistrationQueue.pop();
+                Unregister(path, markDirty);
+            }
+        }
+
+        [[nodiscard]]
+        bool IsIterating() const
+        {
+            return iterationDepth != 0;
+        }
+
+        std::unordered_map<std::string, std::shared_ptr<GameObject>> rootGameObjectMap = {};
 
         std::optional<std::shared_ptr<Client::Render::Camera>> camera;
+
+        std::queue<PendingUnregistration> unregistrationQueue;
+
+        std::uint32_t iterationDepth{ 0 };
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<GameObjectManager> instance;

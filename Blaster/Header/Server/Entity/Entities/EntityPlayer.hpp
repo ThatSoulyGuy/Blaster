@@ -42,15 +42,17 @@ namespace Blaster::Server::Entity::Entities
 
         struct Hotbar
         {
-            std::uint8_t index;
-            std::array<std::uint32_t, 5> slots;
-
-            std::uint32_t GetCurrentSlot() const
+            std::uint8_t index{ 1 };
+            std::array<std::uint32_t, 5> slots{};
+            
+            std::uint32_t& GetCurrentSlot()
             {
-                if (index == 0)
-                    return slots[0];
-                else
-                    return slots[index - 1];
+                return slots[(index ? index : 1) - 1];
+            }
+
+            const std::uint32_t GetCurrentSlot() const
+            {
+                return slots[(index ? index : 1) - 1];
             }
 
             template <typename Archive>
@@ -72,7 +74,7 @@ namespace Blaster::Server::Entity::Entities
 
             if (GetGameObject()->IsLocallyControlled())
             {
-                const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera"), GetGameObject()->GetAbsolutePath());
+                const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera", true), GetGameObject()->GetAbsolutePath());
 
                 cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
                 camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
@@ -219,7 +221,7 @@ namespace Blaster::Server::Entity::Entities
                                 gameObject->GetTransform2d()->SetDimensions({ 768.0f, 288.0f });
                             })
                             .AddElement<UIElementButton>("ui_respawn_button")
-                                .Call<&UIElementButton::SetOnClick>([absolutePath = GetGameObject()->GetAbsolutePath()]
+                                .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
                                 {
                                     Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Respawn, RespawnCommand{ absolutePath });
                                     
@@ -266,6 +268,11 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
+#ifndef IS_SERVER
+            if (!GameObjectManager::GetInstance().Has(std::string(team == Team::RED ? "red" : "blue") + "_beacon") && GameObjectManager::GetInstance().Has(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button"))
+                GameObjectManager::GetInstance().Unregister(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button");
+#endif
+                
             if (currentHealth <= 0)
             {
 #ifndef IS_SERVER
@@ -399,7 +406,7 @@ namespace Blaster::Server::Entity::Entities
                 std::cout << "Current Position: " << GetGameObject()->GetTransform3d()->GetWorldPosition() << std::endl;
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::V, KeyState::PRESSED))
-                hotbar.slots[3] = ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value()->GetId();
+                hotbar.GetCurrentSlot() = ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value()->GetId();
 
             if (InputManager::GetInstance().GetScrollDelta() > 0)
                 hotbar.index += 1;
@@ -613,7 +620,7 @@ namespace Blaster::Server::Entity::Entities
                 if (!item->GetModelPath())
                     return;
                 
-                viewModelObject = GameObjectManager::GetInstance().Register(GameObject::Create("view_model", true, std::nullopt, false), camera->GetGameObject()->GetAbsolutePath());
+                viewModelObject = GameObjectManager::GetInstance().Register(GameObject::Create("view_model", true), camera->GetGameObject()->GetAbsolutePath());
 
                 viewModelBasePosition = item->GetModelViewPosition().has_value() ? item->GetModelViewPosition().value() : Vector<float, 3>{ 0.0f, 0.0f, 0.0f };
 
@@ -688,7 +695,7 @@ namespace Blaster::Server::Entity::Entities
             const float freq = std::max(baseFreq * (moving ? speed : 1.f), kFreqClamp);
 
             bobTimer += deltaTime;
-
+            
             const float phase = bobTimer * freq * 2.f * std::numbers::pi_v<float>;
 
             Vector<float, 3> targetBob = { std::sin(phase + std::numbers::pi_v<float> / 2.f) * amp * 0.25f, std::sin(phase) * amp, std::cos(phase) * amp * 0.6f };
@@ -721,7 +728,7 @@ namespace Blaster::Server::Entity::Entities
         std::vector<std::shared_ptr<UIElementImage>> hotbarSlotImageList;
 #endif
 
-        Hotbar hotbar;
+        Hotbar hotbar{};
 
         bool hasPlayedDeath = false;
 

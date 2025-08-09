@@ -45,8 +45,11 @@ namespace Blaster::Independent::Physics
 				GetGameObject()->SetLocal(true);
 
 			GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
-#endif
+
 			shape = new btCapsuleShape(radius, height);
+#else
+			shape = new btCapsuleShapeZ(radius, height);
+#endif
 
 			ghost = new btPairCachingGhostObject();
 

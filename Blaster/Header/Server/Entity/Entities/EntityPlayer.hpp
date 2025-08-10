@@ -7,6 +7,7 @@
 #include "Client/Render/Model.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
+#include "Client/Sound/SoundClip.hpp"
 #include "Client/UI/Elements/UIElementText.hpp"
 #include "Client/UI/Elements/UIElementImage.hpp"
 #include "Client/UI/Layouts/UILayoutGrid.hpp"
@@ -25,6 +26,7 @@ using namespace std::chrono_literals;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
+using namespace Blaster::Client::Sound;
 using namespace Blaster::Client::UI::Elements;
 using namespace Blaster::Client::UI::Layouts;
 using namespace Blaster::Client::UI;
@@ -87,6 +89,12 @@ namespace Blaster::Server::Entity::Entities
                 modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
                 modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
 
+#ifndef IS_SERVER
+                hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), cameraGameObject->GetAbsolutePath());
+
+                hurtSoundObject->AddComponent(SoundClip::Create({ "Blaster", "Sound/PlayerPain.wav" }));
+#endif
+
                 if (team == Team::RED)
                     modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
                 else
@@ -95,6 +103,10 @@ namespace Blaster::Server::Entity::Entities
                 InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
 
 #ifndef IS_SERVER
+                itemSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("item_sound"), cameraGameObject->GetAbsolutePath());
+
+				itemSoundObject->GetTransform3d()->SetLocalPosition({ 0.0f, 0.0f, 5.0f });
+
                 hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
                         .AddElement<UIElementText>("ui_health_text")
                             .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
@@ -325,6 +337,10 @@ namespace Blaster::Server::Entity::Entities
             else
                 currentHealth -= abs(damage);
 
+#ifndef IS_SERVER
+            hurtSoundObject->GetComponent<SoundClip>().value()->Play();
+#endif
+
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
         }
 
@@ -429,6 +445,26 @@ namespace Blaster::Server::Entity::Entities
 
             if (InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
             {
+                auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
+
+#ifndef IS_SERVER
+                if (item->GetSoundPath())
+                {
+                    if (itemSoundObject->HasComponent<SoundClip>())
+                    {
+                        itemSoundObject->GetComponent<SoundClip>().value()->GetPath() == item->GetSoundPath().value();
+                        itemSoundObject->GetComponent<SoundClip>().value()->Play();
+                    }
+                    else
+                    {
+                        itemSoundObject->RemoveComponent<SoundClip>();
+
+                        itemSoundObject->AddComponent(SoundClip::Create(item->GetSoundPath().value(), false, true, true));
+                        itemSoundObject->GetComponent<SoundClip>().value()->Play();
+                    }
+                }
+#endif
+
                 constexpr float kRayDistance = 100.f;
 
                 const auto cameraGameObject = camera->GetGameObject();
@@ -448,7 +484,7 @@ namespace Blaster::Server::Entity::Entities
                 auto* other = static_cast<PhysicsBody*>(hit.object->getUserPointer());
 
                 if (self != other && other->GetGameObject()->HasComponent<EntityBase>())
-                    ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value()->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
+                    item->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
             }
         }
 
@@ -726,6 +762,9 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<GameObject> hotbarSelector = nullptr;
         
         std::vector<std::shared_ptr<UIElementImage>> hotbarSlotImageList;
+
+        std::shared_ptr<GameObject> itemSoundObject = nullptr;
+        std::shared_ptr<GameObject> hurtSoundObject = nullptr;
 #endif
 
         Hotbar hotbar{};

@@ -762,6 +762,37 @@ if(TARGET freetype AND NOT TARGET freetype::freetype)
     add_library(freetype::freetype ALIAS freetype)
 endif()
 
+option(BLASTER_USE_SYSTEM_OPENAL "Prefer system OpenAL over bundled OpenAL-Soft" OFF)
+
+if (BLASTER_USE_SYSTEM_OPENAL)
+    find_package(OpenAL REQUIRED)
+else()
+    set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(ALSOFT_TESTS   OFF CACHE BOOL "" FORCE)
+    set(ALSOFT_UTILS   OFF CACHE BOOL "" FORCE)
+    set(ALSOFT_INSTALL OFF CACHE BOOL "" FORCE)
+
+    include(FetchContent)
+    FetchContent_Declare(
+        openal_soft
+        GIT_REPOSITORY https://github.com/kcat/openal-soft.git
+        GIT_TAG        1.23.1
+    )
+    FetchContent_MakeAvailable(openal_soft)
+
+    if (NOT TARGET OpenAL::OpenAL)
+        if (TARGET OpenAL)
+            add_library(OpenAL::OpenAL ALIAS OpenAL)
+        elseif (TARGET OpenAL32)
+            add_library(OpenAL::OpenAL ALIAS OpenAL32)
+        elseif (TARGET openal)
+            add_library(OpenAL::OpenAL ALIAS openal)
+        else()
+            message(FATAL_ERROR "OpenAL target not found after fetching openal-soft")
+        endif()
+    endif()
+endif()
+
 set(BUILD_SHARED_LIBS OFF)
 
 set(EXTRA_PLATFORM_LIBS "")
@@ -820,6 +851,7 @@ function(blaster_add_executable target source_glob)
             assimp::assimp
             ZSTD::ZSTD
             freetype::freetype
+            OpenAL::OpenAL
             ${EXTRA_PLATFORM_LIBS}
     )
 

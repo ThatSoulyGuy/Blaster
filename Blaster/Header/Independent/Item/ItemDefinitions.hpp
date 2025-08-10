@@ -49,6 +49,11 @@ namespace Blaster::Independent::Item
 			return std::nullopt;
 		}
 
+		std::optional<AssetPath> GetSoundPath() const override
+		{
+			return std::nullopt;
+		}
+
 	private:
 
 		REGISTER_ITEM(ItemAir)
@@ -99,6 +104,11 @@ namespace Blaster::Independent::Item
 		std::optional<Vector<float, 3>> GetModelViewRotation() const override
 		{
 			return std::make_optional<Vector<float, 3>>({ 0.0f, 15.0f, 10.0f });
+		}
+
+		std::optional<AssetPath> GetSoundPath() const override
+		{
+			return std::make_optional<AssetPath>({ "Blaster", "Sound/Gunfire.wav" });
 		}
 
 	private:

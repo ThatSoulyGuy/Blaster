@@ -61,7 +61,7 @@ namespace Blaster::Independent::Item
 		virtual std::optional<Vector<float, 3>> GetModelViewRotation() const = 0;
 
 		[[nodiscard]]
-		virtual std::optional<AssetPath> GetSoundPath() const = 0;
+		virtual std::optional<std::vector<AssetPath>> GetSoundPathList() const = 0;
 
 		[[nodiscard]]
 		std::uint32_t GetId() const

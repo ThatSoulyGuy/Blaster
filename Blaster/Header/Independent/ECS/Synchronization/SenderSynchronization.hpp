@@ -475,14 +475,14 @@ namespace Blaster::Independent::ECS::Synchronization
                 const uint32_t len = *reinterpret_cast<const uint32_t*>(&blob[off]);
                 off += 4;
 
-                std::string path;
+                std::string pathList;
                 {
                     std::span<const uint8_t> data(&blob[off], len);
                     size_t pathOff = 0;
-                    path = CommonNetwork::DecodeString(data, pathOff);
+                    pathList = CommonNetwork::DecodeString(data, pathOff);
                 }
 
-                const std::string root(GetRoot(path));
+                const std::string root(GetRoot(pathList));
                 const auto it = ownerCacheMap.find(root);
                 const NetworkId owner = (it == ownerCacheMap.end()) ? 0 : it->second;
 

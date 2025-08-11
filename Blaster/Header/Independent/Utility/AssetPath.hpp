@@ -64,18 +64,6 @@ namespace Blaster::Independent::Utility
             return std::format("{}Assets/{}/{}", GetExecutableDirectory(), domain, localPath);
         }
 
-        [[nodiscard]]
-        bool operator==(const AssetPath& other)
-        {
-            return domain == other.domain && localPath == other.localPath;
-        }
-
-        [[nodiscard]]
-        bool operator!=(const AssetPath& other)
-        {
-            return !(*this == other);
-        }
-
     private:
 
         friend class boost::serialization::access;
@@ -90,6 +78,42 @@ namespace Blaster::Independent::Utility
         std::string domain;
         std::string localPath;
 
+    };
+
+    [[nodiscard]]
+    inline bool operator==(const AssetPath& lhs, const AssetPath& rhs) noexcept
+    {
+        return lhs.GetDomain() == rhs.GetDomain() && lhs.GetLocalPath() == rhs.GetLocalPath();
+    }
+
+    [[nodiscard]]
+    inline bool operator!=(const AssetPath& lhs, const AssetPath& rhs) noexcept
+    {
+        return !(lhs == rhs);
+    }
+
+    [[nodiscard]]
+    inline bool operator<(const AssetPath& a, const AssetPath& b) noexcept
+    {
+        if (a.GetDomain() != b.GetDomain())
+            return a.GetDomain() < b.GetDomain();
+
+        return a.GetLocalPath() < b.GetLocalPath();
+    }
+}
+
+namespace std
+{
+    template<>
+    struct hash<Blaster::Independent::Utility::AssetPath>
+    {
+        size_t operator()(const Blaster::Independent::Utility::AssetPath& p) const noexcept
+        {
+            const size_t h1 = std::hash<std::string>{}(p.GetDomain());
+            const size_t h2 = std::hash<std::string>{}(p.GetLocalPath());
+
+            return h1 ^ (h2 + 0x9e3779b97f4a7c15ull + (h1 << 6) + (h1 >> 2));
+        }
     };
 }
 

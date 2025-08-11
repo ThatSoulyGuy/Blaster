@@ -49,7 +49,7 @@ namespace Blaster::Independent::Item
 			return std::nullopt;
 		}
 
-		std::optional<AssetPath> GetSoundPath() const override
+		std::optional<std::vector<AssetPath>> GetSoundPathList() const override
 		{
 			return std::nullopt;
 		}
@@ -106,9 +106,9 @@ namespace Blaster::Independent::Item
 			return std::make_optional<Vector<float, 3>>({ 0.0f, 15.0f, 10.0f });
 		}
 
-		std::optional<AssetPath> GetSoundPath() const override
+		std::optional<std::vector<AssetPath>> GetSoundPathList() const override
 		{
-			return std::make_optional<AssetPath>({ "Blaster", "Sound/Gunfire.wav" });
+			return std::make_optional<std::vector<AssetPath>>({ { "Blaster", "Sound/Gunfire1.wav" }, { "Blaster", "Sound/Gunfire2.wav" }, { "Blaster", "Sound/Gunfire3.wav" } });
 		}
 
 	private:

@@ -76,210 +76,8 @@ namespace Blaster::Server::Entity::Entities
 
             if (GetGameObject()->IsLocallyControlled())
             {
-                const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera", true), GetGameObject()->GetAbsolutePath());
-
-                cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
-                camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
-
-                GameObjectManager::GetInstance().SetCamera(camera);
-                
-                modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
-
-                modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, -2.5f, 0.0f });
-                modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
-                modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
-
-#ifndef IS_SERVER
-                hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), GetGameObject()->GetAbsolutePath());
-
-                hurtSoundObject->AddComponent(SoundClip::Create({ "Blaster", "Sound/PlayerPain.wav" }));
-
-                stepSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("step_sound"), GetGameObject()->GetAbsolutePath());
-
-                stepSoundObject->AddComponent(SoundClip::Create({ "Blaster", "Sound/Step.wav" }));
-#endif
-
-                if (team == Team::RED)
-                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
-                else
-                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
-
-                InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
-
-#ifndef IS_SERVER
-                itemSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("item_sound"), cameraGameObject->GetAbsolutePath());
-
-				itemSoundObject->GetTransform3d()->SetLocalPosition({ 0.0f, 0.0f, 5.0f });
-
-                hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
-                        .AddElement<UIElementImage>("ui_crosshair")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_Y | Transform2d::Anchor::CENTER_X);
-                                })
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.crosshair").value())
-                            .Call<&UIElementImage::Generate>()
-                        .MoveDown()
-                        .AddElement<UIElementText>("ui_health_text")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetPosition({ 10.0f, -10.0f });
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
-                                })
-                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
-                            .Call<&UIElementText::SetText>("Current Health: -1")
-                            .Call<&UIElementText::Generate>()
-                        .MoveDown()
-                        .AddElement<UIElementImage>("ui_hotbar_background")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                                })
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_background").value())
-                            .Call<&UIElementImage::Generate>()
-                        .MoveDown()
-                        .AddElement<UIElementImage>("ui_hotbar_selector")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -20.0f });
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                                })
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_selector").value())
-                            .Call<&UIElementImage::Generate>()
-                        .MoveDown()
-                        .AddLayout<UILayoutGrid>("ui_hotbar_grid", Vector<float, 2>{ 205, 205 }, Vector<float, 2>{ 20, 20 }, Vector<float, 2>{ 20, 20 }, 5)
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
-                                    gameObject->GetTransform2d()->SetDimensions({ 1280, 256 });
-                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
-                                })
-                            .AddElement<UIElementImage>("ui_slot_0")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                                .Call<&UIElementImage::Generate>()
-                                .AddElement<UIElementImage>("ui_slot_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                            .AddElement<UIElementImage>("ui_slot_1")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                                .Call<&UIElementImage::Generate>()
-                                .AddElement<UIElementImage>("ui_slot_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                            .AddElement<UIElementImage>("ui_slot_2")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                                .Call<&UIElementImage::Generate>()
-                                .AddElement<UIElementImage>("ui_slot_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                            .AddElement<UIElementImage>("ui_slot_3")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                                .Call<&UIElementImage::Generate>()
-                                .AddElement<UIElementImage>("ui_slot_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                            .AddElement<UIElementImage>("ui_slot_4")
-                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
-                                .Call<&UIElementImage::Generate>()
-                                .AddElement<UIElementImage>("ui_slot_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                        .MoveDown()
-                    .Finish();
-
-                healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
-                hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
-
-                const auto& slotContainer = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_grid").value();
-
-                for (const auto& child : slotContainer->GetChildMap() | std::views::values)
-                    hotbarSlotImageList.push_back(child->GetChildMap().at("ui_slot_image")->GetComponent<UIElementImage>().value());
-
-                pauseMenuRoot = UIBuilder::NewMenu("ui_pause_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
-                        .AddElement<UIElementImage>()
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                                {
-                                    gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
-                                })
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
-                            .Call<&UIElementImage::Generate>()
-                        .MoveDown()
-                    .Finish();
-
-                pauseMenuRoot->SetLocallyActive(false);
-
-                deathMenuRoot = UIBuilder::NewMenu("ui_death_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
-                        .AddElement<UIElementImage>("ui_background")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
-                            })
-                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.death_background").value())
-                            .Call<&UIElementImage::Generate>()
-                        .MoveDown()
-                        .AddElement<UIElementText>("ui_death_text")
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
-                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
-                            })
-                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 88, 0, 8))
-                            .Call<&UIElementText::SetText>("YOU DIED!")
-                            .Call<&UIElementText::Generate>()
-                        .MoveDown()
-                        .AddLayout<UILayoutStack>("ui_button_layout", UILayoutStack::Orientation::VERTICAL, Vector<float, 2>{ 768.0f, 96.0f }, Vector<float, 2>{ 4.0f, 4.0f }, 10.0f)
-                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
-                            {
-                                gameObject->GetTransform2d()->SetDimensions({ 768.0f, 288.0f });
-                            })
-                            .AddElement<UIElementButton>("ui_respawn_button")
-                                .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
-                                {
-                                    Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Respawn, RespawnCommand{ absolutePath });
-
-                                    deathMenuRoot->SetLocallyActive(false);
-                                })
-                                .AddElement<UIElementImage>("ui_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                                .AddElement<UIElementText>("ui_text")
-                                    .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
-                                    .Call<&UIElementText::SetText>("RESPAWN")
-                                    .Call<&UIElementText::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                            .AddElement<UIElementButton>("ui_quit_button")
-                                .Call<&UIElementButton::SetOnClick>([]
-                                {
-                                    std::terminate();
-                                })
-                                .AddElement<UIElementImage>("ui_image")
-                                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
-                                    .Call<&UIElementImage::Generate>()
-                                .MoveDown()
-                                .AddElement<UIElementText>("ui_text")
-                                    .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
-                                    .Call<&UIElementText::SetText>("RAGE QUIT")
-                                    .Call<&UIElementText::Generate>()
-                                .MoveDown()
-                            .MoveDown()
-                        .MoveDown()
-                    .Finish();
-
-                deathMenuRoot->SetLocallyActive(false);
-#endif
+                InitializeCamera();
+                InitializeUI();
             }
         }
 
@@ -288,30 +86,7 @@ namespace Blaster::Server::Entity::Entities
             if (!GetGameObject()->IsLocallyControlled())
                 return;
 
-#ifndef IS_SERVER
-            if (!GameObjectManager::GetInstance().Has(std::string(team == Team::RED ? "red" : "blue") + "_beacon") && GameObjectManager::GetInstance().Has(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button"))
-                GameObjectManager::GetInstance().Unregister(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button");
-#endif
-                
-            if (currentHealth <= 0)
-            {
-#ifndef IS_SERVER
-                deathMenuRoot->SetLocallyActive(true);
-#endif
-                auto animator = modelGameObject->GetComponent<Animator>().value();
-
-                if (!hasPlayedDeath)
-                {
-                    animator->Play("mtf2.death", 0.2f, 1.0f, WrapMode::ONCE);
-
-                    hasPlayedDeath = true;
-                }
-            }
-            
-            modelGameObject->SetLocallyActive(false);
-
-            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform3d()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform3d()->GetLocalRotation().y(), 0.0f });
-            
+            UpdateMiscellaneous();
             UpdateControls();
             UpdateMouselook();
             UpdateMovement();
@@ -430,6 +205,243 @@ namespace Blaster::Server::Entity::Entities
 #endif
         }
 
+        void InitializeCamera()
+        {
+            const auto cameraGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("camera", true), GetGameObject()->GetAbsolutePath());
+
+            cameraGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
+            camera = cameraGameObject->AddComponent(Camera::Create(45.0f, 0.01f, 10000.0f));
+
+            GameObjectManager::GetInstance().SetCamera(camera);
+
+            modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+
+            modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, -2.5f, 0.0f });
+            modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
+            modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
+
+#ifndef IS_SERVER
+            hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), GetGameObject()->GetAbsolutePath());
+
+            hurtSoundObject->AddComponent(SoundClip::Create({ { "Blaster", "Sound/Pain1.wav" }, { "Blaster", "Sound/Pain2.wav" }, { "Blaster", "Sound/Pain3.wav" }, { "Blaster", "Sound/Pain4.wav" }, { "Blaster", "Sound/Pain5.wav" } }));
+
+            stepSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("step_sound"), GetGameObject()->GetAbsolutePath());
+
+            stepSoundObject->AddComponent(SoundClip::Create({ { "Blaster", "Sound/Step1.wav" }, { "Blaster", "Sound/Step2.wav" }, { "Blaster", "Sound/Step3.wav" }, { "Blaster", "Sound/Step4.wav" } }));
+#endif
+
+            if (team == Team::RED)
+                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
+            else
+                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
+
+            InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
+        }
+
+        void InitializeUI()
+        {
+#ifndef IS_SERVER
+            itemSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("item_sound"), camera->GetGameObject()->GetAbsolutePath());
+
+            itemSoundObject->GetTransform3d()->SetLocalPosition({ 0.0f, 0.0f, 5.0f });
+
+            hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                    .AddElement<UIElementImage>("ui_crosshair")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_Y | Transform2d::Anchor::CENTER_X);
+                            })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.crosshair").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_health_text")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 10.0f, -10.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                            })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                        .Call<&UIElementText::SetText>("Current Health: -1")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementImage>("ui_hotbar_background")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                            })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_background").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementImage>("ui_hotbar_selector")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -20.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                            })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.hotbar_selector").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                    .AddLayout<UILayoutGrid>("ui_hotbar_grid", Vector<float, 2>{ 205, 205 }, Vector<float, 2>{ 20, 20 }, Vector<float, 2>{ 20, 20 }, 5)
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 0.0f, -10.0f });
+                                gameObject->GetTransform2d()->SetDimensions({ 1280, 256 });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                            })
+                        .AddElement<UIElementImage>("ui_slot_0")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .AddElement<UIElementImage>("ui_slot_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_slot_1")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .AddElement<UIElementImage>("ui_slot_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_slot_2")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .AddElement<UIElementImage>("ui_slot_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_slot_3")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .AddElement<UIElementImage>("ui_slot_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_slot_4")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.slot_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .AddElement<UIElementImage>("ui_slot_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.item.resource_empty").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                    .MoveDown()
+                .Finish();
+
+            healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
+            hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
+
+            const auto& slotContainer = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_grid").value();
+
+            for (const auto& child : slotContainer->GetChildMap() | std::views::values)
+                hotbarSlotImageList.push_back(child->GetChildMap().at("ui_slot_image")->GetComponent<UIElementImage>().value());
+
+            pauseMenuRoot = UIBuilder::NewMenu("ui_pause_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                    .AddElement<UIElementImage>()
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                            })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                .Finish();
+
+            pauseMenuRoot->SetLocallyActive(false);
+
+            deathMenuRoot = UIBuilder::NewMenu("ui_death_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                    .AddElement<UIElementImage>("ui_background")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                        })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.death_background").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_death_text")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 88, 0, 8))
+                        .Call<&UIElementText::SetText>("YOU DIED!")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddLayout<UILayoutStack>("ui_button_layout", UILayoutStack::Orientation::VERTICAL, Vector<float, 2>{ 768.0f, 96.0f }, Vector<float, 2>{ 4.0f, 4.0f }, 10.0f)
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetDimensions({ 768.0f, 288.0f });
+                        })
+                        .AddElement<UIElementButton>("ui_respawn_button")
+                            .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
+                            {
+                                deathMenuRoot->SetLocallyActive(false);
+
+                                Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Respawn, RespawnCommand{ absolutePath });
+                            })
+                            .AddElement<UIElementImage>("ui_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                            .AddElement<UIElementText>("ui_text")
+                                .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                .Call<&UIElementText::SetText>("RESPAWN")
+                                .Call<&UIElementText::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementButton>("ui_quit_button")
+                            .Call<&UIElementButton::SetOnClick>([]
+                            {
+                                std::terminate();
+                            })
+                            .AddElement<UIElementImage>("ui_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                            .AddElement<UIElementText>("ui_text")
+                                .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                .Call<&UIElementText::SetText>("RAGE QUIT")
+                                .Call<&UIElementText::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                    .MoveDown()
+                .Finish();
+
+            deathMenuRoot->SetLocallyActive(false);
+#endif
+        }
+
+        void UpdateMiscellaneous()
+        {
+#ifndef IS_SERVER
+            if (!GameObjectManager::GetInstance().Has(std::string(team == Team::RED ? "red" : "blue") + "_beacon") && GameObjectManager::GetInstance().Has(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button"))
+                GameObjectManager::GetInstance().Unregister(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button");
+#endif
+
+            if (currentHealth <= 0)
+            {
+#ifndef IS_SERVER
+                deathMenuRoot->SetLocallyActive(true);
+#endif
+                auto animator = modelGameObject->GetComponent<Animator>().value();
+
+                if (!hasPlayedDeath)
+                {
+                    animator->Play("mtf2.death", 0.2f, 1.0f, WrapMode::ONCE);
+
+                    hasPlayedDeath = true;
+                }
+            }
+
+            modelGameObject->SetLocallyActive(false);
+
+            GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform3d()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform3d()->GetLocalRotation().y(), 0.0f });
+        }
 
         void UpdateControls()
         {
@@ -477,18 +489,18 @@ namespace Blaster::Server::Entity::Entities
                 auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
 
 #ifndef IS_SERVER
-                if (item->GetSoundPath())
+                if (item->GetSoundPathList())
                 {
                     if (itemSoundObject->HasComponent<SoundClip>())
                     {
-                        itemSoundObject->GetComponent<SoundClip>().value()->GetPath() == item->GetSoundPath().value();
+                        itemSoundObject->GetComponent<SoundClip>().value()->GetPathList() == item->GetSoundPathList().value();
                         itemSoundObject->GetComponent<SoundClip>().value()->Play();
                     }
                     else
                     {
                         itemSoundObject->RemoveComponent<SoundClip>();
 
-                        itemSoundObject->AddComponent(SoundClip::Create(item->GetSoundPath().value(), false, true, true));
+                        itemSoundObject->AddComponent(SoundClip::Create(item->GetSoundPathList().value(), false, true, true));
                         itemSoundObject->GetComponent<SoundClip>().value()->Play();
                     }
                 }
@@ -559,10 +571,17 @@ namespace Blaster::Server::Entity::Entities
 
             Vector<float, 3> direction{ 0.0f, 0.0f, 0.0f };
 
-            if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD)) direction += forward;
-            if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD)) direction -= forward;
-            if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD)) direction += right;
-            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD)) direction -= right;
+            if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
+                direction += forward;
+
+            if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD))
+                direction -= forward;
+
+            if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD))
+                direction += right;
+
+            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
+                direction -= right;
 
             const bool hasMoveInput = Vector<float, 3>::LengthSquared(direction) > epsilon;
 

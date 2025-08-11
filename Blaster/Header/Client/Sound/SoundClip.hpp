@@ -7,6 +7,7 @@
 #include <vector>
 #include <cassert>
 #include <iostream>
+#include <random>
 #include <AL/al.h>
 #include <AL/alc.h>
 #include "Independent/ECS/GameObject.hpp"
@@ -23,22 +24,43 @@ namespace Blaster::Client::Sound
 
 	public:
 
+        struct DistanceModel
+        {
+            float referenceDistance = 2.0f;
+            float maxDistance = 50.0f;
+            float rolloff = 1.0f;
+
+            template <typename Archive>
+            void serialize(Archive& archive, const unsigned)
+            {
+                archive & BOOST_SERIALIZATION_NVP(referenceDistance);
+                archive & BOOST_SERIALIZATION_NVP(maxDistance);
+                archive & BOOST_SERIALIZATION_NVP(rolloff);
+            }
+        };
+
         ~SoundClip()
         {
 #ifndef IS_SERVER
-            if (source)
+            for (auto& source : sourceList)
             {
-                alSourceStop(source);
-                alDeleteSources(1, &source);
+                if (source)
+                {
+                    alSourceStop(source);
+                    alDeleteSources(1, &source);
 
-                source = 0;
+                    source = 0;
+                }
             }
 
-            if (buffer)
+            for (auto& buffer : bufferList)
             {
-                alDeleteBuffers(1, &buffer);
+                if (buffer)
+                {
+                    alDeleteBuffers(1, &buffer);
 
-                buffer = 0;
+                    buffer = 0;
+                }
             }
 #endif
 
@@ -55,82 +77,145 @@ namespace Blaster::Client::Sound
             if (!EnsureReady())
                 return;
 
+            if (sourceList.empty())
+                return;
+
+            static thread_local std::mt19937 device{ std::random_device{}() };
+
+            std::uniform_int_distribution<int> distribution(0, static_cast<int>(sourceList.size()) - 1);
+
+            const ALuint source = sourceList[distribution(device)];
+
+            alSourceRewind(source);
             alSourcePlay(source);
         }
 
         void Pause()
         {
-            if (source)
-                alSourcePause(source);
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourcePause(source);
+            }
         }
 
         void Stop()
         {
-            if (source)
-                alSourceStop(source);
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourceStop(source);
+            }
         }
 
         bool IsPlaying() const
         {
-            if (!source)
-                return false;
-
-            ALint s = 0;
-
-            alGetSourcei(source, AL_SOURCE_STATE, &s);
-
-            return s == AL_PLAYING;
-        }
-
-        void SetGain(float g)
-        {
-            gain = g;
-
-            if (source)
-                alSourcef(source, AL_GAIN, gain);
-        }
-
-        void SetPitch(float p)
-        {
-            pitch = p;
-
-            if (source)
-                alSourcef(source, AL_PITCH, pitch);
-        }
-
-        void SetLooping(bool l)
-        {
-            loop = l;
-
-            if (source)
-                alSourcei(source, AL_LOOPING, loop ? AL_TRUE : AL_FALSE);
-        }
-
-        void SetSpatial(bool s)
-        {
-            spatial = s;
-
-            if (source)
-                alSourcei(source, AL_SOURCE_RELATIVE, spatial ? AL_FALSE : AL_TRUE);
-        }
-
-        void SetDistanceModel(float refDistance, float maxDistance, float rolloff)
-        {
-            refDistance = refDistance;
-            maxDistance = maxDistance;
-            rolloff = rolloff;
-
-            if (source)
+            for (const auto& source : sourceList)
             {
-                alSourcef(source, AL_REFERENCE_DISTANCE, refDistance);
-                alSourcef(source, AL_MAX_DISTANCE, maxDistance);
-                alSourcef(source, AL_ROLLOFF_FACTOR, rolloff);
+                if (!source)
+                    return false;
+            
+                ALint sourceState = 0;
+
+                alGetSourcei(source, AL_SOURCE_STATE, &sourceState);
+
+                return sourceState == AL_PLAYING;
             }
         }
 
-        AssetPath GetPath() const
+        [[nodiscard]]
+        float GetGain() const
         {
-            return path;
+            return gain;
+        }
+
+        void SetGain(float gain)
+        {
+            this->gain = gain;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourcef(source, AL_GAIN, this->gain);
+            }
+        }
+
+        [[nodiscard]]
+        float GetPitch() const
+        {
+            return pitch;
+        }
+
+        void SetPitch(float pitch)
+        {
+            this->pitch = pitch;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourcef(source, AL_PITCH, this->pitch);
+            }
+        }
+
+        [[nodiscard]]
+        float GetLooping() const
+        {
+            return loop;
+        }
+
+        void SetLooping(bool loop)
+        {
+            this->loop = loop;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourcei(source, AL_LOOPING, this->loop ? AL_TRUE : AL_FALSE);
+            }
+        }
+
+        [[nodiscard]]
+        float GetSpatial() const
+        {
+            return spatial;
+        }
+
+        void SetSpatial(bool spatial)
+        {
+            this->spatial = spatial;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    alSourcei(source, AL_SOURCE_RELATIVE, this->spatial ? AL_FALSE : AL_TRUE);
+            }
+        }
+
+        [[nodiscard]]
+        DistanceModel GetDistanceModel() const
+        {
+            return distanceModel;
+        }
+
+        void SetDistanceModel(DistanceModel distanceModel)
+        {
+            this->distanceModel = distanceModel;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                {
+                    alSourcef(source, AL_REFERENCE_DISTANCE, distanceModel.referenceDistance);
+                    alSourcef(source, AL_MAX_DISTANCE, distanceModel.maxDistance);
+                    alSourcef(source, AL_ROLLOFF_FACTOR, distanceModel.rolloff);
+                }
+            }
+        }
+
+        [[nodiscard]]
+        std::vector<AssetPath> GetPathList() const
+        {
+            return pathList;
         }
 
         void Generate()
@@ -138,60 +223,89 @@ namespace Blaster::Client::Sound
 #ifndef IS_SERVER
             if (generated)
                 return;
-
-            generated = true;
-
             if (!OpenALBootstrap::Ensure())
             {
                 std::cerr << "[SoundClip] OpenAL device/context init failed.\n";
                 return;
             }
-
-            if (!LoadWavToBuffer(path.GetFullPath(), buffer, sampleRate))
+            if (pathList.empty())
             {
-                std::cerr << "[SoundClip] Failed to load WAV: " << path.GetFullPath() << "\n";
+                std::cerr << "[SoundClip] No paths provided.\n";
                 return;
             }
 
-            alGenSources(1, &source);
-            alSourcei(source, AL_BUFFER, buffer);
+            bufferList.clear();
+            sourceList.clear();
+            sampleRateList.clear();
 
-            alSourcef(source, AL_GAIN, gain);
-            alSourcef(source, AL_PITCH, pitch);
-            alSourcei(source, AL_LOOPING, loop ? AL_TRUE : AL_FALSE);
-            alSourcei(source, AL_SOURCE_RELATIVE, spatial ? AL_FALSE : AL_TRUE);
-            alSourcef(source, AL_REFERENCE_DISTANCE, refDistance);
-            alSourcef(source, AL_MAX_DISTANCE, maxDistance);
-            alSourcef(source, AL_ROLLOFF_FACTOR, rolloff);
+            for (const auto& path : pathList)
+            {
+                ALuint buffer = 0;
+                ALsizei rate = 0;
+
+                if (!LoadWavToBuffer(path.GetFullPath(), buffer, rate))
+                {
+                    std::cerr << "[SoundClip] Failed to load WAV: " << path.GetFullPath() << "\n";
+                    continue;
+                }
+
+                ALuint source = 0;
+
+                alGenSources(1, &source);
+                alSourcei(source, AL_BUFFER, buffer);
+
+                alSourcef(source, AL_GAIN, gain);
+                alSourcef(source, AL_PITCH, pitch);
+                alSourcei(source, AL_LOOPING, loop ? AL_TRUE : AL_FALSE);
+                alSourcei(source, AL_SOURCE_RELATIVE, spatial ? AL_FALSE : AL_TRUE);
+                alSourcef(source, AL_REFERENCE_DISTANCE, distanceModel.referenceDistance);
+                alSourcef(source, AL_MAX_DISTANCE, distanceModel.maxDistance);
+                alSourcef(source, AL_ROLLOFF_FACTOR, distanceModel.rolloff);
+
+                bufferList.push_back(buffer);
+                sourceList.push_back(source);
+                sampleRateList.push_back(rate);
+            }
+
+            if (sourceList.empty())
+                return;
 
             UpdateSourceTransform(true);
 
+            generated = true;
+
             if (autoplay)
-                alSourcePlay(source);
+                Play();
 #endif
         }
 
         void Update() override
         {
-            if (!source)
+            bool sourceActive = false;
+
+            for (const auto& source : sourceList)
+            {
+                if (source)
+                    sourceActive = true;
+            }
+
+            if (!sourceActive)
                 return;
 
             UpdateSourceTransform(false);
         }
 
-        static std::shared_ptr<SoundClip> Create(const AssetPath& path, bool loop = false, bool spatial = true, bool autoplay = false, float gain = 1.0f, float pitch = 1.0f, float refDist = 2.0f, float maxDist = 50.0f, float rolloff = 1.0f)
+        static std::shared_ptr<SoundClip> Create(const std::vector<AssetPath>& pathList, bool loop = false, bool spatial = true, bool autoplay = false, float gain = 1.0f, float pitch = 1.0f, DistanceModel distanceModel = { 2.0f, 50.0f, 1.0f })
         {
             std::shared_ptr<SoundClip> result(new SoundClip());
 
-            result->path = path;
+            result->pathList = pathList;
             result->loop = loop;
             result->spatial = spatial;
             result->autoplay = autoplay;
             result->gain = gain;
             result->pitch = pitch;
-            result->refDistance = refDist;
-            result->maxDistance = maxDist;
-            result->rolloff = rolloff;
+            result->distanceModel = distanceModel;
 
             return result;
         }
@@ -208,15 +322,13 @@ namespace Blaster::Client::Sound
         {
             archive & boost::serialization::base_object<Component>(*this);
 
-            archive & BOOST_SERIALIZATION_NVP(path);
+            archive & BOOST_SERIALIZATION_NVP(pathList);
             archive & BOOST_SERIALIZATION_NVP(loop);
             archive & BOOST_SERIALIZATION_NVP(spatial);
             archive & BOOST_SERIALIZATION_NVP(autoplay);
             archive & BOOST_SERIALIZATION_NVP(gain);
             archive & BOOST_SERIALIZATION_NVP(pitch);
-            archive & BOOST_SERIALIZATION_NVP(refDistance);
-            archive & BOOST_SERIALIZATION_NVP(maxDistance);
-            archive & BOOST_SERIALIZATION_NVP(rolloff);
+            archive & BOOST_SERIALIZATION_NVP(distanceModel);
         }
 
         struct OpenALBootstrap
@@ -266,30 +378,32 @@ namespace Blaster::Client::Sound
 
         static void ALPrintError(const char* where)
         {
-            const ALenum err = alGetError();
-
-            if (err != AL_NO_ERROR)
-                std::cerr << "[OpenAL] Error 0x" << std::hex << err << " at " << where << std::dec << "\n";
+            if (const ALenum error = alGetError(); error != AL_NO_ERROR)
+                std::cerr << "[OpenAL] Error 0x" << std::hex << error << " at " << where << std::dec << "\n";
         }
 
         bool EnsureReady()
         {
+#ifndef IS_SERVER
             if (!generated)
                 Generate();
 
-            return source != 0;
+            return !sourceList.empty();
+#else
+            return false;
+#endif
         }
 
-        static bool LoadWavToBuffer(const std::string& file, ALuint& outBuffer, ALsizei& outRate)
+        static bool LoadWavToBuffer(const std::string& filePath, ALuint& outBuffer, ALsizei& outRate)
         {
-            std::ifstream f(file, std::ios::binary);
+            std::ifstream file(filePath, std::ios::binary);
 
-            if (!f) return
+            if (!file) return
                 false;
 
-            auto readU32 = [&](uint32_t& v) { f.read(reinterpret_cast<char*>(&v), 4); };
-            auto readU16 = [&](uint16_t& v) { f.read(reinterpret_cast<char*>(&v), 2); };
-            auto readTag = [&](char tag[4]) { f.read(tag, 4); };
+            auto readU32 = [&](uint32_t& v) { file.read(reinterpret_cast<char*>(&v), 4); };
+            auto readU16 = [&](uint16_t& v) { file.read(reinterpret_cast<char*>(&v), 2); };
+            auto readTag = [&](char tag[4]) { file.read(tag, 4); };
 
             char riff[4];
             readTag(riff);
@@ -309,10 +423,14 @@ namespace Blaster::Client::Sound
 
             std::vector<char> dataChunk;
 
-            while (f && (!audioFormat || dataChunk.empty()))
+            while (file && (!audioFormat || dataChunk.empty()))
             {
-                char id[4]; readTag(id);
-                uint32_t size = 0; readU32(size);
+                char id[4];
+                readTag(id);
+
+                uint32_t size = 0;
+                readU32(size);
+
                 const std::string sid(id, 4);
 
                 if (sid == "fmt ")
@@ -323,20 +441,21 @@ namespace Blaster::Client::Sound
 
                     uint32_t byteRate = 0; readU32(byteRate);
                     uint16_t blockAlign = 0; readU16(blockAlign);
+
                     readU16(bitsPerSample);
 
                     if (size > 16)
-                        f.seekg(static_cast<std::streamoff>(size - 16), std::ios::cur);
+                        file.seekg(static_cast<std::streamoff>(size - 16), std::ios::cur);
                 }
                 else if (sid == "data")
                 {
                     dataChunk.resize(size);
 
                     if (size)
-                        f.read(dataChunk.data(), size);
+                        file.read(dataChunk.data(), size);
                 }
                 else
-                    f.seekg(static_cast<std::streamoff>(size), std::ios::cur);
+                    file.seekg(static_cast<std::streamoff>(size), std::ios::cur);
             }
 
             if (!audioFormat || dataChunk.empty() || (audioFormat != 1))
@@ -370,34 +489,37 @@ namespace Blaster::Client::Sound
 
         void UpdateSourceTransform(bool forceInit)
         {
-            if (!source)
-                return;
+            const auto worldPosition = GetGameObject()->GetTransform3d()->GetWorldPosition();
 
-            const auto p = GetGameObject()->GetTransform3d()->GetWorldPosition();
-
-            alSource3f(source, AL_POSITION, p.x(), p.y(), p.z());
-
-            const float dt = Blaster::Independent::Utility::Time::GetInstance().GetDeltaTime();
-            if (!forceInit && dt > 0.00001f)
+            for (const auto& source : sourceList)
             {
-                const float vx = (p.x() - lastPosX) / dt;
-                const float vy = (p.y() - lastPosY) / dt;
-                const float vz = (p.z() - lastPosZ) / dt;
-                alSource3f(source, AL_VELOCITY, vx, vy, vz);
-            }
-            else
-            {
-                alSource3f(source, AL_VELOCITY, 0.f, 0.f, 0.f);
+                if (!source)
+                    return;
+
+                alSource3f(source, AL_POSITION, worldPosition.x(), worldPosition.y(), worldPosition.z());
+
+                const float deltaTime = Blaster::Independent::Utility::Time::GetInstance().GetDeltaTime();
+
+                if (!forceInit && deltaTime > 0.00001f)
+                {
+                    const float vx = (worldPosition.x() - lastPosition.x()) / deltaTime;
+                    const float vy = (worldPosition.y() - lastPosition.y()) / deltaTime;
+                    const float vz = (worldPosition.z() - lastPosition.z()) / deltaTime;
+
+                    alSource3f(source, AL_VELOCITY, vx, vy, vz);
+                }
+                else
+                    alSource3f(source, AL_VELOCITY, 0.f, 0.f, 0.f);
             }
 
-            lastPosX = p.x(); lastPosY = p.y(); lastPosZ = p.z();
+            lastPosition = worldPosition;
         }
 
-		AssetPath path;
+		std::vector<AssetPath> pathList;
 
-        ALuint buffer = 0;
-        ALuint source = 0;
-        ALsizei sampleRate = 0;
+        std::vector<ALuint> bufferList;
+        std::vector<ALuint> sourceList;
+        std::vector<ALsizei> sampleRateList;
 
         bool generated = false;
         bool loop = false;
@@ -406,13 +528,11 @@ namespace Blaster::Client::Sound
         float gain = 1.0f;
         float pitch = 1.0f;
 
-        float refDistance = 2.0f;
-        float maxDistance = 50.0f;
-        float rolloff = 1.0f;
+        DistanceModel distanceModel;
 
-        float lastPosX = 0.f, lastPosY = 0.f, lastPosZ = 0.f;
+        Vector<float, 3> lastPosition;
 
-        DESCRIBE_AND_REGISTER(SoundClip, (Component), (), (), (path, loop, spatial, autoplay, gain, pitch, refDistance, maxDistance, rolloff))
+        DESCRIBE_AND_REGISTER(SoundClip, (Component), (), (), (pathList, loop, spatial, autoplay, gain, pitch, distanceModel))
 	};
 }
 

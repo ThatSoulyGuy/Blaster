@@ -42,7 +42,7 @@ namespace Blaster::Independent::ECS::Synchronization
     {
         static constexpr OpCode Code = OpCode::Create;
 
-        std::string path;
+        std::string pathList;
         std::string className;
 
         std::optional<NetworkId> owner;
@@ -52,14 +52,14 @@ namespace Blaster::Independent::ECS::Synchronization
     {
         static constexpr OpCode Code = OpCode::Destroy;
 
-        std::string path;
+        std::string pathList;
     };
 
     struct OpAddComponent
     {
         static constexpr OpCode Code = OpCode::AddComponent;
 
-        std::string path;
+        std::string pathList;
         int componentType;
         std::vector<std::uint8_t> blob;
     };
@@ -68,7 +68,7 @@ namespace Blaster::Independent::ECS::Synchronization
     {
         static constexpr OpCode Code = OpCode::RemoveComponent;
 
-        std::string path;
+        std::string pathList;
         int componentType;
     };
 
@@ -76,7 +76,7 @@ namespace Blaster::Independent::ECS::Synchronization
     {
         static constexpr OpCode Code = OpCode::SetField;
 
-        std::string path;
+        std::string pathList;
         int componentType;
         std::string field;
         std::vector<std::uint8_t> blob;
@@ -174,7 +174,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.pathList);
         CommonNetwork::EncodeString(buffer, operation.className);
 
         const bool hasOwner = operation.owner.has_value();
@@ -191,7 +191,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
         Type out;
 
-        out.path = CommonNetwork::DecodeString(bytes, offset);
+        out.pathList = CommonNetwork::DecodeString(bytes, offset);
         out.className = CommonNetwork::DecodeString(bytes, offset);
 
         const bool hasOwner = CommonNetwork::ReadTrivial<std::uint8_t>(bytes, offset);
@@ -210,7 +210,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.pathList);
     }
 
     static std::any Decode(std::span<const std::uint8_t> bytes)
@@ -228,7 +228,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.pathList);
         CommonNetwork::WriteTrivial(buffer, operation.componentType);
 
         const std::uint32_t length = static_cast<std::uint32_t>(operation.blob.size());
@@ -243,7 +243,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
         Type result;
 
-        result.path = CommonNetwork::DecodeString(bytes, offset);
+        result.pathList = CommonNetwork::DecodeString(bytes, offset);
         result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
 
         const std::uint32_t length = CommonNetwork::ReadTrivial<std::uint32_t>(bytes, offset);
@@ -262,7 +262,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.pathList);
         CommonNetwork::WriteTrivial(buffer, operation.componentType);
     }
 
@@ -272,7 +272,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
         Type result;
 
-        result.path = CommonNetwork::DecodeString(bytes, offset);
+        result.pathList = CommonNetwork::DecodeString(bytes, offset);
         result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
 
         return result;
@@ -286,7 +286,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
     static void Encode(const Type& operation, std::vector<std::uint8_t>& buffer)
     {
-        CommonNetwork::EncodeString(buffer, operation.path);
+        CommonNetwork::EncodeString(buffer, operation.pathList);
         CommonNetwork::WriteTrivial(buffer, operation.componentType);
         CommonNetwork::EncodeString(buffer, operation.field);
         CommonNetwork::EncodeBlob(buffer, operation.blob);
@@ -298,7 +298,7 @@ struct Blaster::Independent::Network::DataConversion<Blaster::Independent::ECS::
 
         Type result;
 
-        result.path = CommonNetwork::DecodeString(bytes, offset);
+        result.pathList = CommonNetwork::DecodeString(bytes, offset);
         result.componentType = CommonNetwork::ReadTrivial<int>(bytes, offset);
         result.field = CommonNetwork::DecodeString(bytes, offset);
         result.blob = CommonNetwork::DecodeBlob(bytes, offset);

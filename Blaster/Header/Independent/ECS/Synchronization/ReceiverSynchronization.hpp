@@ -177,25 +177,25 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             OpCreate operation = std::any_cast<OpCreate>(DataConversion<OpCreate>::Decode(slice));
 
-            const std::string& path = operation.path;
+            const std::string& pathList = operation.pathList;
 
-            if (GameObjectManager::GetInstance().Has(path)) //TODO: Very hacky, fix this
+            if (GameObjectManager::GetInstance().Has(pathList)) //TODO: Very hacky, fix this
                 return;
 
             std::string parentPath;
             std::string objectName;
 
-            std::size_t dotPosition = path.find_last_of('.');
+            std::size_t dotPosition = pathList.find_last_of('.');
 
             if (dotPosition == std::string::npos)
             {
                 parentPath = ".";
-                objectName = path;
+                objectName = pathList;
             }
             else
             {
-                parentPath = path.substr(0, dotPosition);
-                objectName = path.substr(dotPosition + 1);
+                parentPath = pathList.substr(0, dotPosition);
+                objectName = pathList.substr(dotPosition + 1);
             }
             
             auto gameObject = GameObject::Create(objectName, false, operation.owner);
@@ -213,14 +213,14 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             OpDestroy operation = std::any_cast<OpDestroy>(DataConversion<OpDestroy>::Decode(slice));
 
-            GameObjectManager::GetInstance().Unregister(operation.path);
+            GameObjectManager::GetInstance().Unregister(operation.pathList);
         }
 
         void HandleAddComponent(const std::span<const std::uint8_t> slice, bool fromClient)
         {
-            auto [path, componentType, blob] = std::any_cast<OpAddComponent>(DataConversion<OpAddComponent>::Decode(slice));
+            auto [pathList, componentType, blob] = std::any_cast<OpAddComponent>(DataConversion<OpAddComponent>::Decode(slice));
 
-            auto gameObjectOptional = GameObjectManager::GetInstance().Get(path);
+            auto gameObjectOptional = GameObjectManager::GetInstance().Get(pathList);
 
             if (!gameObjectOptional)
                 return;
@@ -278,7 +278,7 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             OpRemoveComponent operation = std::any_cast<OpRemoveComponent>(DataConversion<OpRemoveComponent>::Decode(slice));
 
-            auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
+            auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.pathList);
 
             if (!gameObjectOptional.has_value())
                 return;
@@ -297,7 +297,7 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             OpSetField operation = std::any_cast<OpSetField>(DataConversion<OpSetField>::Decode(slice));
 
-            auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.path);
+            auto gameObjectOptional = GameObjectManager::GetInstance().Get(operation.pathList);
 
             if (gameObjectOptional && gameObjectOptional.value()->IsLocallyControlled())
             {

@@ -90,9 +90,13 @@ namespace Blaster::Server::Entity::Entities
                 modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
 
 #ifndef IS_SERVER
-                hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), cameraGameObject->GetAbsolutePath());
+                hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), GetGameObject()->GetAbsolutePath());
 
                 hurtSoundObject->AddComponent(SoundClip::Create({ "Blaster", "Sound/PlayerPain.wav" }));
+
+                stepSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("step_sound"), GetGameObject()->GetAbsolutePath());
+
+                stepSoundObject->AddComponent(SoundClip::Create({ "Blaster", "Sound/Step.wav" }));
 #endif
 
                 if (team == Team::RED)
@@ -108,6 +112,14 @@ namespace Blaster::Server::Entity::Entities
 				itemSoundObject->GetTransform3d()->SetLocalPosition({ 0.0f, 0.0f, 5.0f });
 
                 hudRoot = UIBuilder::NewMenu("ui_hud_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                        .AddElement<UIElementImage>("ui_crosshair")
+                            .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                                {
+                                    gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_Y | Transform2d::Anchor::CENTER_X);
+                                })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.crosshair").value())
+                            .Call<&UIElementImage::Generate>()
+                        .MoveDown()
                         .AddElement<UIElementText>("ui_health_text")
                             .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
                                 {
@@ -207,7 +219,6 @@ namespace Blaster::Server::Entity::Entities
 
                 pauseMenuRoot->SetLocallyActive(false);
 
-
                 deathMenuRoot = UIBuilder::NewMenu("ui_death_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
                         .AddElement<UIElementImage>("ui_background")
                             .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
@@ -236,11 +247,8 @@ namespace Blaster::Server::Entity::Entities
                                 .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
                                 {
                                     Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Respawn, RespawnCommand{ absolutePath });
-                                    
-                                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, []
-                                    {
-                                        GameObjectManager::GetInstance().Clear();
-                                    });
+
+                                    deathMenuRoot->SetLocallyActive(false);
                                 })
                                 .AddElement<UIElementImage>("ui_image")
                                     .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
@@ -330,16 +338,19 @@ namespace Blaster::Server::Entity::Entities
             return 100.0f;
         }
 
+        void SetCurrentHealth(std::uint8_t currentHealth)
+        {
+            this->currentHealth = currentHealth;
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
+
         void DealDamage(std::uint8_t damage) override
         {
             if ((int(currentHealth) - damage) <= 0)
                 currentHealth = 0;
             else
                 currentHealth -= abs(damage);
-
-#ifndef IS_SERVER
-            hurtSoundObject->GetComponent<SoundClip>().value()->Play();
-#endif
 
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
         }
@@ -395,12 +406,30 @@ namespace Blaster::Server::Entity::Entities
         template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive & boost::serialization::base_object<Component>(*this);
+            archive& boost::serialization::base_object<Component>(*this);
+
+#ifndef IS_SERVER
+            const std::uint8_t before = currentHealth;
+#endif
 
             archive & BOOST_SERIALIZATION_NVP(currentHealth);
             archive & BOOST_SERIALIZATION_NVP(team);
             archive & BOOST_SERIALIZATION_NVP(hotbar);
+
+#ifndef IS_SERVER
+            if constexpr (Archive::is_loading::value)
+            {
+                if (hurtSoundObject && currentHealth < before)
+                {
+                    auto soundClip = hurtSoundObject->GetComponent<SoundClip>().value();
+
+                    soundClip->SetSpatial(false);
+                    soundClip->Play();
+                }
+            }
+#endif
         }
+
 
         void UpdateControls()
         {
@@ -519,7 +548,6 @@ namespace Blaster::Server::Entity::Entities
             auto controller = GetGameObject()->GetComponent<CharacterController>().value();
 
             Vector<float, 3> forward = camera->GetGameObject()->GetTransform3d()->GetForward();
-
             forward.y() = 0;
 
             if (Vector<float, 3>::LengthSquared(forward) < epsilon)
@@ -531,24 +559,47 @@ namespace Blaster::Server::Entity::Entities
 
             Vector<float, 3> direction{ 0.0f, 0.0f, 0.0f };
 
-            if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD))
-                direction += forward;
+            if (InputManager::GetInstance().GetKeyState(KeyCode::W, KeyState::HELD)) direction += forward;
+            if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD)) direction -= forward;
+            if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD)) direction += right;
+            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD)) direction -= right;
 
-            if (InputManager::GetInstance().GetKeyState(KeyCode::S, KeyState::HELD))
-                direction -= forward;
+            const bool hasMoveInput = Vector<float, 3>::LengthSquared(direction) > epsilon;
 
-            if (InputManager::GetInstance().GetKeyState(KeyCode::D, KeyState::HELD))
-                direction += right;
-
-            if (InputManager::GetInstance().GetKeyState(KeyCode::A, KeyState::HELD))
-                direction -= right;
-
-            if (Vector<float, 3>::LengthSquared(direction) > epsilon)
+            if (hasMoveInput)
             {
                 direction = Vector<float, 3>::Normalize(direction);
-
                 controller->SetWalkDirection(direction * GetMovementSpeed());
+            }
+            else
+                controller->SetWalkDirection({ 0.0f, 0.0f, 0.0f });
 
+#ifndef IS_SERVER
+            {
+                const float deltaTime = Blaster::Independent::Utility::Time::GetInstance().GetDeltaTime();
+
+                if (hasMoveInput && controller->OnGround())
+                {
+                    stepTimer -= deltaTime;
+
+                    if (stepTimer <= 0.f && stepSoundObject)
+                    {
+                        if (auto soundClip = stepSoundObject->GetComponent<SoundClip>())
+                        {
+                            soundClip.value()->Stop();
+                            soundClip.value()->Play();
+                        }
+
+                        stepTimer = 0.45f;
+                    }
+                }
+                else
+                    stepTimer = std::min(stepTimer, 0.1f);
+            }
+#endif
+
+            if (hasMoveInput)
+            {
                 if (currentViewModelItem == 0)
                 {
                     if (!animator->IsPlaying("mtf2.walk"))
@@ -562,8 +613,6 @@ namespace Blaster::Server::Entity::Entities
             }
             else
             {
-                controller->SetWalkDirection({ 0.0f, 0.0f, 0.0f });
-
                 if (currentViewModelItem == 0)
                 {
                     if (!animator->IsPlaying("mtf2.idle"))
@@ -580,6 +629,7 @@ namespace Blaster::Server::Entity::Entities
                 controller->Jump();
         }
 
+
         void UpdateViewModel()
         {
 #ifndef IS_SERVER
@@ -595,10 +645,21 @@ namespace Blaster::Server::Entity::Entities
             if (lastPresentedHealth == currentHealth)
                 return;
 
+            const bool shouldPlayHurt = (lastPresentedHealth != 255) && (currentHealth < lastPresentedHealth);
+
             lastPresentedHealth = currentHealth;
 
             healthText->SetText("Current Health: " + std::to_string(currentHealth));
             healthText->Generate();
+
+            if (shouldPlayHurt && hurtSoundObject)
+            {
+                if (auto clip = hurtSoundObject->GetComponent<SoundClip>())
+                {
+                    clip.value()->SetSpatial(false);
+                    clip.value()->Play();
+                }
+            }
         }
 
         void PresentHotbarIfChanged()
@@ -747,12 +808,14 @@ namespace Blaster::Server::Entity::Entities
         }
 #endif
 
-        Team team;
-
         std::shared_ptr<Camera> camera;
         std::shared_ptr<GameObject> modelGameObject;
 
+        Team team;
+
 #ifndef IS_SERVER
+        float stepTimer = 0.f;
+
         std::shared_ptr<GameObject> pauseMenuRoot = nullptr;
         std::shared_ptr<GameObject> deathMenuRoot = nullptr;
 
@@ -765,6 +828,7 @@ namespace Blaster::Server::Entity::Entities
 
         std::shared_ptr<GameObject> itemSoundObject = nullptr;
         std::shared_ptr<GameObject> hurtSoundObject = nullptr;
+        std::shared_ptr<GameObject> stepSoundObject = nullptr;
 #endif
 
         Hotbar hotbar{};

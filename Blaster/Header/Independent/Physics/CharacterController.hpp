@@ -78,7 +78,7 @@ namespace Blaster::Independent::Physics
 
 			auto* world = PhysicsWorld::GetInstance().GetHandle();
 
-			world->addCollisionObject(ghost, btBroadphaseProxy::CharacterFilter, btBroadphaseProxy::StaticFilter | btBroadphaseProxy::DefaultFilter);
+			world->addCollisionObject(ghost, btBroadphaseProxy::CharacterFilter, btBroadphaseProxy::AllFilter);
 			world->addAction(kinematicCharacterController);
 		}
 

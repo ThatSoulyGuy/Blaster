@@ -249,30 +249,34 @@ namespace Blaster::Server
                 {
                     auto command = std::any_cast<RespawnCommand>(CommonNetwork::DisassembleData(msg)[0]);
 
-                    auto gameObjectIn = GameObjectManager::GetInstance().Get(command.path);
+                    auto gameObjectOptional = GameObjectManager::GetInstance().Get(command.path);
 
-                    if (!gameObjectIn)
+                    if (!gameObjectOptional)
                         return;
 
-                    if (gameObjectIn.value()->GetOwningClient() != who)
+                    auto gameObject = gameObjectOptional.value();
+
+                    if (gameObject->GetOwningClient() != who)
                         return;
 
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [who, gameObject = gameObjectIn]
-                    {
-                        const std::string name = gameObject.value()->GetName();
-                        const auto team = gameObject.value()->GetComponent<EntityPlayer>().value()->GetTeam();
+                    const auto team = gameObject->GetComponent<EntityPlayer>().value()->GetTeam();
+                    const Vector<float, 3> spawnPos = (team == EntityBase::Team::RED) ? Vector<float, 3>{ 420.f, -190.f, 15.f } : Vector<float, 3>{ -420.f, -190.f, 15.f };
 
-                        GameObjectManager::GetInstance().Unregister(gameObject.value()->GetAbsolutePath(), false);
+                    gameObject->GetTransform3d()->SetLocalPosition(spawnPos);
 
-                        auto player = GameObjectManager::GetInstance().Register(GameObject::Create(name, false, who));
+                    if (auto characterController = gameObject->GetComponent<CharacterController>())
+                        characterController.value()->TeleportTo(spawnPos);
+                    else
+                        gameObject->AddComponent(CharacterController::Create(1.45f, 18.f))->TeleportTo(spawnPos);
 
-                        player->AddComponent(EntityPlayer::Create(team));
+                    auto entityPlayer = gameObject->GetComponent<EntityPlayer>().value();
 
-                        player->GetTransform3d()->SetLocalPosition(team == EntityBase::Team::RED ? Vector<float, 3>{ 420.f, -190.f, 15.f } : Vector<float, 3>{ -420.f, -190.f, 15.f });
-                        player->AddComponent(CharacterController::Create(1.45f, 18.f));
+                    entityPlayer->SetCurrentHealth(entityPlayer->GetMaximumHealth());
 
-                        SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
-                    });
+                    SenderSynchronization::GetInstance().MarkDirty(gameObject, typeid(EntityPlayer));
+
+                    for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                        ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ gameObject->GetAbsolutePath(), spawnPos });
                 });
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)

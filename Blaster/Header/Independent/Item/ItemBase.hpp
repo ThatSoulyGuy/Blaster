@@ -55,6 +55,9 @@ namespace Blaster::Independent::Item
 		virtual std::optional<AssetPath> GetModelPath() const = 0;
 
 		[[nodiscard]]
+		virtual bool DoesActivateKillCrosshair() const = 0;
+
+		[[nodiscard]]
 		virtual std::optional<Vector<float, 3>> GetModelViewPosition() const = 0;
 
 		[[nodiscard]]

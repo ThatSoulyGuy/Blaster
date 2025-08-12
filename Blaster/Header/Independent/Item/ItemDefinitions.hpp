@@ -39,6 +39,11 @@ namespace Blaster::Independent::Item
 			return std::nullopt;
 		}
 
+		bool DoesActivateKillCrosshair() const override
+		{
+			return false;
+		}
+
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override
 		{
 			return std::nullopt;
@@ -89,6 +94,11 @@ namespace Blaster::Independent::Item
 		std::string GetTextureName() const override
 		{
 			return "blaster.item.weapon_assault_rifle";
+		}
+
+		bool DoesActivateKillCrosshair() const override
+		{
+			return true;
 		}
 
 		std::optional<AssetPath> GetModelPath() const override

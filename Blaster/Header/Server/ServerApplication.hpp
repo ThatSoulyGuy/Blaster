@@ -248,7 +248,6 @@ namespace Blaster::Server
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Respawn, [](NetworkId who, std::vector<std::uint8_t> msg)
                 {
                     auto command = std::any_cast<RespawnCommand>(CommonNetwork::DisassembleData(msg)[0]);
-
                     auto gameObjectOptional = GameObjectManager::GetInstance().Get(command.path);
 
                     if (!gameObjectOptional)
@@ -260,24 +259,22 @@ namespace Blaster::Server
                         return;
 
                     const auto team = gameObject->GetComponent<EntityPlayer>().value()->GetTeam();
-                    const Vector<float, 3> spawnPos = (team == EntityBase::Team::RED) ? Vector<float, 3>{ 420.f, -190.f, 15.f } : Vector<float, 3>{ -420.f, -190.f, 15.f };
+                    const Vector<float, 3> spawnPosition = (team == EntityBase::Team::RED) ? Vector<float, 3>{ 420.f, -190.f, 15.f } : Vector<float, 3>{ -420.f, -190.f, 15.f };
 
-                    gameObject->GetTransform3d()->SetLocalPosition(spawnPos);
+                    std::shared_ptr<CharacterController> characterController = gameObject->GetComponent<CharacterController>().value();
 
-                    if (auto characterController = gameObject->GetComponent<CharacterController>())
-                        characterController.value()->TeleportTo(spawnPos);
-                    else
-                        gameObject->AddComponent(CharacterController::Create(1.45f, 18.f))->TeleportTo(spawnPos);
+                    characterController->SetWalkDirection({ 0.f, 0.f, 0.f });
+                    characterController->TeleportTo(spawnPosition);
 
                     auto entityPlayer = gameObject->GetComponent<EntityPlayer>().value();
-
                     entityPlayer->SetCurrentHealth(entityPlayer->GetMaximumHealth());
 
                     SenderSynchronization::GetInstance().MarkDirty(gameObject, typeid(EntityPlayer));
 
                     for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
-                        ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ gameObject->GetAbsolutePath(), spawnPos });
+                        ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ gameObject->GetAbsolutePath(), spawnPosition });
                 });
+
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)
                 {

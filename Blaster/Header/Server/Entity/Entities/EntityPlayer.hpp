@@ -74,6 +74,10 @@ namespace Blaster::Server::Entity::Entities
         {
             currentHealth = GetMaximumHealth();
 
+#ifndef IS_SERVER
+            InitializeModel();
+#endif
+
             if (GetGameObject()->IsLocallyControlled())
             {
                 InitializeCamera();
@@ -181,7 +185,7 @@ namespace Blaster::Server::Entity::Entities
         template <typename Archive>
         void serialize(Archive& archive, const unsigned)
         {
-            archive& boost::serialization::base_object<Component>(*this);
+            archive & boost::serialization::base_object<Component>(*this);
 
 #ifndef IS_SERVER
             const std::uint8_t before = currentHealth;
@@ -201,9 +205,52 @@ namespace Blaster::Server::Entity::Entities
                     soundClip->SetSpatial(false);
                     soundClip->Play();
                 }
+
+                if (currentHealth > 0)
+                {
+                    if (!modelGameObject && GetGameObject())
+                        InitializeModel();
+                    else if (modelGameObject && GetGameObject())
+                        modelGameObject->SetLocallyActive(!GetGameObject()->IsLocallyControlled());
+
+                    if (modelGameObject)
+                    {
+                        if (auto animator = modelGameObject->GetComponent<Animator>())
+                            animator.value()->Play("mtf2.idle", 0.15f);
+                    }
+                }
             }
 #endif
         }
+
+        void InitializeModel()
+        {
+#ifndef IS_SERVER
+            const std::string modelPath = GetGameObject()->GetAbsolutePath() + ".model";
+
+            if (GameObjectManager::GetInstance().Has(modelPath))
+                modelGameObject = GameObjectManager::GetInstance().Get(modelPath).value();
+            else
+                modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
+
+            auto transform = modelGameObject->GetTransform3d();
+
+            transform->SetLocalPosition({ 0.0f, -2.5f, 0.0f });
+            transform->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
+            transform->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
+
+            if (!modelGameObject->HasComponent<Model>())
+            {
+                if (team == Team::RED)
+                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
+                else
+                    modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
+            }
+
+            modelGameObject->SetLocallyActive(!GetGameObject()->IsLocallyControlled());
+#endif
+        }
+
 
         void InitializeCamera()
         {
@@ -214,12 +261,6 @@ namespace Blaster::Server::Entity::Entities
 
             GameObjectManager::GetInstance().SetCamera(camera);
 
-            modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
-
-            modelGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, -2.5f, 0.0f });
-            modelGameObject->GetTransform3d()->SetLocalRotation({ 90.0f, 0.0f, 0.0f });
-            modelGameObject->GetTransform3d()->SetLocalScale({ 0.00025f, 0.00025f, 0.00025f });
-
 #ifndef IS_SERVER
             hurtSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("hurt_sound"), GetGameObject()->GetAbsolutePath());
 
@@ -229,11 +270,6 @@ namespace Blaster::Server::Entity::Entities
 
             stepSoundObject->AddComponent(SoundClip::Create({ { "Blaster", "Sound/Step1.wav" }, { "Blaster", "Sound/Step2.wav" }, { "Blaster", "Sound/Step3.wav" }, { "Blaster", "Sound/Step4.wav" } }));
 #endif
-
-            if (team == Team::RED)
-                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Red.fbx" }, true));
-            else
-                modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/MTF2_Blue.fbx" }, true));
 
             InputManager::GetInstance().SetMouseMode(MouseMode::LOCKED);
         }
@@ -249,6 +285,7 @@ namespace Blaster::Server::Entity::Entities
                     .AddElement<UIElementImage>("ui_crosshair")
                         .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
                             {
+                                gameObject->GetTransform2d()->SetDimensions({ 32, 32 });
                                 gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_Y | Transform2d::Anchor::CENTER_X);
                             })
                         .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.crosshair").value())
@@ -331,6 +368,11 @@ namespace Blaster::Server::Entity::Entities
                         .MoveDown()
                     .MoveDown()
                 .Finish();
+
+#ifndef IS_SERVER
+            if (auto cross = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_crosshair"))
+                crosshairImage = cross.value()->GetComponent<UIElementImage>().value();
+#endif
 
             healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
             hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
@@ -416,6 +458,30 @@ namespace Blaster::Server::Entity::Entities
 #endif
         }
 
+#ifndef IS_SERVER
+        void TickCrosshairHitFX()
+        {
+            if (!crosshairImage)
+                return;
+
+            if (crosshairHitTimer > 0.f)
+            {
+                crosshairHitTimer -= Time::GetInstance().GetDeltaTime();
+
+                if (crosshairHitTimer <= 0.f)
+                {
+                    crosshairHitTimer = 0.f;
+
+                    if (auto texture = TextureManager::GetInstance().Get("blaster.ui.crosshair"))
+                    {
+                        crosshairImage->SetTexture(texture.value());
+                        crosshairImage->Generate();
+                    }
+                }
+            }
+        }
+#endif
+
         void UpdateMiscellaneous()
         {
 #ifndef IS_SERVER
@@ -423,24 +489,41 @@ namespace Blaster::Server::Entity::Entities
                 GameObjectManager::GetInstance().Unregister(deathMenuRoot->GetAbsolutePath() + ".ui_button_layout.ui_respawn_button");
 #endif
 
-            if (currentHealth <= 0)
-            {
-#ifndef IS_SERVER
-                deathMenuRoot->SetLocallyActive(true);
-#endif
-                auto animator = modelGameObject->GetComponent<Animator>().value();
+            const bool isDead = (currentHealth <= 0);
 
+#ifndef IS_SERVER
+            if (isDead && !wasDead)
+            {
+                deathMenuRoot->SetLocallyActive(true);
+                deathMenuShown = true;
+                hasPlayedDeath = false;
+            }
+
+            if (!isDead && wasDead)
+            {
+                deathMenuRoot->SetLocallyActive(false);
+                deathMenuShown = false;
+                hasPlayedDeath = false;
+            }
+#endif
+
+            if (isDead)
+            {
+                auto animator = modelGameObject->GetComponent<Animator>().value();
+                
                 if (!hasPlayedDeath)
                 {
                     animator->Play("mtf2.death", 0.2f, 1.0f, WrapMode::ONCE);
-
                     hasPlayedDeath = true;
                 }
             }
-
-            modelGameObject->SetLocallyActive(false);
-
+             
             GameObjectManager::GetInstance().Get(GetGameObject()->GetAbsolutePath() + ".model").value()->GetTransform3d()->SetLocalRotation({ 90.0f, camera->GetGameObject()->GetTransform3d()->GetLocalRotation().y(), 0.0f });
+          
+#ifndef IS_SERVER
+            TickCrosshairHitFX();
+            wasDead = isDead;
+#endif
         }
 
         void UpdateControls()
@@ -525,7 +608,36 @@ namespace Blaster::Server::Entity::Entities
                 auto* other = static_cast<PhysicsBody*>(hit.object->getUserPointer());
 
                 if (self != other && other->GetGameObject()->HasComponent<EntityBase>())
+                {
+#ifndef IS_SERVER
+                    if (item->DoesActivateKillCrosshair())
+                    {
+                        crosshairHitTimer = kCrosshairHitDuration;
+
+                        if (crosshairImage)
+                        {
+                            if (team == other->GetGameObject()->GetComponent<EntityBase>().value()->GetTeam())
+                            {
+                                if (auto texture = TextureManager::GetInstance().Get("blaster.ui.crosshair_friendly_fire"))
+                                {
+                                    crosshairImage->SetTexture(texture.value());
+                                    crosshairImage->Generate();
+                                }
+                            }
+                            else
+                            {
+                                if (auto texture = TextureManager::GetInstance().Get("blaster.ui.crosshair_kill"))
+                                {
+                                    crosshairImage->SetTexture(texture.value());
+                                    crosshairImage->Generate();
+                                }
+                            }
+                        }
+                    }
+#endif
+
                     item->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
+                }
             }
         }
 
@@ -834,6 +946,8 @@ namespace Blaster::Server::Entity::Entities
 
 #ifndef IS_SERVER
         float stepTimer = 0.f;
+        float crosshairHitTimer = 0.f;
+        static constexpr float kCrosshairHitDuration = 0.2f;
 
         std::shared_ptr<GameObject> pauseMenuRoot = nullptr;
         std::shared_ptr<GameObject> deathMenuRoot = nullptr;
@@ -848,11 +962,15 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<GameObject> itemSoundObject = nullptr;
         std::shared_ptr<GameObject> hurtSoundObject = nullptr;
         std::shared_ptr<GameObject> stepSoundObject = nullptr;
+
+        std::shared_ptr<UIElementImage> crosshairImage = nullptr;
 #endif
 
         Hotbar hotbar{};
 
         bool hasPlayedDeath = false;
+        bool wasDead = false;
+        bool deathMenuShown = false;
 
         std::uint8_t currentHealth;
 

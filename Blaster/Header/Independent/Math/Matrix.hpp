@@ -5,6 +5,7 @@
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/nvp.hpp>
 #include "Independent/Math/Vector.hpp"
+#include "Independent/Utility/BulletSterilized.hpp"
 
 namespace Blaster::Independent::Math
 {
@@ -231,17 +232,17 @@ namespace Blaster::Independent::Math
 			return result;
 		}
 
-		static Matrix Transpose(const Matrix& m)
+		static Matrix<T, C, R> Transpose(const Matrix& a)
 		{
-			Matrix<T, C, R> tmp;
+			Matrix<T, C, R> out;
 
-			for (size_t c = 0; c < C; c++)
+			for (size_t c = 0; c < C; ++c)
 			{
-				for (size_t r = 0; r < R; r++)
-					tmp[r][c] = m.data[c][r];
+				for (size_t r = 0; r < R; ++r)
+					out[c][r] = a.data[r][c];
 			}
 
-			return *(reinterpret_cast<Matrix<T, R, C>*>(&tmp));
+			return out;
 		}
 
 		static Matrix<T, 4, 4> Perspective(T fovRadians, T aspect, T nearPlane, T farPlane)
@@ -475,6 +476,40 @@ namespace Blaster::Independent::Math
 			return inv;
 		}
 
+		inline btTransform ToBtTransform(const Matrix<float, 4, 4>& M)
+		{
+			btMatrix3x3 basis
+			(
+				M[0][0], M[1][0], M[2][0],
+				M[0][1], M[1][1], M[2][1],
+				M[0][2], M[1][2], M[2][2]
+			);
+
+			btVector3 origin(M[3][0], M[3][1], M[3][2]);
+
+			btTransform result;
+
+			result.setBasis(basis);
+			result.setOrigin(origin);
+
+			return result;
+		}
+
+		inline Matrix<float, 4, 4> FromBtTransform(const btTransform& t)
+		{
+			const btMatrix3x3& b = t.getBasis();
+			const btVector3& o = t.getOrigin();
+
+			return Matrix<float, 4, 4>(
+			{
+				{ b[0][0], b[1][0], b[2][0], 0.f },
+				{ b[0][1], b[1][1], b[2][1], 0.f },
+				{ b[0][2], b[1][2], b[2][2], 0.f },
+				{ o.x(), o.y(), o.z(), 1.f }
+			});
+		}
+
+
 		static constexpr size_t Rows()
 		{
 			return R;
@@ -526,25 +561,23 @@ namespace Blaster::Independent::Math
 	template <Arithmetic T, size_t R, size_t C>
 	std::ostream& operator<<(std::ostream& os, const Matrix<T, R, C>& m)
 	{
-		for (size_t i = 0; i < R; ++i)
+		for (size_t r = 0; r < R; ++r)
 		{
 			os << '[';
 
-			for (size_t j = 0; j < C; ++j)
+			for (size_t c = 0; c < C; ++c)
 			{
-				os << m[i][j];
-				if (j + 1 < C)
-				{
+				os << m[c][r];
+
+				if (c + 1 < C)
 					os << ", ";
-				}
 			}
 
 			os << ']';
 
-			if (i + 1 < R)
+			if (r + 1 < R)
 				os << '\n';
 		}
-
 		return os;
 	}
 }
@@ -562,18 +595,15 @@ namespace std
 	{
 		std::size_t operator()(const Blaster::Independent::Math::Matrix<T, R, C>& m) const noexcept
 		{
-			std::size_t result = 0;
+			std::size_t seed = 0;
 
-			for (size_t i = 0; i < R; ++i)
+			for (size_t c = 0; c < C; ++c)
 			{
-				for (size_t j = 0; j < C; ++j)
-				{
-					const auto valHash = std::hash<T>{}(m[i][j]);
-					HashCombine(result, valHash);
-				}
+				for (size_t r = 0; r < R; ++r)
+					HashCombine(seed, std::hash<T>{}(m[c][r]));
 			}
 
-			return result;
+			return seed;
 		}
 	};
 }

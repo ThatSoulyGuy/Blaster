@@ -589,7 +589,7 @@ namespace Blaster::Server::Entity::Entities
                 }
 #endif
 
-                constexpr float kRayDistance = 100.f;
+                constexpr float kRayDistance = 1000.f;
 
                 const auto cameraGameObject = camera->GetGameObject();
                 const auto origin = cameraGameObject->GetTransform3d()->GetWorldPosition();

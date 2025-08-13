@@ -275,7 +275,6 @@ namespace Blaster::Server
                         ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ gameObject->GetAbsolutePath(), spawnPosition });
                 });
 
-
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)
                 {
                     auto command = std::any_cast<QueryTransformCommand>(CommonNetwork::DisassembleData(msg)[0]);

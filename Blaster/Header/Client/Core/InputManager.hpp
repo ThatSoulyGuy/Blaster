@@ -181,6 +181,7 @@ namespace Blaster::Client::Core
             handle = Window::GetInstance().GetHandle();
 
             glfwSetScrollCallback(handle, ScrollCallback);
+            glfwSetCharCallback(handle, CharCallback);
 
             currentKeyStates.resize(GLFW_KEY_LAST + 1, false);
             previousKeyStates.resize(GLFW_KEY_LAST + 1, false);
@@ -277,6 +278,16 @@ namespace Blaster::Client::Core
             }
         }
 
+        std::string ConsumeTextInput()
+        {
+            std::lock_guard<std::mutex> lock(textMutex);
+            std::string out;
+
+            out.swap(typedAscii);
+
+            return out;
+        }
+
         Vector<float, 2> GetMousePosition() const
         {
             return mousePosition;
@@ -338,6 +349,17 @@ namespace Blaster::Client::Core
             GetInstance().pendingScroll += static_cast<float>(offsetY);
         }
 
+        static void CharCallback(GLFWwindow*, unsigned int codepoint)
+        {
+            if (codepoint >= 32u && codepoint <= 126u)
+            {
+                auto& self = GetInstance();
+
+                std::lock_guard<std::mutex> lock(self.textMutex);
+                self.typedAscii.push_back(static_cast<char>(codepoint));
+            }
+        }
+
         GLFWwindow* handle = nullptr;
 
         std::vector<bool> currentKeyStates;
@@ -347,6 +369,9 @@ namespace Blaster::Client::Core
 
         Vector<float, 2> mousePosition = { 0.0f, 0.0f };
         Vector<float, 2> mouseDelta = { 0.0f, 0.0f };
+
+        std::string typedAscii;
+        std::mutex textMutex;
 
         float scrollDelta = 0.0f;
         float pendingScroll = 0.0f;

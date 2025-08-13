@@ -18,14 +18,23 @@ namespace Blaster::Independent::Physics
 
         void Update()
         {
+            static double acc = 0.0;
+            constexpr double fixed = 1.0 / 120.0;
+            acc += std::clamp<double>(Time::GetInstance().GetDeltaTime(), 0.0, 0.1);
+
             ForEachBody([](auto& body) { body.SyncToBullet(); });
 
-            constexpr float fixedStep = 1.f / 120.f;
-            constexpr int maxSubStep = 4;
-
             auto* world = PhysicsWorld::GetInstance().GetHandle();
+            int steps = 0;
 
-            world->stepSimulation(Time::GetInstance().GetDeltaTime(), maxSubStep, fixedStep);
+            while (acc >= fixed && steps < 8)
+            {
+                world->stepSimulation(fixed, 0, fixed);
+
+                acc -= fixed;
+
+                ++steps;
+            }
 
             ForEachBody([](auto& body) { body.SyncFromBullet(); });
         }

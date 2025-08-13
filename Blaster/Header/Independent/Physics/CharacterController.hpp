@@ -41,15 +41,16 @@ namespace Blaster::Independent::Physics
 		void Initialize() override
 		{
 #ifndef IS_SERVER
-			if (!GetGameObject()->IsLocallyControlled())
-				GetGameObject()->SetLocal(true);
-
 			GetGameObject()->GetTransform3d()->SetShouldSynchronize(false);
-
-			shape = new btCapsuleShape(radius, height);
-#else
-			shape = new btCapsuleShapeZ(radius, height);
 #endif
+			shape = new btCapsuleShape(radius, height);
+
+			{
+				const int upAxis = static_cast<btCapsuleShape*>(shape)->getUpAxis();
+
+				if (upAxis != 1)
+					std::cerr << "[CharacterController] Capsule upAxis=" << upAxis << " (expected 1 for Y). Check shape construction.\n";
+			}
 
 			ghost = new btPairCachingGhostObject();
 
@@ -76,10 +77,24 @@ namespace Blaster::Independent::Physics
 
 			kinematicCharacterController->getGhostObject()->setUserPointer(this);
 
+			{
+				const auto up = kinematicCharacterController->getUp();
+				const auto grav = kinematicCharacterController->getGravity();
+				const btTransform t = ghost->getWorldTransform();
+				const btVector3 o = t.getOrigin();
+				btMatrix3x3 b = t.getBasis();
+
+				std::cerr << "[KCC] up=(" << up.x() << "," << up.y() << "," << up.z() << ")" << " gravity=(" << grav.x() << "," << grav.y() << "," << grav.z() << ")\n";
+				std::cerr << "[KCC] ghost pos=(" << o.x() << "," << o.y() << "," << o.z() << ")\n";
+				std::cerr << "[KCC] basis columns X=(" << b[0][0] << "," << b[1][0] << "," << b[2][0] << ") Y=(" << b[0][1] << "," << b[1][1] << "," << b[2][1] << ") Z=(" << b[0][2] << "," << b[1][2] << "," << b[2][2] << ")\n";
+			}
+
 			auto* world = PhysicsWorld::GetInstance().GetHandle();
 
 			world->addCollisionObject(ghost, btBroadphaseProxy::CharacterFilter, btBroadphaseProxy::AllFilter);
 			world->addAction(kinematicCharacterController);
+
+			ForceUprightBasis();
 		}
 
 		void SetWalkDirection(const Vector<float, 3>& directionNormalized)
@@ -153,6 +168,8 @@ namespace Blaster::Independent::Physics
 
 		void SyncToBullet() override
 		{
+			ForceUprightBasis();
+
 			if (!IsAuthoritative())
 			{
 				btTransform transform;
@@ -218,12 +235,24 @@ namespace Blaster::Independent::Physics
 		{
 			archive & boost::serialization::base_object<Component>(*this);
 
-			archive & radius;
-			archive & height;
-			archive & stepHeight;
-			archive & maxSlopeDeg;
-			archive & jumpSpeed;
-			archive & gravity;
+			archive & BOOST_SERIALIZATION_NVP(radius);
+			archive & BOOST_SERIALIZATION_NVP(height);
+			archive & BOOST_SERIALIZATION_NVP(stepHeight);
+			archive & BOOST_SERIALIZATION_NVP(maxSlopeDeg);
+			archive & BOOST_SERIALIZATION_NVP(jumpSpeed);
+			archive & BOOST_SERIALIZATION_NVP(gravity);
+		}
+
+		void ForceUprightBasis()
+		{
+			if (!ghost)
+				return;
+
+			btTransform transform = ghost->getWorldTransform();
+
+			transform.setBasis(btMatrix3x3::getIdentity());
+
+			ghost->setWorldTransform(transform);
 		}
 
 		btPairCachingGhostObject* ghost{ nullptr };

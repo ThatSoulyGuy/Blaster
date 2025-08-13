@@ -24,6 +24,7 @@
 #include "Independent/Test/PhysicsDebugger.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
+#include "Server/Entity/Entities/EntityPlayer.hpp"
 
 using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
@@ -49,7 +50,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.95.26", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 1.98.29", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -74,6 +75,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.slot_background", { "Blaster", "Texture/UI/SlotBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.menu_background", { "Blaster", "Texture/UI/MenuBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.chat_background", { "Blaster", "Texture/UI/ChatBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_default", { "Blaster", "Texture/UI/ButtonDefault.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_selected", { "Blaster", "Texture/UI/ButtonSelected.png" }));
@@ -146,6 +148,23 @@ namespace Blaster::Client
                                 gameObject->GetTransform3d()->SetLocalPosition(command.position, false);
                         });
                 });
+
+            Blaster::Client::Network::ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Chat, [this](std::vector<std::uint8_t> payload)
+                {
+                    auto any = CommonNetwork::DisassembleData(payload);
+
+                    if (any.empty())
+                        return;
+
+                    std::string line = std::any_cast<std::string>(any[0]);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, line]()
+                        {
+                            if (GameObjectManager::GetInstance().GetCamera().has_value())
+                                GameObjectManager::GetInstance().GetCamera().value()->GetGameObject()->GetParent().value().lock()->GetComponent<Blaster::Server::Entity::Entities::EntityPlayer>().value()->AppendChatLine(line);
+                        });
+                }
+            );
 
             PhysicsWorld::GetInstance().Initialize();
         }

@@ -293,6 +293,32 @@ namespace Blaster::Server
                         ServerNetwork::GetInstance().SendTo(who, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ command.path, serverPosition });
                 });
 
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Chat, [](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto parts = CommonNetwork::DisassembleData(data);
+
+                    if (parts.empty())
+                        return;
+
+                    std::string text = std::any_cast<std::string>(parts[0]);
+
+                    if (text.size() > 256)
+                        text.resize(256);
+
+                    std::string name;
+
+                    if (auto client = ServerNetwork::GetInstance().GetClient(who))
+                        name = client.value()->stringId;
+                    
+                    if (name.empty())
+                        name = std::to_string(who);
+
+                    std::string line = "[" + name + "]: " + text;
+
+                    for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                        ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Chat, line);
+                });
+
             PhysicsWorld::GetInstance().Initialize();
 
             const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
@@ -325,6 +351,20 @@ namespace Blaster::Server
 
         void Update()
         {
+            if (!isRedBeaconDestroyed && !GameObjectManager::GetInstance().Has("red_beacon"))
+            {
+                ServerChatBroadcast("The red beacon has been destroyed!");
+
+                isRedBeaconDestroyed = true;
+            }
+
+            if (!isBlueBeaconDestroyed && !GameObjectManager::GetInstance().Has("blue_beacon"))
+            {
+                ServerChatBroadcast("The blue beacon has been destroyed!");
+
+                isBlueBeaconDestroyed = true;
+            }
+
             MainThreadExecutor::GetInstance().Execute();
 
             GameObjectManager::GetInstance().Update();
@@ -358,6 +398,15 @@ namespace Blaster::Server
     private:
 
         ServerApplication() = default;
+
+        void ServerChatBroadcast(const std::string& text)
+        {
+            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Chat, std::string("[Server]: " + text));
+        }
+
+        bool isRedBeaconDestroyed = false;
+        bool isBlueBeaconDestroyed = false;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ServerApplication> instance;

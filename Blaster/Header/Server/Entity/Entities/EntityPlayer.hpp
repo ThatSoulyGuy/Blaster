@@ -8,9 +8,12 @@
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
 #include "Client/Sound/SoundClip.hpp"
-#include "Client/UI/Elements/UIElementText.hpp"
+#include "Client/UI/Elements/UIElementButton.hpp"
 #include "Client/UI/Elements/UIElementImage.hpp"
+#include "Client/UI/Elements/UIElementText.hpp"
+#include "Client/UI/Elements/UIElementTextField.hpp"
 #include "Client/UI/Layouts/UILayoutGrid.hpp"
+#include "Client/UI/Layouts/UILayoutStack.hpp"
 #include "Client/UI/UIBuilder.hpp"
 #include "Independent/ECS/GameObject.hpp"
 #include "Independent/Item/ItemRegistry.hpp"
@@ -96,6 +99,29 @@ namespace Blaster::Server::Entity::Entities
             UpdateMovement();
             UpdateViewModel();
         }
+
+#ifndef IS_SERVER
+        void AppendChatLine(const std::string& line)
+        {
+            chatLines.push_back(line);
+
+            while (chatLines.size() > kChatMaxLines)
+                chatLines.pop_front();
+
+            std::string combined;
+
+            combined.reserve(1024);
+
+            for (const auto& s : chatLines)
+            {
+                combined += s;
+                combined.push_back('\n');
+            }
+
+            chatLogText->SetText(combined);
+            chatLogText->Generate();
+        }
+#endif
 
         std::string GetRegistryName() const override
         {
@@ -455,6 +481,66 @@ namespace Blaster::Server::Entity::Entities
                 .Finish();
 
             deathMenuRoot->SetLocallyActive(false);
+
+
+            chatRoot = UIBuilder::NewMenu("ui_chat_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                    .AddElement<UIElementImage>("ui_chat_background")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, -120.0f });
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_Y | Transform2d::Anchor::LEFT);
+                        })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.chat_background").value())
+                        .Call<&UIElementImage::Generate>()
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetDimensions({ 560.0f, 260.0f });
+                        })
+                        .AddElement<UIElementText>("ui_chat_log")
+                            .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::LEFT);
+                                gameObject->GetTransform2d()->SetPosition({ 12.0f, 12.0f });
+                            })
+                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 24, 0, 4))
+                            .Call<&UIElementText::SetTint>(Vector<float, 3>{ 1.0f, 1.0f, 1.0f })
+                            .Call<&UIElementText::SetText>("")
+                            .Call<&UIElementText::Generate>()
+                        .MoveDown()
+                        .AddElement<UIElementImage>("ui_chat_background")
+                            .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 5.0f, -5.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                            })
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.chat_background").value())
+                            .Call<&UIElementImage::Generate>()
+                            .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetDimensions({ 555.0f, 28.0f });
+                            })
+                        .MoveDown()
+                        .AddElement<UIElementTextField>("ui_chat_input")
+                            .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                                gameObject->GetTransform2d()->SetPosition({ 12.0f, -12.0f });
+                                gameObject->GetTransform2d()->SetDimensions({ 536.0f, 28.0f });
+                            })
+                            .Call<&UIElementTextField::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 24, 0, 4))
+                            .Call<&UIElementTextField::SetPlaceholder>("Press Enter to chat")
+                            .Call<&UIElementTextField::SetTextColor>(Vector<float, 3>{ 1.0f, 1.0f, 1.0f })
+                            .Call<&UIElementTextField::SetPlaceholderColor>(Vector<float, 3>{ 0.75f, 0.75f, 0.75f })
+                            .Call<&UIElementTextField::SetSubmitOnEnter>(false)
+                            .Call<&UIElementTextField::SetFocused>(false)
+                            .Call<&UIElementTextField::Generate>()
+                        .MoveDown()
+                    .MoveDown()
+                .Finish();
+
+
+            chatLogText = GameObjectManager::GetInstance().Get(chatRoot->GetAbsolutePath() + ".ui_chat_background.ui_chat_log").value()->GetComponent<UIElementText>().value();
+            chatInputField = GameObjectManager::GetInstance().Get(chatRoot->GetAbsolutePath() + ".ui_chat_background.ui_chat_input").value()->GetComponent<UIElementTextField>().value();
 #endif
         }
 
@@ -529,6 +615,52 @@ namespace Blaster::Server::Entity::Entities
         void UpdateControls()
         {
 #ifndef IS_SERVER
+            if (!chatFocused && !IsMenuActive() && (InputManager::GetInstance().GetKeyState(KeyCode::ENTER, KeyState::PRESSED) || InputManager::GetInstance().GetKeyState(KeyCode::T, KeyState::PRESSED)))
+            {
+                (void)InputManager::GetInstance().ConsumeTextInput();
+
+                chatFocused = true;
+                chatInputField->SetFocused(true);
+            }
+
+            if (chatFocused)
+            {
+                InputManager::GetInstance().SetMouseMode(MouseMode::FREE);
+
+                const bool submit = InputManager::GetInstance().GetKeyState(KeyCode::ENTER, KeyState::PRESSED);
+                const bool cancel = InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED);
+
+                if (submit)
+                {
+                    std::string message = chatInputField->GetText();
+
+                    while (!message.empty() && (message.back() == ' ' || message.back() == '\t'))
+                        message.pop_back();
+
+                    while (!message.empty() && (message.front() == ' ' || message.front() == '\t'))
+                        message.erase(message.begin());
+
+                    if (!message.empty())
+                        Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Chat, message);
+
+                    chatInputField->SetText("");
+                    chatInputField->Generate();
+
+                    chatInputField->SetFocused(false);
+                    chatFocused = false;
+                }
+                else if (cancel)
+                {
+                    chatInputField->SetText("");
+                    chatInputField->Generate();
+
+                    chatInputField->SetFocused(false);
+                    chatFocused = false;
+                }
+
+                return;
+            }
+
             if (InputManager::GetInstance().GetKeyState(KeyCode::ESCAPE, KeyState::PRESSED))
                 pauseMenuRoot->SetLocallyActive(!pauseMenuRoot->IsLocallyActive());
 
@@ -935,7 +1067,7 @@ namespace Blaster::Server::Entity::Entities
 
         bool IsMenuActive() const
         {
-            return pauseMenuRoot->IsLocallyActive() || deathMenuRoot->IsLocallyActive();
+            return pauseMenuRoot->IsLocallyActive() || deathMenuRoot->IsLocallyActive() || chatFocused;
         }
 #endif
 
@@ -964,6 +1096,14 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<GameObject> stepSoundObject = nullptr;
 
         std::shared_ptr<UIElementImage> crosshairImage = nullptr;
+
+        std::shared_ptr<GameObject> chatRoot = nullptr;
+        std::shared_ptr<UIElementText> chatLogText = nullptr;
+        std::shared_ptr<UIElementTextField> chatInputField = nullptr;
+
+        std::deque<std::string> chatLines;
+        bool chatFocused = false;
+        static constexpr std::size_t kChatMaxLines = 8;
 #endif
 
         Hotbar hotbar{};

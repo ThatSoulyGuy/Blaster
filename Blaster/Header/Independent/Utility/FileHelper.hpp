@@ -23,7 +23,7 @@ namespace Blaster::Independent::Utility
 
             if (!file.is_open())
             {
-                std::cout << "Failed to read file '" << path.GetFullPath() << "'!\n";
+                std::cerr << "Failed to read file '" << path.GetFullPath() << "'!\n";
                 return {};
             }
 
@@ -36,7 +36,7 @@ namespace Blaster::Independent::Utility
 
             if (!file.read(result.data(), fileSize))
             {
-                std::cout << "Failed to read contents of '" << path.GetFullPath() << "'!\n";
+                std::cerr << "Failed to read contents of '" << path.GetFullPath() << "'!\n";
                 return {};
             }
 

@@ -303,7 +303,7 @@ namespace Blaster::Server::Entity::Entities
         void InitializeUI()
         {
 #ifndef IS_SERVER
-            itemSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("item_sound"), camera->GetGameObject()->GetAbsolutePath());
+            itemSoundObject = GameObjectManager::GetInstance().Register(GameObject::Create("item_sound"), GetGameObject()->GetAbsolutePath());
 
             itemSoundObject->GetTransform3d()->SetLocalPosition({ 0.0f, 0.0f, 5.0f });
 

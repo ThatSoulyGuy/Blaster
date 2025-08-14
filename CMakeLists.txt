@@ -855,6 +855,8 @@ function(blaster_add_executable target source_glob)
             ${EXTRA_PLATFORM_LIBS}
     )
 
+    #target_compile_definitions(${target} PRIVATE SYNCHRONIZATION_DEBUG)
+
     if (APPLE)
         target_link_libraries(${target} PRIVATE ${APPLE_FRAMEWORKS})
         target_compile_options(${target} PRIVATE -Wno-deprecated-declarations -mmacosx-version-min=13.7)

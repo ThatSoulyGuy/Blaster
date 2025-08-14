@@ -29,7 +29,8 @@ namespace Blaster::Independent::Network
         C2S_QueryTransform = 13,
         S2C_CorrectTransform = 14,
         C2S_Chat = 15,
-        S2C_Chat = 16
+        S2C_Chat = 16,
+        S2C_ServerAnnouncement = 17
     };
 
     struct PacketHeader

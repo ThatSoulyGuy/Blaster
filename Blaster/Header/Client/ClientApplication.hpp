@@ -30,7 +30,7 @@ using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
-using namespace Blaster::Independent::Physics;
+using namespace Blaster::Independent::Physics; 
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Item;
 using namespace Blaster::Independent::Test;
@@ -149,23 +149,28 @@ namespace Blaster::Client
                         });
                 });
 
-            Blaster::Client::Network::ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Chat, [this](std::vector<std::uint8_t> payload)
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Chat, [this](std::vector<std::uint8_t> payload)
                 {
-                    auto any = CommonNetwork::DisassembleData(payload);
-
-                    if (any.empty())
-                        return;
-
-                    std::string line = std::any_cast<std::string>(any[0]);
+                    auto line = std::any_cast<std::string>(CommonNetwork::DisassembleData(payload)[0]);
 
                     MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, line]()
                         {
                             if (GameObjectManager::GetInstance().GetCamera().has_value())
                                 GameObjectManager::GetInstance().GetCamera().value()->GetGameObject()->GetParent().value().lock()->GetComponent<Blaster::Server::Entity::Entities::EntityPlayer>().value()->AppendChatLine(line);
                         });
-                }
-            );
+                });
 
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_ServerAnnouncement, [this](std::vector<std::uint8_t> payload)
+                {
+                    auto line = std::any_cast<std::string>(CommonNetwork::DisassembleData(payload)[0]);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, line]()
+                        {
+                            if (GameObjectManager::GetInstance().GetCamera().has_value())
+                                GameObjectManager::GetInstance().GetCamera().value()->GetGameObject()->GetParent().value().lock()->GetComponent<Blaster::Server::Entity::Entities::EntityPlayer>().value()->AppendChatLine(line);
+                        });
+                });
+            
             PhysicsWorld::GetInstance().Initialize();
         }
 

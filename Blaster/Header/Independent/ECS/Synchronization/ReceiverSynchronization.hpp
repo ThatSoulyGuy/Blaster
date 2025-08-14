@@ -73,7 +73,9 @@ namespace Blaster::Independent::ECS::Synchronization
                 return;
 #endif
             
+#ifdef SYNCHRONIZATION_DEBUG
             std::cout << "Received packet from source '" << snapshot.header.origin << "' with route '" << (int)snapshot.header.route << "' with ack '" << snapshot.header.ack << "'!" << std::endl;
+#endif
 
             ApplySnapshot(snapshot);
 
@@ -85,7 +87,9 @@ namespace Blaster::Independent::ECS::Synchronization
             {
                 snapshot.header.route = Route::ServerBroadcast;
 
+#ifdef SYNCHRONIZATION_DEBUG
                 std::cout << "Sent packet containing '" << snapshot.header.operationCount << "' operation(s) to all clients EXCEPT '" << snapshot.header.origin << "'!" << std::endl;
+#endif
 
                 for (NetworkId id : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
                 {
@@ -170,7 +174,9 @@ namespace Blaster::Independent::ECS::Synchronization
                 break;
             }
 
+#ifdef SYNCHRONIZATION_DEBUG
             std::cout << "Applied opCode '" << (int)code << "', fromClient was '" << fromClient << "'!" << std::endl;
+#endif
         }
 
         void HandleCreate(std::span<const std::uint8_t> slice, bool fromClient)

@@ -252,7 +252,9 @@ namespace Blaster::Independent::ECS::Synchronization
 
                 Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Snapshot, snapshot);
 
+#ifdef SYNCHRONIZATION_DEBUG
                 std::cout << "Sent snapshot to client '" << id << "' with seqence '" << snapshot.header.sequence << "' and ack '" << snapshot.header.ack << "' ('" << snapshot.header.operationCount << "' operations)!" << std::endl;
+#endif
             }
 #else
             {
@@ -265,7 +267,9 @@ namespace Blaster::Independent::ECS::Synchronization
 
                 Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Snapshot, snapshot);
 
+#ifdef SYNCHRONIZATION_DEBUG
                 std::cout << "Sent snapshot to server with seqence '" << snapshot.header.sequence << "' and ack '" << snapshot.header.ack << "' ('" << snapshot.header.operationCount << "' operations)!" << std::endl;
+#endif
             }
 #endif
              

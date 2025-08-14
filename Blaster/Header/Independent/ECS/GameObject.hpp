@@ -52,7 +52,7 @@ namespace Blaster::Independent::ECS
 
                 if (componentMap.contains(typeid(T)))
                 {
-                    std::cout << "Component map for game object '" << name << "' already contains component '" << typeid(T).name() << "'!" << std::endl;
+                    std::cerr << "Component map for game object '" << name << "' already contains component '" << typeid(T).name() << "'!" << std::endl;
                     return nullptr;
                 }
 
@@ -81,7 +81,7 @@ namespace Blaster::Independent::ECS
 
                 if (componentMap.contains(type))
                 {
-                    std::cout << "Component map for game object '" << name << "' already contains component '" << type.name() << "'!" << std::endl;
+                    std::cerr << "Component map for game object '" << name << "' already contains component '" << type.name() << "'!" << std::endl;
                     return nullptr;
                 }
 
@@ -148,7 +148,7 @@ namespace Blaster::Independent::ECS
                     return std::make_optional(std::move(casted));
             }
 
-            std::cout << "Component map for game object '" << name << "' does not contain a component derived from '" << typeid(T).name() << "'!" << std::endl;
+            std::cerr << "Component map for game object '" << name << "' does not contain a component derived from '" << typeid(T).name() << "'!" << std::endl;
 
             return std::nullopt;
         }
@@ -167,7 +167,7 @@ namespace Blaster::Independent::ECS
 
             if (!typeIndex.has_value())
             {
-                std::cout << "Component map for game object '" << name << "' doesn't contain component '" << typeName << "'!" << std::endl;
+                std::cerr << "Component map for game object '" << name << "' doesn't contain component '" << typeName << "'!" << std::endl;
                 return std::nullopt;
             }
 
@@ -202,7 +202,7 @@ namespace Blaster::Independent::ECS
 
             if (!componentMap.contains(typeid(T)))
             {
-                std::cout << "Component map for game object '" << name << "' doesn't contain component '" << typeid(T).name() << "'!" << std::endl;
+                std::cerr << "Component map for game object '" << name << "' doesn't contain component '" << typeid(T).name() << "'!" << std::endl;
                 return;
             }
 
@@ -480,7 +480,7 @@ namespace Blaster::Independent::ECS
         {
             if (childMap.contains(child->GetName()))
             {
-                std::cout << "Child map for game object '" << name << "' already contains child '" << child->GetName() << "'!" << std::endl;
+                std::cerr << "Child map for game object '" << name << "' already contains child '" << child->GetName() << "'!" << std::endl;
                 return nullptr;
             }
 
@@ -504,7 +504,7 @@ namespace Blaster::Independent::ECS
         {
             if (!childMap.contains(childName))
             {
-                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
+                std::cerr << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
                 return std::nullopt;
             }
 
@@ -515,7 +515,7 @@ namespace Blaster::Independent::ECS
         {
             if (!childMap.contains(childName))
             {
-                std::cout << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
+                std::cerr << "Child map for game object '" << name << "' doesn't contain child '" << childName << "'!" << std::endl;
                 return;
             }
 

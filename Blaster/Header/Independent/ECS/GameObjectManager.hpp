@@ -38,7 +38,7 @@ namespace Blaster::Independent::ECS
 
                 if (rootGameObjectMap.contains(gameObject->GetName()))
                 {
-                    std::cout << "Root map already contains game object '" << gameObject->GetName() << "'!" << std::endl;
+                    std::cerr << "Root map already contains game object '" << gameObject->GetName() << "'!" << std::endl;
                     return nullptr;
                 }
 
@@ -54,7 +54,7 @@ namespace Blaster::Independent::ECS
 
             if (!parentOptional.has_value())
             {
-                std::cout << "Parent path '" << path << "' does not exist; cannot register child '" << gameObject->GetName() << "'!" << std::endl;
+                std::cerr << "Parent path '" << path << "' does not exist; cannot register child '" << gameObject->GetName() << "'!" << std::endl;
                 return nullptr;
             }
 
@@ -82,7 +82,7 @@ namespace Blaster::Independent::ECS
 
             if (!gameObjectOptional.has_value())
             {
-                std::cout << "Cannot unregister; path '" << path << "' does not exist!" << std::endl;
+                std::cerr << "Cannot unregister; path '" << path << "' does not exist!" << std::endl;
                 return;
             }
 
@@ -111,7 +111,7 @@ namespace Blaster::Independent::ECS
 
             if (!parentOptional.has_value())
             {
-                std::cout << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
+                std::cerr << "Internal inconsistency: parent '" << parentPath << "' not found while unregistering '" << absolutePath << "'!" << std::endl;
                 return;
             }
 

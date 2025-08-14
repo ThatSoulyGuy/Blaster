@@ -73,44 +73,30 @@ namespace Blaster::Server
                     });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [](const NetworkId who, std::vector<std::uint8_t> messageIn)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_StringId, [this](const NetworkId who, std::vector<std::uint8_t> messageIn)
                 {
                     const auto name = std::any_cast<std::string>(CommonNetwork::DisassembleData(messageIn)[0]);
 
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [who, name]()
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, who, name]()
                         {
-                            std::random_device device;
-                            std::mt19937 generator(device());
-
-                            constexpr int min = 1;
-                            constexpr int max = 2;
-
-                            std::uniform_int_distribution distribution(min, max);
-
-                            const int randomNumber = distribution(generator);
-
-                            std::cout << "Client " << who << " is '" << name << "'." << std::endl;
-
+                            std::cout << "Client " << who << " is '" << name << "'.\n";
                             ServerNetwork::GetInstance().GetClient(who).value()->stringId = name;
 
                             auto player = GameObjectManager::GetInstance().Register(GameObject::Create("player-" + name, false, who));
 
-                            if (randomNumber == 1)
-                            {
-                                player->AddComponent(EntityPlayer::Create(EntityBase::Team::RED));
+                            const auto team = PopNextTeam();
+                            player->AddComponent(EntityPlayer::Create(team));
 
+                            if (team == EntityBase::Team::RED)
                                 player->GetTransform3d()->SetLocalPosition({ 420.0f, -190.0f, 15.0f });
-                            }
                             else
-                            {
-                                player->AddComponent(EntityPlayer::Create(EntityBase::Team::BLUE));
-
                                 player->GetTransform3d()->SetLocalPosition({ -420.0f, -190.0f, 15.0f });
-                            }
 
                             player->AddComponent(CharacterController::Create(1.45f, 18.0f));
 
                             SenderSynchronization::GetInstance().SynchronizeFullTree(who, GameObjectManager::GetInstance().GetAll());
+
+                            BroadcastAnnouncement(name + " joined the game on team " + std::string(team == EntityBase::Team::RED ? "RED" : "BLUE") + ".");
                         });
                 });
 
@@ -230,24 +216,50 @@ namespace Blaster::Server
                         });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Damage, [](NetworkId who, std::vector<std::uint8_t> data)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Damage, [&](NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    auto anyList = CommonNetwork::DisassembleData(data);
+                    auto command = std::any_cast<DamageCommand>(CommonNetwork::DisassembleData(data)[0]);
 
-                    if (anyList.empty())
+                    auto gameObjectOptional = GameObjectManager::GetInstance().Get(command.path);
+
+                    if (!gameObjectOptional)
                         return;
 
-                    auto command = std::any_cast<DamageCommand>(anyList[0]);
+                    auto gameObject = gameObjectOptional.value();
+                    auto entityOptional = gameObject->GetComponent<EntityBase>();
+
+                    if (!entityOptional)
+                        return;
+
+                    auto entity = entityOptional.value();
+                    const std::uint8_t before = entity->GetCurrentHealth();
 
                     if (command.isDamage)
-                        GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->DealDamage(command.damage);
+                        entity->DealDamage(command.damage);
                     else
-                        GameObjectManager::GetInstance().Get(command.path).value()->GetComponent<EntityBase>().value()->HealDamage(command.damage);
+                        entity->HealDamage(command.damage);
+
+                    const std::uint8_t after = entity->GetCurrentHealth();
+
+                    if (!gameObject->HasComponent<EntityPlayer>())
+                        return;
+
+                    if (before > 0 && after == 0)
+                    {
+                        std::string victim = "Unknown";
+
+                        if (auto client = ServerNetwork::GetInstance().GetClient(gameObject->GetOwningClient().value()))
+                            victim = client.value()->stringId;
+
+                        BroadcastAnnouncement(victim + " was killed!");
+
+                        CheckEliminationAndAnnounce();
+                    }
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Respawn, [](NetworkId who, std::vector<std::uint8_t> msg)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_EntityPlayer_Respawn, [](NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    auto command = std::any_cast<RespawnCommand>(CommonNetwork::DisassembleData(msg)[0]);
+                    auto command = std::any_cast<RespawnCommand>(CommonNetwork::DisassembleData(data)[0]);
                     auto gameObjectOptional = GameObjectManager::GetInstance().Get(command.path);
 
                     if (!gameObjectOptional)
@@ -275,9 +287,9 @@ namespace Blaster::Server
                         ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_CorrectTransform, CorrectTransformCommand{ gameObject->GetAbsolutePath(), spawnPosition });
                 });
 
-            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> msg)
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_QueryTransform, [](NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    auto command = std::any_cast<QueryTransformCommand>(CommonNetwork::DisassembleData(msg)[0]);
+                    auto command = std::any_cast<QueryTransformCommand>(CommonNetwork::DisassembleData(data)[0]);
 
                     auto gameObject = GameObjectManager::GetInstance().Get(command.path);
 
@@ -351,16 +363,16 @@ namespace Blaster::Server
 
         void Update()
         {
-            if (!isRedBeaconDestroyed && !GameObjectManager::GetInstance().Has("red_beacon"))
+            if (!isRedBeaconDestroyed && !GameObjectManager::GetInstance().Has("red_beacon") && ServerNetwork::GetInstance().GetConnectedClients().size() != 0)
             {
-                ServerChatBroadcast("The red beacon has been destroyed!");
+                BroadcastAnnouncement("The red beacon has been destroyed!");
 
                 isRedBeaconDestroyed = true;
             }
 
-            if (!isBlueBeaconDestroyed && !GameObjectManager::GetInstance().Has("blue_beacon"))
+            if (!isBlueBeaconDestroyed && !GameObjectManager::GetInstance().Has("blue_beacon") && ServerNetwork::GetInstance().GetConnectedClients().size() != 0)
             {
-                ServerChatBroadcast("The blue beacon has been destroyed!");
+                BroadcastAnnouncement("The blue beacon has been destroyed!");
 
                 isBlueBeaconDestroyed = true;
             }
@@ -399,10 +411,48 @@ namespace Blaster::Server
 
         ServerApplication() = default;
 
-        void ServerChatBroadcast(const std::string& text)
+        EntityBase::Team nextTeam = EntityBase::Team::RED;
+
+        EntityBase::Team PopNextTeam()
+        {
+            EntityBase::Team out = nextTeam;
+
+            nextTeam = (nextTeam == EntityBase::Team::RED) ? EntityBase::Team::BLUE : EntityBase::Team::RED;
+
+            return out;
+        }
+
+        void BroadcastAnnouncement(const std::string& message)
         {
             for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
-                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Chat, std::string("[Server]: " + text));
+                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_ServerAnnouncement, "[Server]: " + message);
+        }
+
+        void CheckEliminationAndAnnounce()
+        {
+            int redAlive = 0, blueAlive = 0;
+
+            for (const auto& gameObject : GameObjectManager::GetInstance().GetAll())
+            {
+                if (!gameObject->HasComponent<EntityPlayer>())
+                    continue;
+
+                auto player = gameObject->GetComponent<EntityPlayer>().value();
+
+                if (player->GetCurrentHealth() > 0)
+                {
+                    if (player->GetTeam() == EntityBase::Team::RED)
+                        ++redAlive;
+                    else if (player->GetTeam() == EntityBase::Team::BLUE)
+                        ++blueAlive;
+                }
+            }
+
+            if (redAlive == 0 && isRedBeaconDestroyed)
+                BroadcastAnnouncement("Team RED has been eliminated!");
+
+            if (blueAlive == 0 && isBlueBeaconDestroyed)
+                BroadcastAnnouncement("Team BLUE has been eliminated!");
         }
 
         bool isRedBeaconDestroyed = false;

@@ -35,12 +35,12 @@ namespace Blaster::Independent::Physics
 
         virtual bool IsAuthoritative() const noexcept = 0;
 
-        template<typename Command>
-        void QueueToServer(PacketType type, Command&& command) const
+        template<typename CommandDescriptor>
+        void QueueToServer(PacketType type, CommandDescriptor&& command) const
         {
 #ifndef IS_SERVER
             if (IsLocallyControlled())
-                Client::Network::ClientNetwork::GetInstance().Send(type, std::forward<Command>(command));
+                Client::Network::ClientNetwork::GetInstance().Send(type, std::forward<CommandDescriptor>(command));
 #endif
         }
 

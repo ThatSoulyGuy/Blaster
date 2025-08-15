@@ -16,6 +16,8 @@
 #include "Independent/Test/PhysicsDebugger.hpp"
 #include "Independent/Thread/MainThreadExecutor.hpp"
 #include "Independent/Utility/Time.hpp"
+#include "Server/Command/CommandDefinitions.hpp"
+#include "Server/Command/CommandManager.hpp"
 #include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
 
@@ -25,10 +27,192 @@ using namespace Blaster::Independent::Physics::Colliders;
 using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::Test;
 using namespace Blaster::Independent::Thread;
+using namespace Blaster::Server::Command;
 using namespace Blaster::Server::Network;
 
 namespace Blaster::Server
 {
+    class AsynchronousConsole final
+    {
+
+    public:
+
+        AsynchronousConsole(const AsynchronousConsole&) = delete;
+        AsynchronousConsole(AsynchronousConsole&&) = delete;
+        AsynchronousConsole& operator=(const AsynchronousConsole&) = delete;
+        AsynchronousConsole& operator=(AsynchronousConsole&&) = delete;
+
+        using LineCallback = std::function<void(const std::string&)>;
+
+        void AttachPromptToStdout()
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+
+            if (attached)
+                return;
+
+            originalBuffer = std::cout.rdbuf();
+
+            promptBuffer.parent = this;
+            promptBuffer.under = originalBuffer;
+
+            std::cout.rdbuf(&promptBuffer);
+
+            attached = true;
+        }
+
+        void DetachPromptFromStdout()
+        {
+            std::lock_guard<std::mutex> guard(mutex);
+
+            if (!attached)
+                return;
+
+            std::cout.rdbuf(originalBuffer);
+            attached = false;
+        }
+
+        void Start(LineCallback onLine)
+        {
+            bool expected = false;
+
+            if (!running.compare_exchange_strong(expected, true))
+                return;
+
+            this->onLine = std::move(onLine);
+            inputThread = std::thread([this]
+                {
+                    PrintPrompt();
+
+                    std::string line;
+                    while (running.load(std::memory_order_relaxed))
+                    {
+                        if (!std::getline(std::cin, line))
+                        {
+                            std::this_thread::sleep_for(50ms);
+
+                            continue;
+                        }
+
+                        if (this->onLine)
+                            this->onLine(line);
+
+                        PrintPrompt();
+                    }
+                });
+        }
+
+        void Stop()
+        {
+            if (!running.exchange(false))
+                return;
+
+            if (inputThread.joinable())
+                inputThread.join();
+        }
+
+        void ReprintPrompt()
+        {
+            std::lock_guard<std::mutex> guard(promptMutex);
+
+            if (originalBuffer)
+            {
+                originalBuffer->sputn("> ", 2);
+                originalBuffer->pubsync();
+            }
+        }
+
+        static AsynchronousConsole& GetInstance()
+        {
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<AsynchronousConsole>(new AsynchronousConsole());
+            });
+
+            return *instance;
+        }
+
+    private:
+
+        AsynchronousConsole() = default;
+
+        struct PromptBuffer : std::streambuf
+        {
+            AsynchronousConsole* parent = nullptr;
+
+            std::streambuf* under = nullptr;
+            std::mutex writeMutex;
+
+            int_type overflow(int_type ch) override
+            {
+                if (ch == traits_type::eof())
+                    return traits_type::eof();
+
+                std::lock_guard<std::mutex> lk(writeMutex);
+                under->sputc(static_cast<char>(ch));
+
+                if (ch == '\n')
+                    parent->PrintPromptUnsafe();
+
+                return ch;
+            }
+
+            std::streamsize xsputn(const char* s, std::streamsize n) override
+            {
+                std::lock_guard<std::mutex> lk(writeMutex);
+
+                auto w = under->sputn(s, n);
+
+                if (n > 0 && s[n - 1] == '\n')
+                    parent->PrintPromptUnsafe();
+
+                return w;
+            }
+
+            int sync() override
+            {
+                return under->pubsync();
+            }
+
+        } promptBuffer;
+
+        void PrintPrompt()
+        {
+            std::lock_guard<std::mutex> guard(promptMutex);
+
+            if (originalBuffer)
+            {
+                originalBuffer->sputn("> ", 2);
+                originalBuffer->pubsync();
+            }
+        }
+
+        void PrintPromptUnsafe()
+        {
+            if (!promptBuffer.under)
+                return;
+
+            promptBuffer.under->sputn("> ", 2);
+            promptBuffer.under->pubsync();
+        }
+
+        std::mutex mutex;
+        std::mutex promptMutex;
+        std::atomic<bool> running{ false };
+        bool attached = false;
+        std::thread inputThread;
+        LineCallback onLine;
+
+        std::streambuf* originalBuffer = nullptr;
+
+        static std::once_flag initializationFlag;
+        static std::unique_ptr<AsynchronousConsole> instance;
+
+    };
+
+    std::once_flag AsynchronousConsole::initializationFlag;
+    std::unique_ptr<AsynchronousConsole> AsynchronousConsole::instance;
+
     class ServerApplication final
     {
 
@@ -41,6 +225,8 @@ namespace Blaster::Server
 
         void PreInitialize()
         {
+            CommandManager::GetInstance().Register(CommandSpeak::Create());
+
 #ifdef _WIN32
             PhysicsDebugger::Initialize();
 #endif
@@ -50,7 +236,7 @@ namespace Blaster::Server
         {
             std::uint16_t port;
 
-            std::cout << "Enter PORT: ";
+            std::cout << "Enter PORT: \n";
             std::cin >> port;
             
             ServerNetwork::GetInstance().Initialize(port);
@@ -354,6 +540,15 @@ namespace Blaster::Server
             blueTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::BLUE));
             blueTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
             blueTeamBeaconObject->AddComponent(Rigidbody::Create());
+
+            AsynchronousConsole::GetInstance().AttachPromptToStdout();
+            AsynchronousConsole::GetInstance().Start([this](const std::string& line)
+                {
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, line]
+                        {
+                            this->OnConsoleLine(line);
+                        });
+                });
         }
 
         bool IsRunning()
@@ -395,6 +590,9 @@ namespace Blaster::Server
             PhysicsWorld::GetInstance().Uninitialize();
 
             ServerNetwork::GetInstance().Uninitialize();
+
+            AsynchronousConsole::GetInstance().Stop();
+            AsynchronousConsole::GetInstance().DetachPromptFromStdout();
         }
 
         static ServerApplication& GetInstance()
@@ -453,6 +651,73 @@ namespace Blaster::Server
 
             if (blueAlive == 0 && isBlueBeaconDestroyed)
                 BroadcastAnnouncement("Team BLUE has been eliminated!");
+        }
+
+        void OnConsoleLine(std::string line)
+        {
+            line = TrimCopy(line);
+
+            if (line.empty())
+                return;
+
+            if (!line.empty() && line[0] == '/')
+            {
+                try
+                {
+                    std::string message;
+
+                    ExecuteCommand(CommandSenderServer(), line, message);
+
+                    std::cout << message << std::endl;
+                }
+                catch (const std::exception& e)
+                {
+                    std::cout << "Command arguement error: " << e.what() << "\n";
+                }
+
+                return;
+            }
+
+            std::cout << "[Server]: " << line << "\n";
+        }
+
+        void ExecuteCommand(const CommandSender& sender, const std::string& line, std::string& out)
+        {
+            CommandDescriptor descriptor = CommandParser::ParseLine(line);
+
+            if (!CommandManager::GetInstance().Has(descriptor.name))
+            {
+                out = "Command '" + descriptor.name + "' does not exist!";
+                return;
+            }
+
+            const auto& command = CommandManager::GetInstance().Get(descriptor.name).value();
+
+            if (command->GetRequiredAuthority() > sender.GetAuthority())
+            {
+                out = "Sender '" + sender.GetSenderName() + "' doesn't have authority level '" + std::to_string((uint8_t)sender.GetAuthority()) + "' required to run command '" + descriptor.name + "'!";
+                return;
+            }
+
+            if (int code = command->Run(sender, descriptor); code != 0)
+            {
+                out = "Command '" + descriptor.name + "' failed with exit code '" + std::to_string(code) + "'! Usage: " + command->GetDescription();
+                return;
+            }
+
+            out = "Command '" + descriptor.name + "' succeeded with no errors";
+        }
+
+        std::string TrimCopy(const std::string& input)
+        {
+            const auto a = input.find_first_not_of(" \t\r\n");
+
+            if (a == std::string::npos)
+                return {};
+
+            const auto b = input.find_last_not_of(" \t\r\n");
+
+            return input.substr(a, b - a + 1);
         }
 
         bool isRedBeaconDestroyed = false;

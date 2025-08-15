@@ -17,7 +17,7 @@ namespace Blaster::Client::Render
 
 		std::shared_ptr<Shader> Register(std::shared_ptr<Shader> object) override
 		{
-			auto name = object->GetName();
+			auto name = object->GetRegistryName();
 
 			if (shaderMap.contains(name))
 			{

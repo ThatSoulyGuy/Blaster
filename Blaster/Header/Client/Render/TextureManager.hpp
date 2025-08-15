@@ -18,7 +18,7 @@ namespace Blaster::Client::Render
 
 		std::shared_ptr<Texture> Register(std::shared_ptr<Texture> object) override
 		{
-			auto name = object->GetName();
+			auto name = object->GetRegistryName();
 
 			if (textureMap.contains(name))
 			{

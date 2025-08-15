@@ -90,7 +90,7 @@ namespace Blaster::Client::Render
 		}
 
 		[[nodiscard]]
-		std::string GetName() const
+		std::string GetRegistryName() const
 		{
 			return name;
 		}

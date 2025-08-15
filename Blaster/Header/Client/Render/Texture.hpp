@@ -27,7 +27,7 @@ namespace Blaster::Client::Render
         Texture& operator=(Texture&&) = delete;
 
         [[nodiscard]]
-        std::string GetName() const
+        std::string GetRegistryName() const
         {
             return name;
         }

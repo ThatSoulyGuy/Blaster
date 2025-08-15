@@ -22,6 +22,7 @@
 #include "Independent/Physics/CharacterController.hpp"
 #include "Independent/Physics/Raycast.hpp"
 #include "Independent/ComponentRegistry.hpp"
+#include "Server/Command/CommandSender.hpp"
 #include "Server/Entity/Entities/EntityCommands.hpp"
 #include "Server/Entity/LivingEntity.hpp"
 
@@ -37,10 +38,11 @@ using namespace Blaster::Independent::Physics::Colliders;
 using namespace Blaster::Independent::Physics;
 using namespace Blaster::Independent::Thread;
 using namespace Blaster::Independent::Item;
+using namespace Blaster::Server::Command;
 
 namespace Blaster::Server::Entity::Entities
 {
-    class EntityPlayer final : public LivingEntity
+    class EntityPlayer final : public LivingEntity, public CommandSender
     {
 
     public:
@@ -190,6 +192,25 @@ namespace Blaster::Server::Entity::Entities
         bool GetCanJump() const override
         {
             return true;
+        }
+
+        [[nodiscard]]
+        std::string GetSenderName() const override
+        {
+            return GetGameObject()->GetName().substr(7);
+        }
+
+        [[nodiscard]]
+        CommandAuthority GetAuthority() const override
+        {
+            return authority;
+        }
+
+        void SetAuthority(const CommandAuthority& authority)
+        {
+            this->authority = authority;
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
         }
 
         static std::shared_ptr<EntityPlayer> Create(const Team& team)
@@ -1075,6 +1096,7 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<GameObject> modelGameObject;
 
         Team team;
+        CommandAuthority authority = CommandAuthority::PLAYER;
 
 #ifndef IS_SERVER
         float stepTimer = 0.f;

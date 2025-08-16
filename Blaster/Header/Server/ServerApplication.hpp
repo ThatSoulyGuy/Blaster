@@ -18,6 +18,7 @@
 #include "Independent/Utility/Time.hpp"
 #include "Server/Command/CommandDefinitions.hpp"
 #include "Server/Command/CommandManager.hpp"
+#include "Server/Command/CommandNetworking.hpp"
 #include "Server/Entity/Entities/EntityPlayer.hpp"
 #include "Server/Network/ServerNetwork.hpp"
 
@@ -493,12 +494,7 @@ namespace Blaster::Server
 
             ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_Chat, [](NetworkId who, std::vector<std::uint8_t> data)
                 {
-                    auto parts = CommonNetwork::DisassembleData(data);
-
-                    if (parts.empty())
-                        return;
-
-                    std::string text = std::any_cast<std::string>(parts[0]);
+                    auto text = std::any_cast<std::string>(CommonNetwork::DisassembleData(data)[0]);
 
                     if (text.size() > 256)
                         text.resize(256);
@@ -513,8 +509,23 @@ namespace Blaster::Server
 
                     std::string line = "[" + name + "]: " + text;
 
+                    std::cout << "[Chat] " << line << std::endl;
+
                     for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
                         ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_Chat, line);
+                });
+
+            ServerNetwork::GetInstance().RegisterReceiver(PacketType::C2S_ClientCommand, [this](NetworkId who, std::vector<std::uint8_t> data)
+                {
+                    auto packet = std::any_cast<CommandPacket>(CommonNetwork::DisassembleData(data)[0]);
+
+                    std::string message;
+
+                    ExecuteCommand(CommandSenderGeneric{ packet.senderName, packet.senderAuthority }, packet.line, message);
+
+                    std::cout << "Command Sender '" << packet.senderName << "' executed command '" << CommandParser::ParseLine(packet.line).name << "'." << std::endl;
+
+                    ServerNetwork::GetInstance().SendTo(who, PacketType::S2C_Chat, message);
                 });
 
             PhysicsWorld::GetInstance().Initialize();

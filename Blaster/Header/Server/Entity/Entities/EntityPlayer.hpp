@@ -3,6 +3,7 @@
 #include "Client/Core/InputManager.hpp"
 #include "Client/Network/ClientNetwork.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
+#include "Client/Render/BillboardedText.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/ShaderManager.hpp"
@@ -22,7 +23,7 @@
 #include "Independent/Physics/CharacterController.hpp"
 #include "Independent/Physics/Raycast.hpp"
 #include "Independent/ComponentRegistry.hpp"
-#include "Server/Command/CommandSender.hpp"
+#include "Server/Command/CommandNetworking.hpp"
 #include "Server/Entity/Entities/EntityCommands.hpp"
 #include "Server/Entity/LivingEntity.hpp"
 
@@ -295,9 +296,21 @@ namespace Blaster::Server::Entity::Entities
             }
 
             modelGameObject->SetLocallyActive(!GetGameObject()->IsLocallyControlled());
+
+            const auto tagGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("nametag", true), GetGameObject()->GetAbsolutePath());
+
+            std::string label = GetGameObject()->GetName();
+
+            if (label.rfind("player-", 0) == 0)
+                label = label.substr(7);
+
+            const bool isRed = (team == Team::RED);
+
+            tagGameObject->AddComponent(BillboardedText::CreateForTeam(label, { "Blaster", "Font/DS-DIGIB.TTF"}, isRed, 4.0f, 22.0f));
+
+            tagGameObject->GetTransform3d()->SetLocalPosition({ 0.0f, 15.0f, 0.0f });
 #endif
         }
-
 
         void InitializeCamera()
         {
@@ -549,7 +562,7 @@ namespace Blaster::Server::Entity::Entities
                                 gameObject->GetTransform2d()->SetDimensions({ 536.0f, 28.0f });
                             })
                             .Call<&UIElementTextField::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 24, 0, 4))
-                            .Call<&UIElementTextField::SetPlaceholder>("Press Enter to chat")
+                            .Call<&UIElementTextField::SetPlaceholder>("Press T to chat")
                             .Call<&UIElementTextField::SetTextColor>(Vector<float, 3>{ 1.0f, 1.0f, 1.0f })
                             .Call<&UIElementTextField::SetPlaceholderColor>(Vector<float, 3>{ 0.75f, 0.75f, 0.75f })
                             .Call<&UIElementTextField::SetSubmitOnEnter>(false)
@@ -655,14 +668,28 @@ namespace Blaster::Server::Entity::Entities
                 {
                     std::string message = chatInputField->GetText();
 
-                    while (!message.empty() && (message.back() == ' ' || message.back() == '\t'))
-                        message.pop_back();
+                    if (!message.empty() && message[0] != '/')
+                    {
+                        while (!message.empty() && (message.back() == ' ' || message.back() == '\t'))
+                            message.pop_back();
 
-                    while (!message.empty() && (message.front() == ' ' || message.front() == '\t'))
-                        message.erase(message.begin());
+                        while (!message.empty() && (message.front() == ' ' || message.front() == '\t'))
+                            message.erase(message.begin());
 
-                    if (!message.empty())
-                        Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Chat, message);
+                        if (!message.empty())
+                            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_Chat, message);
+                    }
+                    else if (!message.empty() && message[0] == '/')
+                    {
+                        while (!message.empty() && (message.back() == ' ' || message.back() == '\t'))
+                            message.pop_back();
+
+                        while (!message.empty() && (message.front() == ' ' || message.front() == '\t'))
+                            message.erase(message.begin());
+
+                        if (!message.empty())
+                            Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_ClientCommand, CommandPacket{ GetSenderName(), GetAuthority(), message });
+                    }
 
                     chatInputField->SetText("");
                     chatInputField->Generate();
@@ -958,11 +985,11 @@ namespace Blaster::Server::Entity::Entities
                 lastSlotIds[i] = itemId;
 
                 const auto item = ItemRegistry::GetInstance().Get(itemId).value();
-                const auto tex = TextureManager::GetInstance().Get(item->GetTextureName()).value();
+                const auto texture = TextureManager::GetInstance().Get(item->GetTextureName()).value();
 
                 auto slotImage = hotbarSlotImageList[i];
 
-                slotImage->SetTexture(tex);
+                slotImage->SetTexture(texture);
                 slotImage->Generate();
             }
         }

@@ -22,7 +22,7 @@ namespace Blaster::Server::Command
 
         using Map = std::unordered_map<std::string, CommandArgument>;
 
-        struct Object { Map fields; };
+        struct Object { Map fieldList; };
 
         using Value = std::variant<std::string, int64_t, double, std::uint8_t, bool, Object, Array>;
 
@@ -109,7 +109,7 @@ namespace Blaster::Server::Command
             if (!IsObject())
                 return nullptr;
 
-            const auto& m = AsObject().fields;
+            const auto& m = AsObject().fieldList;
 
             auto it = m.find(key);
 
@@ -359,7 +359,7 @@ namespace Blaster::Server::Command
 
                 CommandArgument val = ParseValue();
 
-                result.fields.emplace(std::move(key), std::move(val));
+                result.fieldList.emplace(std::move(key), std::move(val));
 
                 SkipWhitespace();
 

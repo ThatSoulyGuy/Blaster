@@ -83,10 +83,6 @@ namespace Blaster::Independent::Physics
 				const btTransform t = ghost->getWorldTransform();
 				const btVector3 o = t.getOrigin();
 				btMatrix3x3 b = t.getBasis();
-
-				std::cerr << "[KCC] up=(" << up.x() << "," << up.y() << "," << up.z() << ")" << " gravity=(" << grav.x() << "," << grav.y() << "," << grav.z() << ")\n";
-				std::cerr << "[KCC] ghost pos=(" << o.x() << "," << o.y() << "," << o.z() << ")\n";
-				std::cerr << "[KCC] basis columns X=(" << b[0][0] << "," << b[1][0] << "," << b[2][0] << ") Y=(" << b[0][1] << "," << b[1][1] << "," << b[2][1] << ") Z=(" << b[0][2] << "," << b[1][2] << "," << b[2][2] << ")\n";
 			}
 
 			auto* world = PhysicsWorld::GetInstance().GetHandle();

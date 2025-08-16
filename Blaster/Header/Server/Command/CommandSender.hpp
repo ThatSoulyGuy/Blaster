@@ -35,4 +35,31 @@ namespace Blaster::Server::Command
 		}
 
 	};
+
+	class CommandSenderGeneric final : public CommandSender
+	{
+
+	public:
+
+		CommandSenderGeneric() = default;
+		CommandSenderGeneric(const std::string& name, const CommandAuthority& authority) : name(name), authority(authority) { }
+
+		[[nodiscard]]
+		std::string GetSenderName() const override
+		{
+			return name;
+		}
+
+		[[nodiscard]]
+		CommandAuthority GetAuthority() const override
+		{
+			return authority;
+		}
+
+	private:
+
+		std::string name;
+		CommandAuthority authority;
+
+	};
 }

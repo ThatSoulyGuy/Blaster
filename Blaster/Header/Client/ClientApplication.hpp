@@ -57,6 +57,7 @@ namespace Blaster::Client
             ShaderManager::GetInstance().Register(Shader::Create("blaster.simple", { "Blaster", "Shader/Simple" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.colored_ui", { "Blaster", "Shader/ColoredUI" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.text_ui", { "Blaster", "Shader/TextUI" }));
+            ShaderManager::GetInstance().Register(Shader::Create("blaster.textured_billboard", { "Blaster", "Shader/TexturedBillboard" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.textured_ui", { "Blaster", "Shader/TexturedUI" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.error", { "Blaster", "Texture/Error.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_lens", { "Blaster", "Texture/Player/MtfLens.png" }));

@@ -182,7 +182,7 @@ namespace Blaster::Server::Entity::Entities
 
         float GetRunningMultiplier() const override
         {
-            return 1.2f;
+            return 1.8f;
         }
 
         float GetJumpHeight() const override
@@ -351,6 +351,25 @@ namespace Blaster::Server::Entity::Entities
                         .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.crosshair").value())
                         .Call<&UIElementImage::Generate>()
                     .MoveDown()
+                    .AddElement<UIElementImage>("ui_information_background")
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                        .Call<&UIElementImage::Generate>()
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetDimensions({ 423.0f, 95.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                            })
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_stamina_text")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetPosition({ 10.0f, -60.0f });
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::LEFT);
+                            })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 32, 0, 8))
+                        .Call<&UIElementText::SetText>("Stamina: 100")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
                     .AddElement<UIElementText>("ui_health_text")
                         .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
                             {
@@ -435,6 +454,7 @@ namespace Blaster::Server::Entity::Entities
 #endif
 
             healthText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_health_text").value()->GetComponent<UIElementText>().value();
+            staminaText = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_stamina_text").value()->GetComponent<UIElementText>().value();
             hotbarSelector = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_selector").value();
 
             const auto& slotContainer = GameObjectManager::GetInstance().Get(hudRoot->GetAbsolutePath() + ".ui_hotbar_grid").value();
@@ -877,17 +897,39 @@ namespace Blaster::Server::Entity::Entities
 
             const bool hasMoveInput = Vector<float, 3>::LengthSquared(direction) > epsilon;
 
+            const float dt = Blaster::Independent::Utility::Time::GetInstance().GetDeltaTime();
+            const bool sprintHeld = InputManager::GetInstance().GetKeyState(KeyCode::LEFT_SHIFT, KeyState::HELD);
+            const bool canSprint = hasMoveInput && stamina > 0.0f && controller->OnGround();
+
+            if (sprintHeld && canSprint)
+            {
+                sprinting = true;
+                stamina = std::max(0.0f, stamina - staminaDrainPerSecond * dt);
+                staminaRegenCooldown = staminaRegenDelay;
+            }
+            else
+            {
+                sprinting = false;
+
+                if (staminaRegenCooldown > 0.0f)
+                    staminaRegenCooldown = std::max(0.0f, staminaRegenCooldown - dt);
+                else
+                    stamina = std::min(maxStamina, stamina + staminaRegenPerSecond * dt);
+            }
+
+            const float speedMult = sprinting ? GetRunningMultiplier() : 1.0f;
+
             if (hasMoveInput)
             {
                 direction = Vector<float, 3>::Normalize(direction);
-                controller->SetWalkDirection(direction * GetMovementSpeed());
+                controller->SetWalkDirection(direction * GetMovementSpeed() * speedMult);
             }
             else
                 controller->SetWalkDirection({ 0.0f, 0.0f, 0.0f });
 
 #ifndef IS_SERVER
             {
-                const float deltaTime = Blaster::Independent::Utility::Time::GetInstance().GetDeltaTime();
+                const float deltaTime = dt;
 
                 if (hasMoveInput && controller->OnGround())
                 {
@@ -901,7 +943,7 @@ namespace Blaster::Server::Entity::Entities
                             soundClip.value()->Play();
                         }
 
-                        stepTimer = 0.45f;
+                        stepTimer = sprinting ? 0.32f : 0.45f;
                     }
                 }
                 else
@@ -911,15 +953,17 @@ namespace Blaster::Server::Entity::Entities
 
             if (hasMoveInput)
             {
+                const float animationSpeed = 1.8f * Vector<float, 3>::LengthSquared(direction) * (sprinting ? GetRunningMultiplier() : 1.0f);
+
                 if (currentViewModelItem == 0)
                 {
                     if (!animator->IsPlaying("mtf2.walk"))
-                        animator->Play("mtf2.walk", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
+                        animator->Play("mtf2.walk", blendTime, animationSpeed);
                 }
                 else
                 {
                     if (!animator->IsPlaying("mtf2.walk_hold"))
-                        animator->Play("mtf2.walk_hold", blendTime, 1.8f * Vector<float, 3>::LengthSquared(direction));
+                        animator->Play("mtf2.walk_hold", blendTime, animationSpeed);
                 }
             }
             else
@@ -940,11 +984,11 @@ namespace Blaster::Server::Entity::Entities
                 controller->Jump();
         }
 
-
         void UpdateViewModel()
         {
 #ifndef IS_SERVER
             PresentHealthIfChanged();
+            PresentStaminaIfChanged();
             PresentHotbarIfChanged();
             PresentViewModelIfChanged();
 #endif
@@ -972,6 +1016,25 @@ namespace Blaster::Server::Entity::Entities
                 }
             }
         }
+
+#ifndef IS_SERVER
+        void PresentStaminaIfChanged()
+        {
+            const int shown = static_cast<int>(std::round(stamina));
+
+            if (shown == lastPresentedStamina)
+                return;
+
+            lastPresentedStamina = shown;
+
+            if (staminaText)
+            {
+                staminaText->SetText("Stamina: " + std::to_string(shown));
+                staminaText->Generate();
+            }
+        }
+#endif
+
 
         void PresentHotbarIfChanged()
         {
@@ -1125,6 +1188,14 @@ namespace Blaster::Server::Entity::Entities
         Team team;
         CommandAuthority authority = CommandAuthority::PLAYER;
 
+        float stamina = 100.0f;
+        float maxStamina = 100.0f;
+        float staminaDrainPerSecond = 25.0f;
+        float staminaRegenPerSecond = 15.0f;
+        float staminaRegenDelay = 0.75f;
+        float staminaRegenCooldown = 0.0f;
+        bool sprinting = false;
+
 #ifndef IS_SERVER
         float stepTimer = 0.f;
         float crosshairHitTimer = 0.f;
@@ -1135,6 +1206,7 @@ namespace Blaster::Server::Entity::Entities
 
         std::shared_ptr<GameObject> hudRoot = nullptr;
         std::shared_ptr<UIElementText> healthText = nullptr;
+        std::shared_ptr<UIElementText> staminaText = nullptr;
 
         std::shared_ptr<GameObject> hotbarSelector = nullptr;
         
@@ -1151,6 +1223,8 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<UIElementTextField> chatInputField = nullptr;
 
         std::deque<std::string> chatLines;
+
+        int lastPresentedStamina = -1;
         bool chatFocused = false;
         static constexpr std::size_t kChatMaxLines = 8;
 #endif

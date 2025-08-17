@@ -23,6 +23,12 @@ namespace Blaster::Client::UI::Elements
 
         using Font = UIElementText::Font;
 
+        ~UIElementTextField() override
+        {
+            if (sFocused == this)
+                sFocused = nullptr;
+        }
+
         UIElementTextField(const UIElementTextField&) = delete;
         UIElementTextField(UIElementTextField&&) = delete;
         UIElementTextField& operator=(const UIElementTextField&) = delete;
@@ -78,22 +84,43 @@ namespace Blaster::Client::UI::Elements
             needsGenerate = true;
         }
 
-        void SetMaxLength(std::size_t maxLen)
+        void SetMaxLength(std::size_t maxLength)
         {
-            this->maxLen = maxLen;
+            this->maxLength = maxLength;
         }
 
         std::size_t GetMaxLength() const noexcept
         {
-            return maxLen;
+            return maxLength;
         }
 
-        void SetFocused(bool isFocused)
+        void SetFocused(bool focused)
         {
-            this->isFocused = isFocused;
-            caretBlinkTimer = 0.f;
-            
-            caretVisible = true;
+            if (focused)
+            {
+                if (sFocused && sFocused != this)
+                {
+                    sFocused->isFocused = false;
+                    sFocused->caretVisible = false;
+                    sFocused->needsGenerate = true;
+                }
+
+                sFocused = this;
+
+                isFocused = true;
+                caretBlinkTimer = 0.0f;
+                caretVisible = true;
+                needsGenerate = true;
+            }
+            else
+            {
+                if (sFocused == this)
+                    sFocused = nullptr;
+
+                isFocused = false;
+                caretVisible = false;
+                needsGenerate = true;
+            }
         }
 
         bool IsFocused() const noexcept
@@ -101,14 +128,14 @@ namespace Blaster::Client::UI::Elements
             return isFocused;
         }
 
-        void SetSubmitOnEnter(bool s)
+        void SetSubmitOnEnter(bool submitOnEnter)
         {
-            submitOnEnter = s;
+            this->submitOnEnter = submitOnEnter;
         }
 
-        void SetOnSubmit(std::function<void(const std::string&)> cb)
+        void SetOnSubmit(std::function<void(const std::string&)> callback)
         {
-            onSubmit = std::move(cb);
+            onSubmit = std::move(callback);
         }
 
         void SetCaret(std::size_t i)
@@ -129,7 +156,19 @@ namespace Blaster::Client::UI::Elements
 
         void Update() override
         {
-            if (!font) return;
+            if (InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
+            {
+                const bool inside = IsMouseInside();
+
+                if (inside && sFocused != this)
+                {
+                    SetFocused(true);
+
+                    caret = text.size();
+                }
+                else if (!inside && sFocused == this)
+                    SetFocused(false);
+            }
 
             bool changed = false;
 
@@ -144,11 +183,10 @@ namespace Blaster::Client::UI::Elements
                         if (c < 32 || c > 126)
                             continue;
 
-                        if (text.size() >= maxLen)
+                        if (text.size() >= maxLength)
                             break;
 
                         text.insert(text.begin() + static_cast<std::ptrdiff_t>(caret), c);
-
                         ++caret;
 
                         changed = true;
@@ -163,6 +201,7 @@ namespace Blaster::Client::UI::Elements
                     {
                         text.erase(text.begin() + static_cast<std::ptrdiff_t>(caret - 1));
                         --caret;
+
                         changed = true;
                     }
                 }
@@ -179,17 +218,19 @@ namespace Blaster::Client::UI::Elements
                 if (inputManager.GetKeyState(KeyCode::LEFT, KeyState::PRESSED))
                 {
                     if (caret > 0)
+                    {
                         --caret;
-
-                    changed = true;
+                        changed = true;
+                    }
                 }
 
                 if (inputManager.GetKeyState(KeyCode::RIGHT, KeyState::PRESSED))
                 {
                     if (caret < text.size())
+                    {
                         ++caret;
-
-                    changed = true;
+                        changed = true;
+                    }
                 }
 
                 if (inputManager.GetKeyState(KeyCode::HOME, KeyState::PRESSED))
@@ -201,13 +242,12 @@ namespace Blaster::Client::UI::Elements
                 if (inputManager.GetKeyState(KeyCode::END, KeyState::PRESSED))
                 {
                     caret = text.size();
-
                     changed = true;
                 }
 
                 if (submitOnEnter && inputManager.GetKeyState(KeyCode::ENTER, KeyState::PRESSED))
                 {
-                    if (onSubmit) 
+                    if (onSubmit)
                         onSubmit(text);
                 }
 
@@ -230,11 +270,13 @@ namespace Blaster::Client::UI::Elements
                 }
             }
 
-            if (changed) needsGenerate = true;
-            if (needsGenerate) Generate();
+            if (changed)
+                needsGenerate = true;
+
+            if (needsGenerate && font)
+                Generate();
         }
 
-        // ----- Mesh / shader -----
         void Generate() override
         {
             needsGenerate = false;
@@ -360,16 +402,16 @@ namespace Blaster::Client::UI::Elements
 
             if (vertices.empty())
             {
-                Render::Vertices::UIVertex v{};
+                Render::Vertices::UIVertex vertex{};
 
-                v.position = { 0,0,0 };
-                v.color = drawColor;
-                v.uvs = { 0,0 };
+                vertex.position = { 0,0,0 };
+                vertex.color = drawColor;
+                vertex.uvs = { 0,0 };
 
-                vertices.push_back(v);
-                vertices.push_back(v);
-                vertices.push_back(v);
-                vertices.push_back(v);
+                vertices.push_back(vertex);
+                vertices.push_back(vertex);
+                vertices.push_back(vertex);
+                vertices.push_back(vertex);
 
                 indices = { 0, 1, 2, 0, 2, 3 };
 
@@ -377,25 +419,24 @@ namespace Blaster::Client::UI::Elements
                 maxX = maxY = 1.f;
             }
 
-            const float boxW = std::max(1.f, maxX - minX);
-            const float boxH = std::max(1.f, maxY - minY);
-            const float invW = 1.f / boxW;
-            const float invH = 1.f / boxH;
+            const float boxWidth = std::max(1.f, maxX - minX);
+            const float boxHeight = std::max(1.f, maxY - minY);
+            const float invWidth = 1.f / boxWidth;
+            const float invHeight = 1.f / boxHeight;
 
-            for (auto& v : vertices)
+            for (auto& vertex : vertices)
             {
-                v.position.x() = (v.position.x() - minX) * invW;
-                v.position.y() = (maxY - v.position.y()) * invH;
+                vertex.position.x() = (vertex.position.x() - minX) * invWidth;
+                vertex.position.y() = (maxY - vertex.position.y()) * invHeight;
             }
 
             auto mesh = GetMesh();
 
             mesh->SetVertices(std::move(vertices));
             mesh->SetIndices(std::move(indices));
-
             mesh->Generate();
 
-            GetGameObject()->GetTransform2d()->SetDimensions({ boxW, boxH });
+            GetGameObject()->GetTransform2d()->SetDimensions({ boxWidth, boxHeight });
         }
 
         void RenderUI() override
@@ -435,8 +476,17 @@ namespace Blaster::Client::UI::Elements
             archive & BOOST_SERIALIZATION_NVP(textColor);
             archive & BOOST_SERIALIZATION_NVP(placeholderColor);
             archive & BOOST_SERIALIZATION_NVP(font);
-            archive & BOOST_SERIALIZATION_NVP(maxLen);
+            archive & BOOST_SERIALIZATION_NVP(maxLength);
             archive & BOOST_SERIALIZATION_NVP(submitOnEnter);
+        }
+
+        bool IsMouseInside() const
+        {
+            const auto [min, max] = GetGameObject()->GetTransform2d()->GetWorldRect();
+
+            const Vector<float, 2> mouse = { float(InputManager::GetInstance().GetMousePosition().x()), float(InputManager::GetInstance().GetMousePosition().y()) };
+
+            return mouse.x() >= min.x() && mouse.x() <= max.x() && mouse.y() >= min.y() && mouse.y() <= max.y();
         }
 
         std::shared_ptr<Font> font;
@@ -446,7 +496,7 @@ namespace Blaster::Client::UI::Elements
         Vector<float, 3> textColor{ 1.f, 1.f, 1.f };
         Vector<float, 3> placeholderColor{ 0.7f, 0.7f, 0.7f };
 
-        std::size_t maxLen = 256;
+        std::size_t maxLength = 256;
 
         bool isFocused = false;
         std::size_t caret = 0;
@@ -456,9 +506,15 @@ namespace Blaster::Client::UI::Elements
 
         float caretBlinkTimer = 0.f;
         bool caretVisible = false;
+
+        float paddingX = 8.0f;
+        float paddingY = 6.0f;
+
         static constexpr float caretBlinkPeriod = 0.5f;
 
         bool needsGenerate = true;
+
+        inline static UIElementTextField* sFocused = nullptr;
 
         DESCRIBE_AND_REGISTER(UIElementTextField, (UIElement), (), (), ())
     };

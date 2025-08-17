@@ -168,27 +168,31 @@ namespace Blaster::Independent::Math
             return parentPointer->GetModelMatrix() * unscaleParent * local;
         }
 
-
         std::pair<Vector<float, 2>, Vector<float, 2>> GetWorldRect() const
         {
-            if (parent)
+            const Matrix<float, 4, 4> M = GetModelMatrix();
+
+            const std::array<Vector<float, 2>, 4> unit =
             {
-                auto parentRect = parent.value().lock()->GetWorldRect();
-                Vector<float, 2> parentSize = parentRect.second - parentRect.first;
+                Vector<float, 2>{0.0f, 0.0f},
+                Vector<float, 2>{1.0f, 0.0f},
+                Vector<float, 2>{1.0f, 1.0f},
+                Vector<float, 2>{0.0f, 1.0f}
+            };
 
-                auto [min, max] = ResolveRect(*this, parentSize);
+            Vector<float, 2> mn{ std::numeric_limits<float>::max(), std::numeric_limits<float>::max() };
+            Vector<float, 2> mx{ std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest() };
 
-                return { min + parentRect.first, max + parentRect.first };
-            }
-            else
+            for (const auto& p : unit)
             {
-#ifdef IS_SERVER
-                throw std::runtime_error("Cannot use 'Blaster::Client::Core::Window' on server!");
-#endif
-                Vector<float, 2> canvasSize = { float(Window::GetInstance().GetDimensions().x()), float(Window::GetInstance().GetDimensions().y()) };
+                const Vector<float, 4> v{ p.x(), p.y(), 0.0f, 1.0f };
+                const Vector<float, 4> w = M * v;
 
-                return ResolveRect(*this, canvasSize);
+                mn[0] = std::min(mn[0], w[0]);  mn[1] = std::min(mn[1], w[1]);
+                mx[0] = std::max(mx[0], w[0]);  mx[1] = std::max(mx[1], w[1]);
             }
+
+            return { mn, mx };
         }
 
         static std::shared_ptr<Transform2d> Create(const Vector<float, 2>& position, float rotation, const Vector<float, 2>& scale)

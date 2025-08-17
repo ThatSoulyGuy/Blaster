@@ -471,6 +471,44 @@ namespace Blaster::Server::Entity::Entities
                         .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
                         .Call<&UIElementImage::Generate>()
                     .MoveDown()
+                    .AddLayout<UILayoutStack>("ui_button_layout", UILayoutStack::Orientation::VERTICAL, Vector<float, 2>{ 768.0f, 96.0f }, Vector<float, 2>{ 4.0f, 4.0f }, 10.0f)
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetDimensions({ 768.0f, 288.0f });
+                        })
+                        .AddElement<UIElementButton>("ui_resume_button")
+                            .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
+                            {
+                                pauseMenuRoot->SetLocallyActive(false);
+                            })
+                            .AddElement<UIElementImage>("ui_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                            .AddElement<UIElementText>("ui_text")
+                                .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                .Call<&UIElementText::SetText>("RESUME")
+                                .Call<&UIElementText::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                        .AddElement<UIElementButton>("ui_disconnect_button")
+                            .Call<&UIElementButton::SetOnClick>([this, absolutePath = GetGameObject()->GetAbsolutePath()]
+                            {
+                                pauseMenuRoot->SetLocallyActive(false);
+
+                                Blaster::Client::Network::ClientNetwork::GetInstance().Disconnect();
+                            })
+                            .AddElement<UIElementImage>("ui_image")
+                                .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                                .Call<&UIElementImage::Generate>()
+                            .MoveDown()
+                            .AddElement<UIElementText>("ui_text")
+                                .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 48, 0, 8))
+                                .Call<&UIElementText::SetText>("DISCONNECT")
+                                .Call<&UIElementText::Generate>()
+                            .MoveDown()
+                        .MoveDown()
+                    .MoveDown()
                 .Finish();
 
             pauseMenuRoot->SetLocallyActive(false);

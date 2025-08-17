@@ -30,10 +30,25 @@ namespace Blaster::Client::Network
                 return;
 
             this->stringId = stringId;
+            this->haveNetworkId = false;
+            this->pendingStringId = false;
+            this->sentStringId = false;
+            this->networkId = 0;
 
-            TcpProtocol::resolver res{ioContext};
+            ioContext.restart();
 
-            const auto resolution = res.resolve(host, std::to_string(port));
+            {
+                disconnectTimer.cancel();
+                disconnectTimerActive = false;
+
+                boost::system::error_code errorCode;
+                socket.close(errorCode);
+            }
+
+            socket = TcpProtocol::socket{ ioContext };
+
+            TcpProtocol::resolver resolver{ ioContext };
+            const auto resolution = resolver.resolve(host, std::to_string(port));
 
             try
             {
@@ -49,9 +64,10 @@ namespace Blaster::Client::Network
 
             BeginRead();
 
-            ioThread = std::thread([this]{ ioContext.run(); });
+            ioThread = std::thread([this] { ioContext.run(); });
             running = true;
         }
+
 
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
         {
@@ -85,6 +101,11 @@ namespace Blaster::Client::Network
             return networkId;
         }
 
+        bool IsRunning() const
+        {
+            return running.load();
+        }
+
         void AddOnServerConnectionLostCallback(const std::function<void()>& callback)
         {
             onServerConnectionLostCallbackList.push_back(callback);
@@ -95,17 +116,58 @@ namespace Blaster::Client::Network
             return ioContext;
         }
 
+        void Disconnect(bool notifyCallbacks = true)
+        {
+            if (!running.load(std::memory_order_acquire))
+                return;
+
+            boost::asio::post(strand, [this, notifyCallbacks]()
+                {
+                    if (disconnecting.exchange(true, std::memory_order_acq_rel))
+                        return;
+
+                    disconnectTimer.cancel();
+                    disconnectTimerActive = false;
+
+                    writeQueue.clear();
+
+                    boost::system::error_code ec;
+                    socket.shutdown(TcpProtocol::socket::shutdown_both, ec);
+                    socket.close(ec);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(this, [this, notifyCallbacks]()
+                        {
+                            if (notifyCallbacks)
+                                NotifyConnectionLost();
+                            else
+                                Uninitialize();
+                        });
+                });
+        }
+
         void Uninitialize()
         {
-            if (!running)
-                return;
+            disconnectTimer.cancel();
+            disconnectTimerActive = false;
+
+            boost::system::error_code errorCode;
+            socket.close(errorCode);
+
+            inbox.clear();
+            writeQueue.clear();
 
             ioContext.stop();
 
             if (ioThread.joinable())
                 ioThread.join();
 
+            networkId = 0;
+            haveNetworkId = false;
+            pendingStringId = false;
+            sentStringId = false;
             running = false;
+
+            disconnecting.store(false, std::memory_order_release);
         }
 
         static ClientNetwork& GetInstance()
@@ -129,8 +191,10 @@ namespace Blaster::Client::Network
             {
                 std::lock_guard lock(callbackMutex);
 
-                toRun.swap(onServerConnectionLostCallbackList);
+                toRun = onServerConnectionLostCallbackList;
             }
+
+            Uninitialize();
 
             for (auto& callback : toRun)
             {
@@ -143,9 +207,6 @@ namespace Blaster::Client::Network
                     std::cerr << "Execption thrown from function: '" << exception.what() << "'!" << std::endl;
                 }
             }
-
-            ioContext.stop();
-            running = false;
         }
 
         void StartWrite()
@@ -212,38 +273,47 @@ namespace Blaster::Client::Network
         {
             if (header.type == PacketType::S2C_RequestStringId)
             {
-                Send(PacketType::C2S_StringId, stringId);
-
+                if (haveNetworkId.load(std::memory_order_relaxed))
+                    SendStringIdOnce();
+                else
+                    pendingStringId.store(true, std::memory_order_relaxed);
+                
                 return;
             }
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
                 const NetworkId id = std::any_cast<NetworkId>(CommonNetwork::DisassembleData(data)[0]);
-
                 std::cout << "Received NetworkId ('" << id << "') from the server." << std::endl;
 
                 this->networkId = id;
+                haveNetworkId.store(true, std::memory_order_relaxed);
 
+                SendStringIdOnce();
+
+                pendingStringId.store(false, std::memory_order_relaxed);
                 return;
             }
 
-            if (const auto resul = packetHandlerMap.find(header.type); resul != packetHandlerMap.end())
+            if (const auto packet = packetHandlerMap.find(header.type); packet != packetHandlerMap.end())
             {
-                for (auto& function: resul->second)
+                for (auto& function : packet->second)
                     function(std::move(data));
             }
         }
 
         void StartDisconnectCountdown()
         {
+            if (disconnecting.load(std::memory_order_relaxed))
+                return;
+
             if (disconnectTimerActive.exchange(true))
                 return;
 
             disconnectTimer.expires_after(std::chrono::seconds(2));
             disconnectTimer.async_wait(boost::asio::bind_executor(strand, [this](const ErrorCode& errorCode)
                 {
-                    if (!errorCode)
+                    if (!errorCode && !disconnecting.load(std::memory_order_relaxed))
                     {
                         MainThreadExecutor::GetInstance().EnqueueTask(this, [&]()
                             {
@@ -265,13 +335,25 @@ namespace Blaster::Client::Network
             disconnectTimer.cancel();
         }
 
+        void SendStringIdOnce()
+        {
+            bool expected = false;
+
+            if (sentStringId.compare_exchange_strong(expected, true))
+                Send(PacketType::C2S_StringId, stringId);
+        }
+
         boost::asio::io_context ioContext;
         TcpProtocol::socket socket{ioContext};
         std::thread ioThread;
         std::atomic<bool> running = false;
+        std::atomic<bool> haveNetworkId{ false };
+        std::atomic<bool> pendingStringId{ false };
+        std::atomic<bool> sentStringId{ false };
 
         boost::asio::steady_timer disconnectTimer{ ioContext };
         std::atomic<bool> disconnectTimerActive{ false };
+        std::atomic<bool> disconnecting{ false };
 
         std::vector<std::function<void()>> onServerConnectionLostCallbackList;
 

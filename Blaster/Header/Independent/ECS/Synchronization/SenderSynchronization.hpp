@@ -323,6 +323,22 @@ namespace Blaster::Independent::ECS::Synchronization
             lastHashMap.erase(comp.get());
         }
 
+        void Reset()
+        {
+            dirtyGameObjectSet.clear();
+            dirtyComponentSet.clear();
+
+            flushRequested = false;
+            nextSequence = 1;
+
+            lastHashMap.clear();
+
+            ownerCacheMap.clear();
+
+            gSnapshotApplyDepth = 0;
+            gDeferredDirty.clear();
+        }
+
         static SenderSynchronization& GetInstance()
         {
             std::call_once(initializationFlag, [&]()
@@ -517,7 +533,7 @@ namespace Blaster::Independent::ECS::Synchronization
         std::unordered_set<DirtyCompKey, DirtyCompHash, DirtyCompEqual> dirtyComponentSet;
 
         std::atomic<bool> flushRequested = false;
-        std::atomic<std::uint64_t> nextSeq = 1;
+        std::atomic<std::uint64_t> nextSequence = 1;
 
         std::unordered_map<const Component*, std::uint64_t> lastHashMap;
 

@@ -330,6 +330,17 @@ namespace Blaster::Client::Core
             pendingScroll = 0.0f;
         }
 
+        void Reset()
+        {
+            mousePosition = { 0.0f, 0.0f };
+            mouseDelta = { 0.0f, 0.0f };
+
+            typedAscii = "";
+
+            scrollDelta = 0.0f;
+            pendingScroll = 0.0f;
+        }
+
         static InputManager& GetInstance()
         {
             std::call_once(initializationFlag, []()

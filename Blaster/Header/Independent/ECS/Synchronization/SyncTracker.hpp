@@ -92,6 +92,11 @@ namespace Blaster::Independent::ECS::Synchronization
             return (it == peerStateMap.end()) ? 0 : it->second.lastAckedOutgoing;
         }
 
+        void Reset()
+        {
+            peerStateMap.clear();
+        }
+
         static SyncTracker& GetInstance()
         {
             std::call_once(initializationFlag, [&]()

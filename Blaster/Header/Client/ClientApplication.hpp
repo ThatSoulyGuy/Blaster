@@ -17,6 +17,13 @@
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
 #include "Client/Render/Vertices/FatVertex.hpp"
+#include "Client/UI/Elements/UIElementButton.hpp"
+#include "Client/UI/Elements/UIElementImage.hpp"
+#include "Client/UI/Elements/UIElementText.hpp"
+#include "Client/UI/Elements/UIElementTextField.hpp"
+#include "Client/UI/Layouts/UILayoutGrid.hpp"
+#include "Client/UI/Layouts/UILayoutStack.hpp"
+#include "Client/UI/UIBuilder.hpp"
 #include "Independent/Physics/PhysicsSystem.hpp"
 #include "Independent/ECS/Synchronization/ReceiverSynchronization.hpp"
 #include "Independent/ECS/GameObjectManager.hpp"
@@ -30,6 +37,9 @@ using namespace Blaster::Client::Core;
 using namespace Blaster::Client::Network;
 using namespace Blaster::Client::Render::Vertices;
 using namespace Blaster::Client::Render;
+using namespace Blaster::Client::UI::Elements;
+using namespace Blaster::Client::UI::Layouts;
+using namespace Blaster::Client::UI;
 using namespace Blaster::Independent::Physics; 
 using namespace Blaster::Independent::ECS::Synchronization;
 using namespace Blaster::Independent::Item;
@@ -96,31 +106,109 @@ namespace Blaster::Client
 
         void Initialize()
         {
-            std::string ip;
-            std::uint16_t port;
+            RegisterNetworkHandlersOnce();
 
-            std::cout << "Enter IPv4: ";
-            std::cin >> ip;
+            if (!reconnectCallbackRegisteredOnce)
+            {
+                ClientNetwork::GetInstance().AddOnServerConnectionLostCallback([this]()
+                    {
+                        GameObjectManager::GetInstance().Clear();
+                        SenderSynchronization::GetInstance().Reset();
+                        SyncTracker::GetInstance().Reset();
+                        InputManager::GetInstance().Reset();
 
-            std::cout << "Enter PORT: ";
-            std::cin >> port;
+                        awaitingReconnectPrompt = true;
+                    });
 
-            std::random_device device;
-            std::mt19937 generator(device());
+                reconnectCallbackRegisteredOnce = true;
+            }
+            
+            PhysicsWorld::GetInstance().Initialize();
 
-            constexpr int min = 1;
-            constexpr int max = 100;
+            if (!ClientNetwork::GetInstance().IsRunning())
+                EnsureConnectMenu();
+        }
 
-            std::uniform_int_distribution distribution(min, max);
+        bool IsRunning()
+        {
+            return Window::GetInstance().IsRunning();
+        }
 
-            const int randomNumber = distribution(generator);
+        void Update()
+        {
+            if (!ClientNetwork::GetInstance().IsRunning())
+            {
+                EnsureConnectMenu();
 
-            ClientNetwork::GetInstance().Initialize(ip, port, "Player" + std::to_string(randomNumber));
+                InputManager::GetInstance().SetMouseMode(MouseMode::FREE);
+            }
+            else
+            {
+                if (connectMenuRoot)
+                    DestroyConnectMenu();
+            }
 
-            ClientNetwork::GetInstance().AddOnServerConnectionLostCallback([&]()
-                {
-                    GameObjectManager::GetInstance().Clear();
-                });
+            MainThreadExecutor::GetInstance().Execute();
+
+            if (awaitingReconnectPrompt)
+            {
+                EnsureConnectMenu();
+
+                awaitingReconnectPrompt = false;
+            }
+
+            GameObjectManager::GetInstance().Update();
+
+            PhysicsSystem::GetInstance().Update();
+
+            TranslationBuffer::GetInstance().Update();
+
+            Time::GetInstance().Update();
+        }
+
+        void Render()
+        {
+            Window::Clear();
+
+            GameObjectManager::GetInstance().Render(GameObjectManager::GetInstance().GetCamera());
+            GameObjectManager::GetInstance().RenderUI();
+
+            if (GameObjectManager::GetInstance().GetCamera().has_value())
+                PhysicsWorld::GetInstance().Render(*GameObjectManager::GetInstance().GetCamera());
+
+            Window::GetInstance().Present();
+
+            InputManager::GetInstance().Update();
+        }
+
+        void Uninitialize()
+        {
+            ClientNetwork::GetInstance().Uninitialize();
+
+#ifdef _WIN32
+            PhysicsDebugger::Uninitialize();
+#endif
+            PhysicsWorld::GetInstance().Uninitialize();
+        }
+
+        static ClientApplication& GetInstance()
+        {
+            std::call_once(initializationFlag, [&]()
+            {
+                instance = std::unique_ptr<ClientApplication>(new ClientApplication());
+            });
+
+            return *instance;
+        }
+
+    private:
+
+        ClientApplication() = default;
+
+        void RegisterNetworkHandlersOnce()
+        {
+            if (handlersRegisteredOnce)
+                return;
 
             ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_Snapshot, [](std::vector<std::uint8_t> messageIn)
                 {
@@ -171,66 +259,256 @@ namespace Blaster::Client
                                 GameObjectManager::GetInstance().GetCamera().value()->GetGameObject()->GetParent().value().lock()->GetComponent<Blaster::Server::Entity::Entities::EntityPlayer>().value()->AppendChatLine(line);
                         });
                 });
+
+            handlersRegisteredOnce = true;
+        }
+
+        void BuildConnectMenu()
+        {
+            if (connectMenuRoot && GameObjectManager::GetInstance().Has(connectMenuRoot->GetAbsolutePath()))
+                return;
+
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<int> dist(1, 100);
+
+            const std::string defaultName = "Player" + std::to_string(dist(gen));
+
+            connectMenuRoot = UIBuilder::NewMenu("ui_connect_menu")
+                .AddElement<UIElementImage>("ui_background")
+                    .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                    {
+                        gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                    })
+                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                    .Call<&UIElementImage::Generate>()
+                .MoveDown()
+                .AddElement<UIElementImage>("ui_panel")
+                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                    .Call<&UIElementImage::Generate>()
+                    .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                    {
+                        gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_X | Transform2d::Anchor::CENTER_Y);
+                        gameObject->GetTransform2d()->SetDimensions({ 640.0f, 480.0f });
+                    })
+                    .AddElement<UIElementText>("ui_title")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 18.0f });
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 64, 0, 8))
+                        .Call<&UIElementText::SetText>("BLASTER")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_ip_label")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::LEFT | Transform2d::Anchor::TOP);
+                            gameObject->GetTransform2d()->SetPosition({ 24.0f, 86.0f });
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 32, 0, 4))
+                        .Call<&UIElementText::SetText>("IPv4")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementTextField>("ui_ip_field")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 116.0f });
+                            gameObject->GetTransform2d()->SetDimensions({ 520.0f, 36.0f });
+                        })
+                        .Call<&UIElementTextField::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 28, 0, 4))
+                        .Call<&UIElementTextField::SetPlaceholder>("e.g. 127.0.0.1")
+                        .Call<&UIElementTextField::SetText>(lastIp)
+                        .Call<&UIElementTextField::SetSubmitOnEnter>(false)
+                        .Call<&UIElementTextField::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_port_label")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::LEFT | Transform2d::Anchor::TOP);
+                            gameObject->GetTransform2d()->SetPosition({ 24.0f, 164.0f });
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 32, 0, 4))
+                        .Call<&UIElementText::SetText>("Port")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementTextField>("ui_port_field")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 194.0f });
+                            gameObject->GetTransform2d()->SetDimensions({ 520.0f, 36.0f });
+                        })
+                        .Call<&UIElementTextField::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 28, 0, 4))
+                        .Call<&UIElementTextField::SetPlaceholder>("e.g. 7777")
+                        .Call<&UIElementTextField::SetText>(std::to_string(lastPort))
+                        .Call<&UIElementTextField::SetSubmitOnEnter>(false)
+                        .Call<&UIElementTextField::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_name_label")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::LEFT | Transform2d::Anchor::TOP);
+                            gameObject->GetTransform2d()->SetPosition({ 24.0f, 242.0f });
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 32, 0, 4))
+                        .Call<&UIElementText::SetText>("Name")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementTextField>("ui_name_field")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 272.0f });
+                            gameObject->GetTransform2d()->SetDimensions({ 520.0f, 36.0f });
+                        })
+                        .Call<&UIElementTextField::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 28, 0, 4))
+                        .Call<&UIElementTextField::SetPlaceholder>("Player name")
+                        .Call<&UIElementTextField::SetText>(defaultName)
+                        .Call<&UIElementTextField::SetSubmitOnEnter>(false)
+                        .Call<&UIElementTextField::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_error")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, -78.0f });
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 24, 0, 4))
+                        .Call<&UIElementText::SetTint>(Vector<float, 3>{ 1.0f, 0.35f, 0.35f })
+                        .Call<&UIElementText::SetText>("")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementButton>("ui_connect_button")
+                        .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::BOTTOM | Transform2d::Anchor::CENTER_X);
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, -20.0f });
+                            gameObject->GetTransform2d()->SetDimensions({ 260.0f, 54.0f });
+                        })
+                        .Call<&UIElementButton::SetOnClick>([this] { AttemptConnect(); })
+                        .AddElement<UIElementImage>("ui_image")
+                            .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.button_default").value())
+                            .Call<&UIElementImage::Generate>()
+                        .MoveDown()
+                        .AddElement<UIElementText>("ui_text")
+                            .CallAndThen<&Component::GetGameObject>([](std::shared_ptr<GameObject> gameObject)
+                            {
+                                gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::CENTER_X | Transform2d::Anchor::CENTER_Y);
+                            })
+                            .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 36, 0, 6))
+                            .Call<&UIElementText::SetText>("CONNECT")
+                            .Call<&UIElementText::Generate>()
+                        .MoveDown()
+                    .MoveDown()
+                .Finish();
+
+            const auto base = connectMenuRoot->GetAbsolutePath();
+
+            ipInput = GameObjectManager::GetInstance().Get(base + ".ui_ip_field").value()->GetComponent<UIElementTextField>().value();
+            portInput = GameObjectManager::GetInstance().Get(base + ".ui_port_field").value()->GetComponent<UIElementTextField>().value();
+            nameInput = GameObjectManager::GetInstance().Get(base + ".ui_name_field").value()->GetComponent<UIElementTextField>().value();
+            errorText = GameObjectManager::GetInstance().Get(base + ".ui_error").value()->GetComponent<UIElementText>().value();
+
+            InputManager::GetInstance().SetMouseMode(MouseMode::FREE);
+        }
+
+        void DestroyConnectMenu()
+        {
+            if (ipInput)
+                ipInput->SetFocused(false);
+
+            if (portInput)
+                portInput->SetFocused(false);
+
+            if (nameInput)
+                nameInput->SetFocused(false);
             
-            PhysicsWorld::GetInstance().Initialize();
+            GameObjectManager::GetInstance().Unregister(connectMenuRoot->GetParent()->lock()->GetAbsolutePath());
+            
+            connectMenuRoot.reset();
+
+            ipInput.reset();
+            portInput.reset();
+            nameInput.reset();
+            errorText.reset();
+
+            (void)InputManager::GetInstance().ConsumeTextInput();
         }
 
-        bool IsRunning()
+        void EnsureConnectMenu()
         {
-            return Window::GetInstance().IsRunning();
+            if (!connectMenuRoot)
+                BuildConnectMenu();
         }
 
-        void Update()
+        void ShowConnectError(const std::string& msg)
         {
-            MainThreadExecutor::GetInstance().Execute();
+            if (!errorText)
+                return;
 
-            GameObjectManager::GetInstance().Update();
-
-            PhysicsSystem::GetInstance().Update();
-
-            TranslationBuffer::GetInstance().Update();
-
-            Time::GetInstance().Update();
+            errorText->SetText(msg);
+            errorText->Generate();
         }
 
-        void Render()
+        void AttemptConnect()
         {
-            Window::Clear();
+            if (!ipInput || !portInput)
+                return;
 
-            GameObjectManager::GetInstance().Render(GameObjectManager::GetInstance().GetCamera());
-            GameObjectManager::GetInstance().RenderUI();
+            const std::string ip = ipInput->GetText();
+            const std::string portStr = portInput->GetText();
+            std::string name = nameInput ? nameInput->GetText() : std::string{};
 
-            if (GameObjectManager::GetInstance().GetCamera().has_value())
-                PhysicsWorld::GetInstance().Render(*GameObjectManager::GetInstance().GetCamera());
+            int portNum = 0;
 
-            Window::GetInstance().Present();
-
-            InputManager::GetInstance().Update();
-        }
-
-        void Uninitialize()
-        {
-            ClientNetwork::GetInstance().Uninitialize();
-
-#ifdef _WIN32
-            PhysicsDebugger::Uninitialize();
-#endif
-            PhysicsWorld::GetInstance().Uninitialize();
-        }
-
-        static ClientApplication& GetInstance()
-        {
-            std::call_once(initializationFlag, [&]()
+            try
             {
-                instance = std::unique_ptr<ClientApplication>(new ClientApplication());
-            });
+                portNum = std::stoi(portStr);
+            }
+            catch (...)
+            {
+                ShowConnectError("Invalid port.");
+                return;
+            }
 
-            return *instance;
+            if (portNum < 1 || portNum > 65535)
+            {
+                ShowConnectError("Port must be 1..65535.");
+                return;
+            }
+
+            if (name.empty())
+                name = "Player";
+
+            lastIp = ip;
+            lastPort = static_cast<std::uint16_t>(portNum);
+
+            ClientNetwork::GetInstance().Initialize(ip, static_cast<std::uint16_t>(portNum), name);
+
+            if (!ClientNetwork::GetInstance().IsRunning())
+            {
+                ShowConnectError("Connection failed.");
+                return;
+            }
+
+            DestroyConnectMenu();
         }
 
-    private:
+        bool awaitingReconnectPrompt = false;
+        bool handlersRegisteredOnce = false;
+        bool reconnectCallbackRegisteredOnce = false;
 
-        ClientApplication() = default;
+        std::shared_ptr<GameObject> connectMenuRoot = nullptr;
+        std::shared_ptr<UIElementTextField> ipInput = nullptr;
+        std::shared_ptr<UIElementTextField> portInput = nullptr;
+        std::shared_ptr<UIElementTextField> nameInput = nullptr;
+        std::shared_ptr<UIElementText> errorText = nullptr;
+
+        std::string lastIp = "127.0.0.1";
+        std::uint16_t lastPort = 7777;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientApplication> instance;

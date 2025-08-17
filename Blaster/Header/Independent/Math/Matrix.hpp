@@ -184,6 +184,23 @@ namespace Blaster::Independent::Math
 
 			return result;
 		}
+
+		Vector<T, R> operator*(const Vector<T, C>& v) const
+		{
+			Vector<T, R> out{};
+
+			for (size_t i = 0; i < R; ++i)
+			{
+				T sum = T(0);
+
+				for (size_t k = 0; k < C; ++k)
+					sum += data[k][i] * v[k];
+
+				out[i] = sum;
+			}
+			return out;
+		}
+
 		Matrix& operator*=(T scalar)
 		{
 			for (size_t c = 0; c < C; c++)
@@ -508,7 +525,6 @@ namespace Blaster::Independent::Math
 				{ o.x(), o.y(), o.z(), 1.f }
 			});
 		}
-
 
 		static constexpr size_t Rows()
 		{

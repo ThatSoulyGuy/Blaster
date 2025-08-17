@@ -18,73 +18,100 @@ namespace Blaster::Independent::Thread
         MainThreadExecutor& operator=(const MainThreadExecutor&) = delete;
         MainThreadExecutor& operator=(MainThreadExecutor&&) = delete;
 
-        template <typename Callable> requires std::invocable<void()>
-        void EnqueueTask(void* holder, Callable&& task)
+        using TaskFunction = std::move_only_function<void()>;
+
+        template <class F> requires std::invocable<F&>
+        bool EnqueueTask(void* holder, F&& task)
         {
-            std::scoped_lock guard(mutex);
+            std::scoped_lock lock(mutex);
 
-            if (holder && !pendingHolders.emplace(holder).second)
-                return;
+            if (holder)
+            {
+                const auto [it, inserted] = pendingHolders.emplace(holder);
 
-            tasks.emplace(holder, std::move(task));
+                if (!inserted)
+                    return false;
+            }
+
+            tasks.emplace_back(Task{ holder, TaskFn{std::forward<F>(task)} });
+
+            return true;
         }
 
         void CancelTask(const void* holder)
         {
-            std::scoped_lock guard(mutex);
+            std::scoped_lock lock(mutex);
 
-            pendingHolders.erase(const_cast<std::unordered_set<void *>::key_type>(holder));
+            pendingHolders.erase(const_cast<void*>(holder));
+        }
+
+        bool CancelTaskHard(const void* holder)
+        {
+            std::scoped_lock lock(mutex);
+
+            const auto h = const_cast<void*>(holder);
+            bool removed = false;
+
+            removed = std::erase_if(tasks, [h](const Task& t) { return t.holder == h; }) > 0 || removed;
+            pendingHolders.erase(h);
+
+            return removed;
         }
 
         void Execute()
         {
-            std::queue< item_type > local;
-
+            std::deque<Task> local;
             {
-                std::scoped_lock guard( mutex );
-                local.swap( tasks );
+                std::scoped_lock lock(mutex);
+                local.swap(tasks);
             }
 
-            while (!local.empty())
+            if (local.empty())
+                return;
+
             {
-                auto [holder, function] = std::move(local.front());
+                std::scoped_lock lock(mutex);
 
-                local.pop();
+                for (const auto& task : local)
+                    if (task.holder) pendingHolders.erase(task.holder);
+            }
 
-                if (holder)
+            for (auto& task : local)
+            {
+                try
                 {
-                    std::scoped_lock guard(mutex);
-                    pendingHolders.erase(holder);
+                    if (task.function) task.function();
                 }
-
-                function();
+                catch (const std::exception& e)
+                {
+                    std::cerr << "[MainThreadExecutor] task threw: " << e.what() << '\n';
+                }
+                catch (...)
+                {
+                    std::cerr << "[MainThreadExecutor] task threw unknown exception\n";
+                }
             }
         }
 
-        static MainThreadExecutor& GetInstance()
+        [[nodiscard]] static MainThreadExecutor& GetInstance()
         {
-            std::call_once(initFlag, []
-            {
-                instance.reset(new MainThreadExecutor());
-            });
+            static MainThreadExecutor instance;
 
-            return *instance;
+            return instance;
         }
 
     private:
 
-        MainThreadExecutor()  = default;
+        MainThreadExecutor() = default;
 
-        using item_type = std::tuple<void*, std::function<void()>>;
+        struct Task
+        {
+            void* holder{};
+            TaskFunction function{};
+        };
 
         std::mutex mutex;
-        std::queue<item_type> tasks;
+        std::deque<Task> tasks;
         std::unordered_set<void*> pendingHolders;
-
-        static std::once_flag initFlag;
-        static std::unique_ptr<MainThreadExecutor> instance;
     };
-
-    std::once_flag MainThreadExecutor::initFlag;
-    std::unique_ptr<MainThreadExecutor> MainThreadExecutor::instance;
 }

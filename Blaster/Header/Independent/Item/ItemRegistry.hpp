@@ -38,7 +38,7 @@ namespace Blaster::Independent::Item
 				itemMapById.erase(key);
 		}
 
-		template<ItemKeyType T>
+		template <ItemKeyType T>
 		[[nodiscard]]
 		std::optional<std::shared_ptr<ItemBase>> Get(const T& key) const noexcept
 		{

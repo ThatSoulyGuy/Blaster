@@ -34,6 +34,11 @@ namespace Blaster::Independent::Math
     struct CorrectTransformCommand;
 }
 
+namespace Blaster::Server::Command
+{
+    struct CommandPacket;
+}
+
 namespace Blaster::Server::Entity::Entities
 {
     struct DamageCommand;
@@ -58,6 +63,7 @@ REGISTER_TYPE(Blaster::Independent::Physics::SetVelocityCommand, 92123)
 REGISTER_TYPE(Blaster::Independent::Physics::CharacterControllerInputCommand, 12686)
 REGISTER_TYPE(Blaster::Independent::Math::QueryTransformCommand, 21576)
 REGISTER_TYPE(Blaster::Independent::Math::CorrectTransformCommand, 11399)
+REGISTER_TYPE(Blaster::Server::Command::CommandPacket, 12321)
 REGISTER_TYPE(Blaster::Server::Entity::Entities::DamageCommand, 62289)
 
 namespace Blaster::Independent::Utility

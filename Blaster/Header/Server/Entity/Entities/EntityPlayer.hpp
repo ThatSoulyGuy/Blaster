@@ -63,12 +63,24 @@ namespace Blaster::Server::Entity::Entities
                 return slots[(index ? index : 1) - 1];
             }
 
+            bool operator==(const Hotbar& other) const
+            {
+                return OPERATOR_CHECK(index, slots);
+            }
+
+            bool operator!=(const Hotbar& other) const
+            {
+                return !(*this == other);
+            }
+
             template <typename Archive>
             void serialize(Archive& archive, const unsigned)
             {
                 archive & BOOST_SERIALIZATION_NVP(index);
                 archive & BOOST_SERIALIZATION_NVP(slots);
             }
+
+            BOOST_DESCRIBE_CLASS(Blaster::Server::Entity::Entities::EntityPlayer::Hotbar, (), (), (), (index, slots))
         };
 
         EntityPlayer(const EntityPlayer&) = delete;
@@ -168,6 +180,30 @@ namespace Blaster::Server::Entity::Entities
             currentHealth += abs(damage);
 
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
+
+        void AddItem(std::uint8_t id)
+        {
+            if (id == 0)
+                return;
+
+            for (auto& slot : hotbar.slots)
+            {
+                if (slot == id)
+                    return;
+            }
+
+            for (auto& slot : hotbar.slots)
+            {
+                if (slot == 0)
+                {
+                    slot = id;
+
+                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+
+                    return;
+                }
+            }
         }
 
         std::optional<std::shared_ptr<GameObject>> GetEntityModel() const override
@@ -783,8 +819,8 @@ namespace Blaster::Server::Entity::Entities
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
                 std::cout << "Current Position: " << GetGameObject()->GetTransform3d()->GetWorldPosition() << std::endl;
 
-            if (InputManager::GetInstance().GetKeyState(KeyCode::V, KeyState::PRESSED))
-                hotbar.GetCurrentSlot() = ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value()->GetId();
+            if (InputManager::GetInstance().GetKeyState(KeyCode::Q, KeyState::PRESSED))
+                hotbar.GetCurrentSlot() = 0;
 
             if (InputManager::GetInstance().GetScrollDelta() > 0)
                 hotbar.index += 1;
@@ -1139,9 +1175,9 @@ namespace Blaster::Server::Entity::Entities
 
                 worldModelObject = GameObjectManager::GetInstance().Register(GameObject::Create("world_model"), GetGameObject()->GetAbsolutePath());
 
-                worldModelObject->GetTransform3d()->SetLocalPosition({ 1.0f, 9.0f, 3.5f });
-                worldModelObject->GetTransform3d()->SetLocalScale({ 1.0f, 1.0f, 1.0f });
                 worldModelObject->GetTransform3d()->SetLocalPivot(modelGameObject->GetTransform3d()->GetLocalPosition());
+                worldModelObject->GetTransform3d()->SetLocalPosition({ 1.0f, 6.0f, 3.5f });
+                worldModelObject->GetTransform3d()->SetLocalScale({ 1.0f, 1.0f, 1.0f });
 
                 worldModelObject->AddComponent(Model::Create(item->GetModelPath().value()));
 
@@ -1290,7 +1326,7 @@ namespace Blaster::Server::Entity::Entities
 
         constexpr static float mouseSensitivity = 0.1f;
 
-        DESCRIBE_AND_REGISTER(EntityPlayer, (EntityBase), (), (), (team, hotbar, currentHealth))
+        DESCRIBE_AND_REGISTER(EntityPlayer, (LivingEntity), (), (), (team, hotbar, currentHealth))
 
     };
 }

@@ -47,6 +47,11 @@ namespace Blaster::Independent::ECS
                 if (markDirty)
                     Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(rootGameObjectMap[name]);
 
+#ifdef IS_SERVER
+                if (rootGameObjectMap[name]->GetOwningClient().has_value() && rootGameObjectMap[name]->GetOwningClient().value() != 0 && Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(rootGameObjectMap[name]->GetOwningClient().value()).has_value())
+                    Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(rootGameObjectMap[name]->GetOwningClient().value()).value()->ownedGameObjectList.insert({ rootGameObjectMap[name]->GetAbsolutePath(), std::static_pointer_cast<IGameObjectSynchronization>(rootGameObjectMap[name]) });
+#endif
+
                 return rootGameObjectMap[name];
             }
 

@@ -18,6 +18,7 @@
 #include "Independent/Physics/Colliders/ColliderCapsule.hpp"
 #include "Independent/Physics/Colliders/ColliderMesh.hpp"
 #include "Independent/Item/ItemDefinitions.hpp"
+#include "Independent/Item/ItemWorld.hpp"
 #include "Independent/Math/Transform2d.hpp"
 #include "Independent/Math/Transform3d.hpp"
 #include "Independent/Utility/Inventory.hpp"

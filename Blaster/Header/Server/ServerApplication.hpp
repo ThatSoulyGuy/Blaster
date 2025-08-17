@@ -6,6 +6,9 @@
 #include <random>
 #include "Client/Render/Model.hpp"
 #include "Client/Render/TextureFuture.hpp"
+#include "Independent/Item/ItemBase.hpp"
+#include "Independent/Item/ItemRegistry.hpp"
+#include "Independent/Item/ItemWorld.hpp"
 #include "Independent/Physics/Colliders/ColliderBox.hpp"
 #include "Independent/Physics/Colliders/ColliderCapsule.hpp"
 #include "Independent/Physics/CharacterController.hpp"
@@ -552,6 +555,17 @@ namespace Blaster::Server
             blueTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
             blueTeamBeaconObject->AddComponent(Rigidbody::Create());
 
+            std::vector<Vector<float, 3>> assaultRiflePositionList =
+            {
+                { 325.0f, -230.0f, -55.0f },
+                { 325.0f, -230.0f, 75.0f },
+                { -325.0f, -230.0f, -55.0f },
+                { -325.0f, -230.0f, 75.0f }
+            };
+            
+            for (const auto& position : assaultRiflePositionList)
+                SpawnWorldItem(position, ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value());
+            
             AsynchronousConsole::GetInstance().AttachPromptToStdout();
             AsynchronousConsole::GetInstance().Start([this](const std::string& line)
                 {
@@ -717,6 +731,17 @@ namespace Blaster::Server
             }
 
             out = "Command '" + descriptor.name + "' succeeded with no errors";
+        }
+
+        void SpawnWorldItem(const Vector<float, 3>& position, const std::shared_ptr<ItemBase>& item)
+        {
+            auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create(item->GetRegistryName() + "__world_model_" + std::to_string(rand())));
+
+            gameObject->GetTransform3d()->SetLocalPosition(position);
+            gameObject->GetTransform3d()->SetLocalScale({ 2.0f, 2.0f, 2.0f });
+
+            gameObject->AddComponent(Model::Create(item->GetModelPath().value()));
+            gameObject->AddComponent(ItemWorld::Create(item->GetId()));
         }
 
         std::string TrimCopy(const std::string& input)

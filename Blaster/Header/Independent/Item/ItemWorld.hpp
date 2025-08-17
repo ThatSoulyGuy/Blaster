@@ -39,21 +39,44 @@ namespace Blaster::Independent::Item
 			if (used)
 				return;
 
+			auto itemTransform = GetGameObject()->GetTransform3d();
+			if (!itemTransform)
+				return;
+
+			const Vector<float, 3> itemPosition = itemTransform->GetWorldPosition();
+			constexpr float pickupDistanceSquared = 3.0f * 3.0f;
+
 			for (const auto& clientId : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
 			{
-				auto clientReference = Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(clientId).value();
+				auto clientReferenceOptional = Blaster::Server::Network::ServerNetwork::GetInstance().GetClient(clientId);
+
+				if (!clientReferenceOptional.has_value())
+					continue;
+
+				const auto& clientReference = clientReferenceOptional.value();
 
 				for (const auto& gameObjectDecayed : clientReference->ownedGameObjectList | std::views::values)
 				{
 					auto gameObject = std::dynamic_pointer_cast<GameObject>(gameObjectDecayed.lock());
 
-					if (gameObject->HasComponent<EntityPlayer>() && Vector<float, 3>::Distance(gameObject->GetTransform3d()->GetWorldPosition(), GetGameObject()->GetTransform3d()->GetWorldPosition()) < 3.0f)
+					if (!gameObject || !gameObject->HasComponent<EntityPlayer>())
+						continue;
+
+					auto playerTransform = gameObject->GetTransform3d();
+
+					if (!playerTransform)
+						continue;
+
+					const Vector<float, 3> playerPosition = playerTransform->GetWorldPosition();
+
+					if (Vector<float, 3>::LengthSquared(playerPosition - itemPosition) < pickupDistanceSquared)
 					{
 						gameObject->GetComponent<EntityPlayer>().value()->AddItem(itemId);
-
 						GameObjectManager::GetInstance().UnregisterDeferred(GetGameObject()->GetAbsolutePath());
 
 						used = true;
+
+						return;
 					}
 				}
 			}

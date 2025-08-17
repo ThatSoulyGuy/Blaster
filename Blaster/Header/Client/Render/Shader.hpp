@@ -25,17 +25,24 @@ namespace Blaster::Client::Render
 
 		void Bind() const
 		{
+			if (sCurrentlyBoundProgram == id)
+				return;
+
 			glUseProgram(id);
+			sCurrentlyBoundProgram = id;
 		}
 
 		void SetUniform(const std::string& name, const int value) const
 		{
 			const GLint location = GetUniformLocationCached(name);
-			if (location == -1) return;
 
-			// Value cache: skip if identical
+			if (location == -1)
+				return;
+
 			CacheValue newVal = value;
-			if (IsSame(name, newVal)) return;
+
+			if (IsSame(name, newVal))
+				return;
 
 			glUniform1i(location, value);
 			UpdateCache(name, std::move(newVal));

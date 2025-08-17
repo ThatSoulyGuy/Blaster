@@ -33,7 +33,7 @@ namespace Blaster::Independent::Thread
                     return false;
             }
 
-            tasks.emplace_back(Task{ holder, TaskFn{std::forward<F>(task)} });
+            tasks.emplace_back(Task{ holder, TaskFunction{std::forward<F>(task)} });
 
             return true;
         }

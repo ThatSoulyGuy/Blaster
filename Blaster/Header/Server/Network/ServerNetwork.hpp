@@ -162,6 +162,15 @@ namespace Blaster::Server::Network
             return ioContext;
         }
 
+        void DisconnectClient(NetworkId id)
+        {
+            if (auto client = GetClient(id))
+            {
+                boost::system::error_code errorCode;
+                client->get()->socket.close(errorCode);
+            }
+        }
+
         void Uninitialize()
         {
             if (!running)

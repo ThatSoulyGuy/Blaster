@@ -44,7 +44,7 @@ namespace Blaster::Independent::Item
 				return;
 
 			const Vector<float, 3> itemPosition = itemTransform->GetWorldPosition();
-			constexpr float pickupDistanceSquared = 3.0f * 3.0f;
+			constexpr float pickupDistanceSquared = 5.0f * 5.0f;
 
 			for (const auto& clientId : Blaster::Server::Network::ServerNetwork::GetInstance().GetConnectedClients())
 			{

@@ -247,7 +247,7 @@ namespace Blaster::Server
 
             ServerNetwork::GetInstance().AddOnClientDisconnectedCallback([&](auto clientIn)
                 {
-                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [client = clientIn]
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, client = clientIn]
                     {
                         std::vector<std::string> paths;
 
@@ -260,6 +260,8 @@ namespace Blaster::Server
 
                         for (auto& path : paths)
                             GameObjectManager::GetInstance().Unregister(path);
+
+                        CheckEliminationAndAnnounce();
                     });
                 });
 
@@ -533,38 +535,7 @@ namespace Blaster::Server
 
             PhysicsWorld::GetInstance().Initialize();
 
-            const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
-
-            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
-
-            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, false, true));
-
-            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
-
-
-            const auto redTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("red_beacon"));
-
-            redTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::RED));
-            redTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
-            redTeamBeaconObject->AddComponent(Rigidbody::Create());
-
-
-            const auto blueTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("blue_beacon"));
-
-            blueTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::BLUE));
-            blueTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
-            blueTeamBeaconObject->AddComponent(Rigidbody::Create());
-
-            std::vector<Vector<float, 3>> assaultRiflePositionList =
-            {
-                { 325.0f, -230.0f, -55.0f },
-                { 325.0f, -230.0f, 75.0f },
-                { -325.0f, -230.0f, -55.0f },
-                { -325.0f, -230.0f, 75.0f }
-            };
-            
-            for (const auto& position : assaultRiflePositionList)
-                SpawnWorldItem(position, ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value());
+            BuildWorld();
             
             AsynchronousConsole::GetInstance().AttachPromptToStdout();
             AsynchronousConsole::GetInstance().Start([this](const std::string& line)
@@ -588,6 +559,8 @@ namespace Blaster::Server
                 BroadcastAnnouncement("The red beacon has been destroyed!");
 
                 isRedBeaconDestroyed = true;
+
+                CheckEliminationAndAnnounce();
             }
 
             if (!isBlueBeaconDestroyed && !GameObjectManager::GetInstance().Has("blue_beacon") && ServerNetwork::GetInstance().GetConnectedClients().size() != 0)
@@ -595,6 +568,8 @@ namespace Blaster::Server
                 BroadcastAnnouncement("The blue beacon has been destroyed!");
 
                 isBlueBeaconDestroyed = true;
+
+                CheckEliminationAndAnnounce();
             }
 
             MainThreadExecutor::GetInstance().Execute();
@@ -634,21 +609,47 @@ namespace Blaster::Server
 
         ServerApplication() = default;
 
-        EntityBase::Team nextTeam = EntityBase::Team::RED;
-
-        EntityBase::Team PopNextTeam()
+        void BuildWorld()
         {
-            EntityBase::Team out = nextTeam;
+            const auto platformObject = GameObjectManager::GetInstance().Register(GameObject::Create("platform"));
 
-            nextTeam = (nextTeam == EntityBase::Team::RED) ? EntityBase::Team::BLUE : EntityBase::Team::RED;
+            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
+            platformObject->AddComponent(Model::Create({ "Blaster", "Model/Map.fbx" }, false, true));
+            platformObject->GetTransform3d()->SetLocalPosition({ 0.0f, -240.0f, 0.0f });
 
-            return out;
-        }
+            const auto redTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("red_beacon"));
 
-        void BroadcastAnnouncement(const std::string& message)
-        {
-            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
-                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_ServerAnnouncement, "[Server]: " + message);
+            redTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::RED));
+            redTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
+            redTeamBeaconObject->AddComponent(Rigidbody::Create());
+
+            const auto blueTeamBeaconObject = GameObjectManager::GetInstance().Register(GameObject::Create("blue_beacon"));
+
+            blueTeamBeaconObject->AddComponent(EntityBeacon::Create(EntityBase::Team::BLUE));
+            blueTeamBeaconObject->AddComponent(ColliderBox::Create({ 10.0f, 10.0f, 10.0f }));
+            blueTeamBeaconObject->AddComponent(Rigidbody::Create());
+
+            std::vector<Vector<float, 3>> assaultRiflePositionList =
+            {
+                { 325.0f, -230.0f, -55.0f },
+                { 325.0f, -230.0f, 75.0f },
+                { -325.0f, -230.0f, -55.0f },
+                { -325.0f, -230.0f, 75.0f }
+            };
+
+            std::vector<Vector<float, 3>> medkitPositionList =
+            {
+                { 7.8f, -229.57f, 231.6f },
+                { 224.4f, -229.5f, -181.0f },
+                { -239.9f, -229.5f, 210.6f },
+                { 224.6f, -229.5f, 222.7f }
+            };
+
+            for (const auto& position : assaultRiflePositionList)
+                SpawnWorldItem(position, ItemRegistry::GetInstance().Get(std::string("item_assault_rifle")).value());
+
+            for (const auto& position : medkitPositionList)
+                SpawnWorldItem(position, ItemRegistry::GetInstance().Get(std::string("item_medkit")).value());
         }
 
         void CheckEliminationAndAnnounce()
@@ -671,11 +672,99 @@ namespace Blaster::Server
                 }
             }
 
-            if (redAlive == 0 && isRedBeaconDestroyed)
-                BroadcastAnnouncement("Team RED has been eliminated!");
+            const bool redEliminated = (redAlive == 0 && isRedBeaconDestroyed);
+            const bool blueEliminated = (blueAlive == 0 && isBlueBeaconDestroyed);
 
-            if (blueAlive == 0 && isBlueBeaconDestroyed)
+            if (redEliminated)
+            {
+                BroadcastAnnouncement("Team RED has been eliminated!");
+                OnTeamWin(EntityBase::Team::BLUE);
+            }
+
+            if (blueEliminated)
+            {
                 BroadcastAnnouncement("Team BLUE has been eliminated!");
+                OnTeamWin(EntityBase::Team::RED);
+            }
+        }
+
+        void OnTeamWin(EntityBase::Team winner)
+        {
+            if (roundResetScheduled)
+                return;
+
+            const char* name = (winner == EntityBase::Team::RED) ? "RED" : "BLUE";
+
+            BroadcastAnnouncement(std::string("Team ") + name + " WINS! Resetting match in 5 seconds...");
+
+            roundResetScheduled = true;
+
+            if (!roundResetTimer)
+                roundResetTimer = std::make_unique<boost::asio::steady_timer>(ServerNetwork::GetInstance().GetIoContext());
+
+            roundResetTimer->expires_after(std::chrono::seconds(5));
+            roundResetTimer->async_wait([this](const boost::system::error_code& errorCode)
+                {
+                    if (errorCode)
+                    {
+                        roundResetScheduled = false;
+                        return;
+                    }
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this]
+                        {
+                            KickAllPlayersAndResetWorld();
+                            roundResetScheduled = false;
+                        });
+                });
+        }
+
+        void KickAllPlayersAndResetWorld()
+        {
+            BroadcastAnnouncement("Round reset - disconnecting all players");
+
+            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                ServerNetwork::GetInstance().DisconnectClient(id);
+
+            {
+                std::vector<std::string> paths;
+
+                auto all = GameObjectManager::GetInstance().GetAll();
+
+                paths.reserve(all.size());
+
+                for (const auto& go : all)
+                    paths.push_back(go->GetAbsolutePath());
+
+                for (const auto& path : paths)
+                    GameObjectManager::GetInstance().Unregister(path);
+            }
+
+            SenderSynchronization::GetInstance().Reset();
+
+            isRedBeaconDestroyed = false;
+            isBlueBeaconDestroyed = false;
+
+            nextTeam = EntityBase::Team::RED;
+
+            BuildWorld();
+
+            std::cout << "[Server] Round reset complete. Waiting for players..." << std::endl;
+        }
+
+        EntityBase::Team PopNextTeam()
+        {
+            EntityBase::Team out = nextTeam;
+
+            nextTeam = (nextTeam == EntityBase::Team::RED) ? EntityBase::Team::BLUE : EntityBase::Team::RED;
+
+            return out;
+        }
+
+        void BroadcastAnnouncement(const std::string& message)
+        {
+            for (NetworkId id : ServerNetwork::GetInstance().GetConnectedClients())
+                ServerNetwork::GetInstance().SendTo(id, PacketType::S2C_ServerAnnouncement, "[Server]: " + message);
         }
 
         void OnConsoleLine(std::string line)
@@ -756,8 +845,13 @@ namespace Blaster::Server
             return input.substr(a, b - a + 1);
         }
 
+        bool roundResetScheduled = false;
+        std::unique_ptr<boost::asio::steady_timer> roundResetTimer;
+
         bool isRedBeaconDestroyed = false;
         bool isBlueBeaconDestroyed = false;
+
+        EntityBase::Team nextTeam = EntityBase::Team::RED;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ServerApplication> instance;

@@ -74,6 +74,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_diffuse_red", { "Blaster", "Texture/Player/MtfDiffuseRed.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.mtf_diffuse_blue", { "Blaster", "Texture/Player/MtfDiffuseBlue.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.player.assault_rifle", { "Blaster", "Texture/Player/AssaultRifle.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.player.first_aid", { "Blaster", "Texture/Player/FirstAid.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.team_red", { "Blaster", "Texture/Map/TeamRed.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.team_blue", { "Blaster", "Texture/Map/TeamBlue.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.concrete_floor", { "Blaster", "Texture/Map/ConcreteFloor.png" }));
@@ -87,7 +88,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.menu_background", { "Blaster", "Texture/UI/MenuBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.chat_background", { "Blaster", "Texture/UI/ChatBackground.png" }));
-            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" })); 
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_default", { "Blaster", "Texture/UI/ButtonDefault.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_selected", { "Blaster", "Texture/UI/ButtonSelected.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.crosshair", { "Blaster", "Texture/UI/Crosshair.png" }));
@@ -96,6 +97,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_wood", { "Blaster", "Texture/Item/ResourceWood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_empty", { "Blaster", "Texture/Item/ResourceEmpty.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.item.weapon_assault_rifle", { "Blaster", "Texture/Item/WeaponAssaultRifle.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.item.resource_medkit", { "Blaster", "Texture/Item/ResourceMedkit.png" }));
 
             InputManager::GetInstance().Initialize();
 

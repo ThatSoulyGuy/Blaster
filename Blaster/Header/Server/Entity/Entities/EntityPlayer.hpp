@@ -846,21 +846,7 @@ namespace Blaster::Server::Entity::Entities
                 auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
 
 #ifndef IS_SERVER
-                if (item->GetSoundPathList())
-                {
-                    if (itemSoundObject->HasComponent<SoundClip>())
-                    {
-                        itemSoundObject->GetComponent<SoundClip>().value()->GetPathList() == item->GetSoundPathList().value();
-                        itemSoundObject->GetComponent<SoundClip>().value()->Play();
-                    }
-                    else
-                    {
-                        itemSoundObject->RemoveComponent<SoundClip>();
-
-                        itemSoundObject->AddComponent(SoundClip::Create(item->GetSoundPathList().value(), false, true, true));
-                        itemSoundObject->GetComponent<SoundClip>().value()->Play();
-                    }
-                }
+                PlayItemUseSound(item);
 #endif
 
                 constexpr float kRayDistance = 1000.f;
@@ -911,6 +897,31 @@ namespace Blaster::Server::Entity::Entities
 #endif
 
                     item->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
+
+                    if (item->IsSingleUse())
+                    {
+                        hotbar.GetCurrentSlot() = 0;
+
+                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+                    }
+                }
+            }
+
+            if (InputManager::GetInstance().GetMouseState(MouseCode::RIGHT, MouseState::PRESSED))
+            {
+                auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
+
+#ifndef IS_SERVER
+                PlayItemUseSound(item);
+#endif
+
+                item->OnUsed(this, nullptr, MouseCode::RIGHT);
+
+                if (item->IsSingleUse())
+                {
+                    hotbar.GetCurrentSlot() = 0;
+
+                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
                 }
             }
         }
@@ -1069,6 +1080,41 @@ namespace Blaster::Server::Entity::Entities
         }
 
 #ifndef IS_SERVER
+        void PlayItemUseSound(const std::shared_ptr<ItemBase>& item)
+        {
+            if (!item || !itemSoundObject)
+                return;
+
+            const auto soundListOpt = item->GetSoundPathList();
+
+            if (!soundListOpt || soundListOpt->empty())
+                return;
+
+            const auto wanted = *soundListOpt;
+
+            if (auto clipOpt = itemSoundObject->GetComponent<SoundClip>())
+            {
+                auto clip = clipOpt.value();
+
+                if (clip->GetPathList() != wanted)
+                {
+                    itemSoundObject->RemoveComponent<SoundClip>();
+                    itemSoundObject->AddComponent(SoundClip::Create(wanted, false, true, true));
+                    clip = itemSoundObject->GetComponent<SoundClip>().value();
+                }
+
+                clip->Play();
+            }
+            else
+            {
+                itemSoundObject->AddComponent(SoundClip::Create(wanted, false, true, true));
+
+                auto clip = itemSoundObject->GetComponent<SoundClip>().value();
+
+                clip->Play();
+            }
+        }
+
         void PresentHealthIfChanged()
         {
             if (lastPresentedHealth == currentHealth)
@@ -1091,7 +1137,6 @@ namespace Blaster::Server::Entity::Entities
             }
         }
 
-#ifndef IS_SERVER
         void PresentStaminaIfChanged()
         {
             const int shown = static_cast<int>(std::round(stamina));
@@ -1107,8 +1152,6 @@ namespace Blaster::Server::Entity::Entities
                 staminaText->Generate();
             }
         }
-#endif
-
 
         void PresentHotbarIfChanged()
         {

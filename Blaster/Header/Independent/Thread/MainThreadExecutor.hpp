@@ -5,6 +5,7 @@
 #include <mutex>
 #include <memory>
 #include <unordered_set>
+#include <iostream>
 
 namespace Blaster::Independent::Thread
 {

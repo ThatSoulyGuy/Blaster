@@ -44,6 +44,11 @@ namespace Blaster::Independent::Item
 			return false;
 		}
 
+		bool IsSingleUse() const override
+		{
+			return false;
+		}
+
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override
 		{
 			return std::nullopt;
@@ -74,10 +79,13 @@ namespace Blaster::Independent::Item
 
 		void OnUsed(void* interactor, void* interactee, const MouseCode& code) override
 		{
+			if (code != MouseCode::LEFT)
+				return;
+
 			if (static_cast<EntityBase*>(interactor)->GetTeam() == static_cast<EntityBase*>(interactee)->GetTeam())
 				return;
 
-			if (auto player = static_cast<EntityBase*>(interactee); code == MouseCode::LEFT && player)
+			if (auto player = static_cast<EntityBase*>(interactee); player)
 				Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Damage, Entities::DamageCommand{ player->GetGameObject()->GetAbsolutePath(), true, 5.0f });
 		}
 
@@ -101,6 +109,11 @@ namespace Blaster::Independent::Item
 			return true;
 		}
 
+		bool IsSingleUse() const override
+		{
+			return false;
+		}
+
 		std::optional<AssetPath> GetModelPath() const override
 		{
 			return std::make_optional<AssetPath>({ "Blaster", "Model/AssaultRifle.fbx" });
@@ -108,7 +121,7 @@ namespace Blaster::Independent::Item
 
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override
 		{
-			return std::make_optional<Vector<float, 3>>({ -3.0f, -1.0f, 6.0f });
+			return std::make_optional<Vector<float, 3>>({ -90.0f, -1.0f, 6.0f });
 		}
 
 		std::optional<Vector<float, 3>> GetModelViewRotation() const override
@@ -124,6 +137,70 @@ namespace Blaster::Independent::Item
 	private:
 
 		REGISTER_ITEM(ItemAssaultRifle)
+
+	};
+
+	class ItemMedkit final : public ItemBase
+	{
+
+	public:
+
+		ItemMedkit() = default;
+
+		void OnUsed(void* interactor, void* interactee, const MouseCode& code) override
+		{
+			if (auto player = static_cast<EntityBase*>(interactor); code == MouseCode::RIGHT && player)
+				Blaster::Client::Network::ClientNetwork::GetInstance().Send(PacketType::C2S_EntityPlayer_Damage, Entities::DamageCommand{ player->GetGameObject()->GetAbsolutePath(), false, 20.0f });
+		}
+
+		std::string GetRegistryName() const override
+		{
+			return "item_medkit";
+		}
+
+		std::string GetDisplayName() const override
+		{
+			return "Medkit";
+		}
+
+		std::string GetTextureName() const override
+		{
+			return "blaster.item.resource_medkit";
+		}
+
+		bool DoesActivateKillCrosshair() const override
+		{
+			return false;
+		}
+
+		bool IsSingleUse() const override
+		{
+			return true;
+		}
+
+		std::optional<AssetPath> GetModelPath() const override
+		{
+			return std::make_optional<AssetPath>({ "Blaster", "Model/FirstAid.fbx" });
+		}
+
+		std::optional<Vector<float, 3>> GetModelViewPosition() const override
+		{
+			return std::make_optional<Vector<float, 3>>({ -3.0f, -1.0f, 6.0f });
+		}
+
+		std::optional<Vector<float, 3>> GetModelViewRotation() const override
+		{
+			return std::make_optional<Vector<float, 3>>({ 0.0f, 15.0f, 10.0f });
+		}
+
+		std::optional<std::vector<AssetPath>> GetSoundPathList() const override
+		{
+			return std::make_optional<std::vector<AssetPath>>({ { "Blaster", "Sound/Medkit.wav" } });
+		}
+
+	private:
+
+		REGISTER_ITEM(ItemMedkit)
 
 	};
 

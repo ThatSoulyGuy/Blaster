@@ -250,6 +250,13 @@ namespace Blaster::Server::Entity::Entities
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
         }
 
+#ifndef IS_SERVER
+        void DisplayVictoryMenu()
+        {
+            victoryMenuRoot->SetLocallyActive(true);
+        }
+#endif
+        
         static std::shared_ptr<EntityPlayer> Create(const Team& team)
         {
             std::shared_ptr<EntityPlayer> result(new EntityPlayer());
@@ -609,6 +616,30 @@ namespace Blaster::Server::Entity::Entities
                 .Finish();
 
             deathMenuRoot->SetLocallyActive(false);
+
+
+            victoryMenuRoot = UIBuilder::NewMenu("ui_victory_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
+                    .AddElement<UIElementImage>("ui_background")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetStretch(Transform2d::Stretch::TOP | Transform2d::Stretch::BOTTOM | Transform2d::Stretch::RIGHT | Transform2d::Stretch::LEFT);
+                        })
+                        .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.victory_background").value())
+                        .Call<&UIElementImage::Generate>()
+                    .MoveDown()
+                    .AddElement<UIElementText>("ui_victory_text")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> gameObject)
+                        {
+                            gameObject->GetTransform2d()->SetPosition({ 0.0f, 40.0f });
+                            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::CENTER_X);
+                        })
+                        .Call<&UIElementText::SetFont>(UIElementText::Font::Create({ "Blaster", "Font/DS-DIGIB.TTF" }, 88, 0, 8))
+                        .Call<&UIElementText::SetText>("VICTORY!")
+                        .Call<&UIElementText::Generate>()
+                    .MoveDown()
+                .Finish();
+
+            victoryMenuRoot->SetLocallyActive(false);
 
 
             chatRoot = UIBuilder::NewMenu("ui_chat_" + Blaster::Client::Network::ClientNetwork::GetInstance().GetStringId())
@@ -1320,6 +1351,7 @@ namespace Blaster::Server::Entity::Entities
 
         std::shared_ptr<GameObject> pauseMenuRoot = nullptr;
         std::shared_ptr<GameObject> deathMenuRoot = nullptr;
+        std::shared_ptr<GameObject> victoryMenuRoot = nullptr;
 
         std::shared_ptr<GameObject> hudRoot = nullptr;
         std::shared_ptr<UIElementText> healthText = nullptr;

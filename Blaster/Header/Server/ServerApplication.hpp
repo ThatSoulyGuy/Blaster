@@ -695,7 +695,29 @@ namespace Blaster::Server
 
             const char* name = (winner == EntityBase::Team::RED) ? "RED" : "BLUE";
 
+            std::vector<std::shared_ptr<GameObject>> redPlayers;
+            std::vector<std::shared_ptr<GameObject>> bluePlayers;
+
+            for (const auto& gameObject : GameObjectManager::GetInstance().GetAll())
+            {
+                if (!gameObject->HasComponent<EntityPlayer>())
+                    continue;
+
+                auto player = gameObject->GetComponent<EntityPlayer>().value();
+
+                if (player->GetCurrentHealth() > 0)
+                {
+                    if (player->GetTeam() == EntityBase::Team::RED)
+                        redPlayers.push_back(player->GetGameObject());
+                    else if (player->GetTeam() == EntityBase::Team::BLUE)
+                        bluePlayers.push_back(player->GetGameObject());
+                }
+            }
+
             BroadcastAnnouncement(std::string("Team ") + name + " WINS! Resetting match in 5 seconds...");
+
+            for (const auto& player : redPlayers)
+                ServerNetwork::GetInstance().SendTo(player->GetOwningClient().value(), PacketType::S2C_VictoryCondition, player->GetAbsolutePath());
 
             roundResetScheduled = true;
 

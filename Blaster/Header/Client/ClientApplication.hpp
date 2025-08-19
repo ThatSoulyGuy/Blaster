@@ -88,7 +88,8 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.hotbar_selector", { "Blaster", "Texture/UI/HotbarSelector.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.menu_background", { "Blaster", "Texture/UI/MenuBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.chat_background", { "Blaster", "Texture/UI/ChatBackground.png" }));
-            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" })); 
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.death_background", { "Blaster", "Texture/UI/DeathBackground.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.ui.victory_background", { "Blaster", "Texture/UI/VictoryBackground.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_default", { "Blaster", "Texture/UI/ButtonDefault.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.button_selected", { "Blaster", "Texture/UI/ButtonSelected.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.ui.crosshair", { "Blaster", "Texture/UI/Crosshair.png" }));
@@ -259,6 +260,16 @@ namespace Blaster::Client
                         {
                             if (GameObjectManager::GetInstance().GetCamera().has_value())
                                 GameObjectManager::GetInstance().GetCamera().value()->GetGameObject()->GetParent().value().lock()->GetComponent<Blaster::Server::Entity::Entities::EntityPlayer>().value()->AppendChatLine(line);
+                        });
+                });
+
+            ClientNetwork::GetInstance().RegisterReceiver(PacketType::S2C_VictoryCondition, [this](std::vector<std::uint8_t> payload)
+                {
+                    auto line = std::any_cast<std::string>(CommonNetwork::DisassembleData(payload)[0]);
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(nullptr, [this, line]()
+                        {
+                            GameObjectManager::GetInstance().Get(line).value()->GetComponent<EntityPlayer>().value()->DisplayVictoryMenu();
                         });
                 });
 

@@ -37,12 +37,12 @@ namespace Blaster::Server::Entity::Entities
 				default:
 					break;
 				}
-			}
+			} 
 			else
 			{
 				modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
-				modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Beacon.fbx" }));
+				modelGameObject->AddComponent(Model::Create({ "Blaster", "Model/Radio.fbx" }));
 			}
 		}
 

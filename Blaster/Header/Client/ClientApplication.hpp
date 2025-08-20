@@ -80,6 +80,7 @@ namespace Blaster::Client
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.concrete_floor", { "Blaster", "Texture/Map/ConcreteFloor.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.metal_wall", { "Blaster", "Texture/Map/MetalWall.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.map.beacon", { "Blaster", "Texture/Map/Beacon.png" }));
+            TextureManager::GetInstance().Register(Texture::Create("blaster.map.radio", { "Blaster", "Texture/Map/Radio.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.wood", { "Blaster", "Texture/Resource/Wood.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.resource.stone", { "Blaster", "Texture/Resource/Stone.png" }));
             TextureManager::GetInstance().Register(Texture::Create("blaster.container", { "Blaster", "Texture/Container.png" }));

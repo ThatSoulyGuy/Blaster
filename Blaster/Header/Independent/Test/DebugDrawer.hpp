@@ -1,7 +1,7 @@
 #pragma once
 
 #include <glad/glad.h>
-#include <glfw/glfw3.h>
+#include <GLFW/glfw3.h>
 #include "Independent/Math/Matrix.hpp"
 #include "Independent/Utility/BulletSterilized.hpp"
 
@@ -76,7 +76,7 @@ namespace Blaster::Independent::Test
 
             /* --- assemble CPU buffer ------------------------------------------------ */
             std::vector<float> cpu;
-            cpu.reserve(lines.size() * 12);              // 2 vertices × (3+3)
+            cpu.reserve(lines.size() * 12);              // 2 vertices ï¿½ (3+3)
 
             for (const auto& l : lines)
             {

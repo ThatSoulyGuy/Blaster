@@ -175,14 +175,14 @@ namespace Blaster::Client::Render
 
         void RenderUI()
         {
-            if (GetGameObject()->HasComponent<Shader>())
+            if (GetGameObject()->template HasComponent<Shader>())
             {
                 glDisable(GL_CULL_FACE);
                 glDisable(GL_DEPTH_TEST);
 
                 CommitIfDirty();
 
-                const auto shader = GetGameObject()->GetComponent<Shader>();
+                const auto shader = GetGameObject()->template GetComponent<Shader>();
 
                 shader.value()->Bind();
 

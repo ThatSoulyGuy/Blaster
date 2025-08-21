@@ -116,7 +116,7 @@ namespace Blaster::Independent::Item
 
 		std::optional<AssetPath> GetModelPath() const override
 		{
-			return std::make_optional<AssetPath>({ "Blaster", "Model/AssaultRifle.fbx" });
+			return std::make_optional<AssetPath>(AssetPath{ "Blaster", "Model/AssaultRifle.fbx" });
 		}
 
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override
@@ -180,7 +180,7 @@ namespace Blaster::Independent::Item
 
 		std::optional<AssetPath> GetModelPath() const override
 		{
-			return std::make_optional<AssetPath>({ "Blaster", "Model/FirstAid.fbx" });
+			return std::make_optional<AssetPath>(AssetPath{ "Blaster", "Model/FirstAid.fbx" });
 		}
 
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override

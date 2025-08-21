@@ -510,12 +510,14 @@ namespace Blaster::Server::Command
 
                 return CommandArgument{ static_cast<std::uint8_t>(tmp) };
             }
+
             if (suffix == 'f')
             {
                 double out = 0.0;
-                auto [p, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
+                char* end = nullptr;
+                out = std::strtod(token.data(), &end);
 
-                if (ec != std::errc{} || p != token.data() + token.size())
+                if (end != token.data() + token.size())
                     Fail("invalid float literal");
 
                 return CommandArgument{ out };
@@ -524,10 +526,11 @@ namespace Blaster::Server::Command
             if (seenDot || seenExp)
             {
                 double out = 0.0;
+                char* end = nullptr;
 
-                auto [p, ec] = std::from_chars(token.data(), token.data() + token.size(), out);
+                out = std::strtod(token.data(), &end);
 
-                if (ec != std::errc{} || p != token.data() + token.size())
+                if (end != token.data() + token.size())
                     Fail("invalid float literal");
 
                 return CommandArgument{ out };

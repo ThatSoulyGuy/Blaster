@@ -3,7 +3,6 @@
 #include <functional>
 #include <queue>
 #include <mutex>
-#include <memory>
 #include <unordered_set>
 #include <iostream>
 
@@ -19,7 +18,7 @@ namespace Blaster::Independent::Thread
         MainThreadExecutor& operator=(const MainThreadExecutor&) = delete;
         MainThreadExecutor& operator=(MainThreadExecutor&&) = delete;
 
-        using TaskFunction = std::move_only_function<void()>;
+        using TaskFunction = std::function<void()>;
 
         template <class F> requires std::invocable<F&>
         bool EnqueueTask(void* holder, F&& task)

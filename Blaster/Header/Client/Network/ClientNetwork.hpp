@@ -204,7 +204,7 @@ namespace Blaster::Client::Network
                 }
                 catch (std::exception exception)
                 {
-                    std::cerr << "Execption thrown from function: '" << exception.what() << "'!" << std::endl;
+                    std::cerr << "Execption thrown from functionIn: '" << exception.what() << "'!" << std::endl;
                 }
             }
         }
@@ -301,12 +301,14 @@ namespace Blaster::Client::Network
                     SendStringIdOnce();
                 else
                     pendingStringId.store(true, std::memory_order_relaxed);
+
                 return;
             }
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
                 const NetworkId id = std::any_cast<NetworkId>(CommonNetwork::DisassembleData(data)[0]);
+
                 std::cout << "Received NetworkId ('" << id << "') from the server.\n";
 
                 this->networkId = id;
@@ -320,19 +322,30 @@ namespace Blaster::Client::Network
 
             if (const auto packet = packetHandlerMap.find(header.type); packet != packetHandlerMap.end())
             {
-                for (auto& function : packet->second)
+                for (auto& functionIn : packet->second)
                 {
-                    try
-                    {
-                        function(std::move(data));
-                    }
-                    catch (const std::exception& e)
-                    {
-                        std::cerr << "ClientNetwork: receiver for packet " << (int)header.type << " threw: " << e.what() << '\n';
-                    }
+                    auto copy = data;
+
+                    MainThreadExecutor::GetInstance().EnqueueTask(this, [function = functionIn, payload = std::move(copy)]() mutable
+                        {
+                            try
+                            {
+                                function(std::move(payload));
+                            }
+                            catch (const std::exception& e)
+                            {
+                                std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
+                            }
+                            catch (...)
+                            {
+                                std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
+                            }
+                        }
+                    );
                 }
             }
         }
+
 
         void StartDisconnectCountdown()
         {

@@ -44,6 +44,14 @@ namespace Blaster::Independent::Network
         std::uint64_t sequence;
     };
 
+    struct WireHeader
+    {
+        std::uint16_t type;
+        std::uint32_t size;
+        std::uint32_t from;
+        std::uint64_t sequence;
+    };
+
     using DecodeFunction = std::any(*)(std::span<const std::uint8_t>);
 
     class ConversionRegistry
@@ -160,14 +168,37 @@ namespace Blaster::Independent::Network
 
             std::span<const std::uint8_t> payload = AssembleData(std::forward<Args>(args)...);
 
-            const PacketHeader header{ type, static_cast<std::uint32_t>(payload.size()), from, seq };
+            std::vector<std::uint8_t> buffer;
+            buffer.reserve(kHeaderBytes + payload.size());
 
-            std::vector<std::uint8_t> buffer(sizeof header + payload.size());
-
-            std::memcpy(buffer.data(), &header, sizeof header);
-            std::memcpy(buffer.data() + sizeof header, payload.data(), payload.size());
+            WriteHeader(buffer, type, static_cast<std::uint32_t>(payload.size()), from, seq);
+            WriteRaw(buffer, payload.data(), payload.size());
 
             return buffer;
+        }
+
+        static void WriteHeader(std::vector<std::uint8_t>& out, PacketType type, std::uint32_t size, std::uint32_t from, std::uint64_t seq)
+        {
+            out.resize(out.size() + kHeaderBytes);
+            std::uint8_t* p = out.data() + (out.size() - kHeaderBytes);
+
+            std::uint16_t t = static_cast<std::uint16_t>(type);
+            std::memcpy(p + 0, &t, 2);
+            std::memcpy(p + 2, &size, 4);
+            std::memcpy(p + 6, &from, 4);
+            std::memcpy(p + 10, &seq, 8);
+        }
+
+        static WireHeader ReadHeader(std::span<const std::uint8_t> bytes)
+        {
+            WireHeader h{};
+
+            std::memcpy(&h.type, bytes.data() + 0, 2);
+            std::memcpy(&h.size, bytes.data() + 2, 4);
+            std::memcpy(&h.from, bytes.data() + 6, 4);
+            std::memcpy(&h.sequence, bytes.data() + 10, 8);
+
+            return h;
         }
 
         static void WriteRaw(std::vector<std::uint8_t>& buffer, const void* data, std::size_t byteCount)
@@ -254,6 +285,8 @@ namespace Blaster::Independent::Network
 
             return { txt.begin(), txt.end() };
         }
+
+        inline static constexpr std::size_t kHeaderBytes = sizeof(std::uint16_t) + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
 
     private:
 

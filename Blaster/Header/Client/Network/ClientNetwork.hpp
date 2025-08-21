@@ -68,7 +68,6 @@ namespace Blaster::Client::Network
             running = true;
         }
 
-
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
         {
             boost::asio::post(strand, [this, type, receiver = std::move(function)]() mutable
@@ -249,25 +248,32 @@ namespace Blaster::Client::Network
 
                 constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;
 
-                while (inbox.size() >= sizeof(PacketHeader))
+                while (inbox.size() >= CommonNetwork::kHeaderBytes)
                 {
-                    PacketHeader header{};
-                    std::memcpy(&header, inbox.data(), sizeof(PacketHeader));
+                    auto hdr = CommonNetwork::ReadHeader(std::span<const std::uint8_t>(inbox.data(), CommonNetwork::kHeaderBytes));
+                    const std::size_t need = CommonNetwork::kHeaderBytes + hdr.size;
 
-                    const std::size_t need = sizeof(PacketHeader) + header.size;
-
-                    if (header.size > kMaxPayload)
+                    if (hdr.size > kMaxPayload)
                     {
-                        std::cerr << "ClientNetwork: invalid packet size " << header.size << " – dropping connection.\n";
+                        std::cerr << "ClientNetwork: invalid packet size " << hdr.size << " – dropping connection.\n";
+
                         StartDisconnectCountdown();
+
                         return;
                     }
 
                     if (inbox.size() < need)
                         break;
 
-                    std::vector<std::uint8_t> payload(header.size);
-                    std::memcpy(payload.data(), inbox.data() + sizeof(PacketHeader), header.size);
+                    std::vector<std::uint8_t> payload(hdr.size);
+                    std::memcpy(payload.data(), inbox.data() + CommonNetwork::kHeaderBytes, hdr.size);
+
+                    PacketHeader header{};
+
+                    header.type = static_cast<PacketType>(hdr.type);
+                    header.size = hdr.size;
+                    header.from = hdr.from;
+                    header.sequence = hdr.sequence;
 
                     try
                     {
@@ -276,13 +282,11 @@ namespace Blaster::Client::Network
                     catch (const std::exception& e)
                     {
                         std::cerr << "ClientNetwork: packet handler threw: " << e.what() << '\n';
-                        StartDisconnectCountdown();
                         return;
                     }
                     catch (...)
                     {
                         std::cerr << "ClientNetwork: packet handler threw unknown exception\n";
-                        StartDisconnectCountdown();
                         return;
                     }
 

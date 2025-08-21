@@ -277,25 +277,30 @@ namespace Blaster::Server::Network
 
                 constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;
 
-                while (client->inbox.size() >= sizeof(PacketHeader))
+                while (client->inbox.size() >= CommonNetwork::kHeaderBytes)
                 {
-                    PacketHeader header{};
-                    std::memcpy(&header, client->inbox.data(), sizeof(PacketHeader));
+                    auto hdr = CommonNetwork::ReadHeader(std::span<const std::uint8_t>(client->inbox.data(), CommonNetwork::kHeaderBytes));
+                    const std::size_t needed = CommonNetwork::kHeaderBytes + hdr.size;
 
-                    const std::size_t needed = sizeof(PacketHeader) + header.size;
-
-                    if (header.size > kMaxPayload)
+                    if (hdr.size > kMaxPayload)
                     {
-                        std::cerr << "ServerNetwork: invalid packet size " << header.size << " from client " << client->id << '\n';
+                        std::cerr << "ServerNetwork: invalid packet size " << hdr.size << " from client " << client->id << '\n';
                         StartDisconnectTimer(client);
+
                         return;
                     }
-
                     if (client->inbox.size() < needed)
                         break;
 
-                    std::vector<std::uint8_t> payload(header.size);
-                    std::memcpy(payload.data(), client->inbox.data() + sizeof(PacketHeader), header.size);
+                    std::vector<std::uint8_t> payload(hdr.size);
+                    std::memcpy(payload.data(), client->inbox.data() + CommonNetwork::kHeaderBytes, hdr.size);
+
+                    PacketHeader header{};
+
+                    header.type = static_cast<PacketType>(hdr.type);
+                    header.size = hdr.size;
+                    header.from = hdr.from;
+                    header.sequence = hdr.sequence;
 
                     try
                     {
@@ -304,13 +309,11 @@ namespace Blaster::Server::Network
                     catch (const std::exception& e)
                     {
                         std::cerr << "ServerNetwork: packet handler threw: " << e.what() << '\n';
-                        StartDisconnectTimer(client);
                         return;
                     }
                     catch (...)
                     {
                         std::cerr << "ServerNetwork: packet handler threw unknown exception\n";
-                        StartDisconnectTimer(client);
                         return;
                     }
 

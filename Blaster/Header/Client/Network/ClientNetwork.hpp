@@ -24,25 +24,29 @@ namespace Blaster::Client::Network
         ClientNetwork& operator=(const ClientNetwork&) = delete;
         ClientNetwork& operator=(ClientNetwork&&) = delete;
 
-        void Initialize(const std::string_view host, const std::uint16_t port, const std::string& stringId)
+        void Initialize(std::string_view host, std::uint16_t port, const std::string& stringId)
         {
             if (running)
                 return;
 
             this->stringId = stringId;
-            this->haveNetworkId = false;
-            this->pendingStringId = false;
-            this->sentStringId = false;
-            this->networkId = 0;
+
+            haveNetworkId = false;
+            pendingStringId = false;
+            sentStringId = false;
+            networkId = 0;
 
             ioContext.restart();
+
+            strand = boost::asio::make_strand(ioContext);
+            workGuard.emplace(ioContext.get_executor());
 
             {
                 disconnectTimer.cancel();
                 disconnectTimerActive = false;
 
-                boost::system::error_code errorCode;
-                socket.close(errorCode);
+                boost::system::error_code ec;
+                socket.close(ec);
             }
 
             socket = TcpProtocol::socket{ ioContext };
@@ -50,13 +54,15 @@ namespace Blaster::Client::Network
             TcpProtocol::resolver resolver{ ioContext };
             const auto resolution = resolver.resolve(host, std::to_string(port));
 
-            try
+            try 
             {
                 boost::asio::connect(socket, resolution);
             }
             catch (const boost::system::system_error& error)
             {
                 std::cerr << "Connect failed: " << error.what() << '\n';
+                workGuard.reset();
+
                 return;
             }
 
@@ -155,6 +161,8 @@ namespace Blaster::Client::Network
             inbox.clear();
             writeQueue.clear();
 
+            workGuard.reset();
+
             ioContext.stop();
 
             if (ioThread.joinable())
@@ -180,6 +188,8 @@ namespace Blaster::Client::Network
         }
 
     private:
+
+        using WorkGuard = boost::asio::executor_work_guard<boost::asio::io_context::executor_type>;
 
         ClientNetwork() = default;
 
@@ -236,7 +246,6 @@ namespace Blaster::Client::Network
                 if (errorCode)
                 {
                     std::cerr << "ClientNetwork: read failed: " << errorCode.message() << '\n';
-
                     StartDisconnectCountdown();
 
                     return;
@@ -250,13 +259,13 @@ namespace Blaster::Client::Network
 
                 while (inbox.size() >= CommonNetwork::kHeaderBytes)
                 {
-                    auto hdr = CommonNetwork::ReadHeader(std::span<const std::uint8_t>(inbox.data(), CommonNetwork::kHeaderBytes));
+                    const auto hdr = CommonNetwork::ReadHeader(std::span<const std::uint8_t>(inbox.data(), CommonNetwork::kHeaderBytes));
+
                     const std::size_t need = CommonNetwork::kHeaderBytes + hdr.size;
 
                     if (hdr.size > kMaxPayload)
                     {
                         std::cerr << "ClientNetwork: invalid packet size " << hdr.size << " – dropping connection.\n";
-
                         StartDisconnectCountdown();
 
                         return;
@@ -267,6 +276,8 @@ namespace Blaster::Client::Network
 
                     std::vector<std::uint8_t> payload(hdr.size);
                     std::memcpy(payload.data(), inbox.data() + CommonNetwork::kHeaderBytes, hdr.size);
+
+                    inbox.erase(inbox.begin(), inbox.begin() + need);
 
                     PacketHeader header{};
 
@@ -282,15 +293,11 @@ namespace Blaster::Client::Network
                     catch (const std::exception& e)
                     {
                         std::cerr << "ClientNetwork: packet handler threw: " << e.what() << '\n';
-                        return;
                     }
                     catch (...)
                     {
                         std::cerr << "ClientNetwork: packet handler threw unknown exception\n";
-                        return;
                     }
-
-                    inbox.erase(inbox.begin(), inbox.begin() + need);
                 }
 
                 BeginRead();
@@ -419,6 +426,7 @@ namespace Blaster::Client::Network
         std::unordered_map<PacketType, std::vector<std::function<void(std::vector<std::uint8_t>)>>> packetHandlerMap;
 
         std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
+        std::optional<WorkGuard> workGuard;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientNetwork> instance;

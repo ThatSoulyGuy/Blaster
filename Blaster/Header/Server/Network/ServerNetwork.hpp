@@ -263,7 +263,7 @@ namespace Blaster::Server::Network
 
         void BeginRead(const std::shared_ptr<ClientReference>& client)
         {
-            client->socket.async_read_some(boost::asio::buffer(client->readBuffer), [this, client](const ErrorCode& errorCode, const std::size_t number)
+            client->socket.async_read_some(boost::asio::buffer(client->readBuffer), boost::asio::bind_executor(client->strand, [this, client](const ErrorCode& errorCode, const std::size_t number)
             {
                 if (errorCode)
                 {
@@ -321,7 +321,7 @@ namespace Blaster::Server::Network
                 }
 
                 BeginRead(client);
-            });
+            }));
         }
 
         void HandleDisconnect(const std::shared_ptr<ClientReference>& client)

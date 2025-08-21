@@ -209,6 +209,7 @@ namespace Blaster::Independent::ECS
             componentMap[typeid(T)]->wasRemoved = true;
 
             Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), typeid(T));
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().ForgetHash(componentMap[typeid(T)]);
 
             componentMap.erase(typeid(T));
         }
@@ -222,7 +223,10 @@ namespace Blaster::Independent::ECS
                 if (iterator->second->GetTypeName() == typeName)
                 {
                     if (markDirty)
+                    {
                         Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(shared_from_this(), iterator->first);
+                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().ForgetHash(iterator->second);
+                    }
 
                     iterator->second->wasRemoved = true;
 

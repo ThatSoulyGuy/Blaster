@@ -235,18 +235,24 @@ namespace Blaster::Server::Network
                     if (!errorCode)
                     {
                         socket.set_option(TcpProtocol::no_delay(true));
-
-                        const auto client  = std::make_shared<ClientReference>(ClientReference{std::move(socket)});
+                        auto client = std::make_shared<ClientReference>(ClientReference{ std::move(socket) });
 
                         client->id = AcquireId();
                         clientMap[client->id] = client;
 
                         auto assign = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_AssignNetworkId, 0, client->id));
-                        boost::asio::async_write(client->socket, boost::asio::buffer(*assign), [assign](auto, auto){ });
-
                         auto ask = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_RequestStringId, 0, 0));
 
-                        boost::asio::async_write(client->socket, boost::asio::buffer(*ask), [ask](auto, auto){ });
+                        boost::asio::post(client->strand, [this, client, assign, ask]()
+                        {
+                            const bool idle = client->writeQueue.empty();
+
+                            client->writeQueue.push_back(assign);
+                            client->writeQueue.push_back(ask);
+
+                            if (idle)
+                                StartWrite(client);
+                        });
 
                         BeginRead(client);
                     }
@@ -258,40 +264,61 @@ namespace Blaster::Server::Network
         void BeginRead(const std::shared_ptr<ClientReference>& client)
         {
             client->socket.async_read_some(boost::asio::buffer(client->readBuffer), [this, client](const ErrorCode& errorCode, const std::size_t number)
+            {
+                if (errorCode)
                 {
-                    if (errorCode)
-                    {
-                        StartDisconnectTimer(client);
+                    StartDisconnectTimer(client);
+                    return;
+                }
 
+                CancelDisconnectTimer(client);
+
+                client->inbox.insert(client->inbox.end(), client->readBuffer.data(), client->readBuffer.data() + number);
+
+                constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;
+
+                while (client->inbox.size() >= sizeof(PacketHeader))
+                {
+                    PacketHeader header{};
+                    std::memcpy(&header, client->inbox.data(), sizeof(PacketHeader));
+
+                    const std::size_t needed = sizeof(PacketHeader) + header.size;
+
+                    if (header.size > kMaxPayload)
+                    {
+                        std::cerr << "ServerNetwork: invalid packet size " << header.size << " from client " << client->id << '\n';
+                        StartDisconnectTimer(client);
                         return;
                     }
 
-                    CancelDisconnectTimer(client);
+                    if (client->inbox.size() < needed)
+                        break;
 
-                    client->inbox.insert(client->inbox.end(), client->readBuffer.data(), client->readBuffer.data() + number);
+                    std::vector<std::uint8_t> payload(header.size);
+                    std::memcpy(payload.data(), client->inbox.data() + sizeof(PacketHeader), header.size);
 
-                    while (client->inbox.size() >= sizeof(PacketHeader))
+                    try
                     {
-                        auto* header = reinterpret_cast<const PacketHeader*>(client->inbox.data());
-
-                        const std::size_t needed = sizeof(PacketHeader) + header->size;
-
-                        if (client->inbox.size() < needed)
-                            break;
-
-                        std::vector<std::uint8_t> payload;
-
-                        payload.resize(header->size);
-
-                        std::memcpy(payload.data(), client->inbox.data() + sizeof(PacketHeader), header->size);
-
-                        HandlePacket(client->id, *header, std::move(payload));
-
-                        client->inbox.erase(client->inbox.begin(), client->inbox.begin() + needed);
+                        HandlePacket(client->id, header, std::move(payload));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ServerNetwork: packet handler threw: " << e.what() << '\n';
+                        StartDisconnectTimer(client);
+                        return;
+                    }
+                    catch (...)
+                    {
+                        std::cerr << "ServerNetwork: packet handler threw unknown exception\n";
+                        StartDisconnectTimer(client);
+                        return;
                     }
 
-                    BeginRead(client);
-                });
+                    client->inbox.erase(client->inbox.begin(), client->inbox.begin() + needed);
+                }
+
+                BeginRead(client);
+            });
         }
 
         void HandleDisconnect(const std::shared_ptr<ClientReference>& client)
@@ -309,13 +336,21 @@ namespace Blaster::Server::Network
             std::cout << "Client '" << client->stringId << "' with id '" << client->id << "' has disconnected!\n";
         }
 
-
         void HandlePacket(const NetworkId from, const PacketHeader& header, std::vector<std::uint8_t>&& data)
         {
             if (const auto iterator = packetHandlerMap.find(header.type); iterator != packetHandlerMap.end())
             {
                 for (auto& function : iterator->second)
-                    function(from, std::move(data));
+                {
+                    try
+                    {
+                        function(from, data);
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ServerNetwork: receiver for packet " << (int)header.type << " threw: " << e.what() << '\n';
+                    }
+                }
             }
         }
 

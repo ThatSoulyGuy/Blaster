@@ -189,10 +189,7 @@ namespace Blaster::Independent::ECS::Synchronization
                     if (componentIterator == gameObjectPointer->GetComponentMap().end())
                     {
                         PushOp(templateSnapshot.operationBlob, OpRemoveComponent{ gameObjectPointer->GetAbsolutePath(), static_cast<int>(Utility::TypeRegistrar::GetIdFromRuntimeName(componentType.name()).value()) });
-
                         ++templateSnapshot.header.operationCount;
-
-                        ForgetHash(componentIterator->second);
 
                         continue;
                     }

@@ -77,9 +77,11 @@ namespace Blaster::Client::Network
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
         {
             boost::asio::post(strand, [this, type, receiver = std::move(function)]() mutable
-                {
-                    packetHandlerMap[type].push_back(std::move(receiver));
-                });
+            {
+                std::lock_guard guard(packetMapMutex);
+
+                packetHandlerMap[type].push_back(std::move(receiver));
+            });
         }
 
         template <typename... Args> requires DataConvertible<Args...>
@@ -189,6 +191,12 @@ namespace Blaster::Client::Network
 
     private:
 
+        struct InboundMessage
+        {
+            PacketType type;
+            std::vector<std::uint8_t> payload;
+        };
+
         using WorkGuard = boost::asio::executor_work_guard<boost::asio::io_context::executor_type>;
 
         ClientNetwork() = default;
@@ -279,84 +287,12 @@ namespace Blaster::Client::Network
 
                     inbox.erase(inbox.begin(), inbox.begin() + need);
 
-                    PacketHeader header{};
-
-                    header.type = static_cast<PacketType>(hdr.type);
-                    header.size = hdr.size;
-                    header.from = hdr.from;
-                    header.sequence = hdr.sequence;
-
-                    try
-                    {
-                        HandlePacket(header, std::move(payload));
-                    }
-                    catch (const std::exception& e)
-                    {
-                        std::cerr << "ClientNetwork: packet handler threw: " << e.what() << '\n';
-                    }
-                    catch (...)
-                    {
-                        std::cerr << "ClientNetwork: packet handler threw unknown exception\n";
-                    }
+                    EnqueueInbound(static_cast<PacketType>(hdr.type), std::move(payload));
                 }
 
                 BeginRead();
             }));
         }
-
-        void HandlePacket(const PacketHeader& header, std::vector<std::uint8_t>&& data)
-        {
-            if (header.type == PacketType::S2C_RequestStringId)
-            {
-                if (haveNetworkId.load(std::memory_order_relaxed))
-                    SendStringIdOnce();
-                else
-                    pendingStringId.store(true, std::memory_order_relaxed);
-
-                return;
-            }
-
-            if (header.type == PacketType::S2C_AssignNetworkId)
-            {
-                const NetworkId id = std::any_cast<NetworkId>(CommonNetwork::DisassembleData(data)[0]);
-
-                std::cout << "Received NetworkId ('" << id << "') from the server.\n";
-
-                this->networkId = id;
-                haveNetworkId.store(true, std::memory_order_relaxed);
-
-                SendStringIdOnce();
-                pendingStringId.store(false, std::memory_order_relaxed);
-
-                return;
-            }
-
-            if (const auto packet = packetHandlerMap.find(header.type); packet != packetHandlerMap.end())
-            {
-                for (auto& functionIn : packet->second)
-                {
-                    auto copy = data;
-
-                    MainThreadExecutor::GetInstance().EnqueueTask(this, [function = functionIn, payload = std::move(copy)]() mutable
-                        {
-                            try
-                            {
-                                function(std::move(payload));
-                            }
-                            catch (const std::exception& e)
-                            {
-                                std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
-                            }
-                            catch (...)
-                            {
-                                std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
-                            }
-                        }
-                    );
-                }
-            }
-        }
-
 
         void StartDisconnectCountdown()
         {
@@ -399,6 +335,107 @@ namespace Blaster::Client::Network
                 Send(PacketType::C2S_StringId, stringId);
         }
 
+        void EnqueueInbound(PacketType type, std::vector<std::uint8_t>&& payload)
+        {
+            bool schedule = false;
+
+            {
+                std::lock_guard guard(inboundMessageMutex);
+
+                inboundMessageQueue.push_back(InboundMessage{ type, std::move(payload) });
+
+                if (!inboundMessagePumpScheduled)
+                {
+                    inboundMessagePumpScheduled = true;
+                    schedule = true;
+                }
+            }
+
+            if (schedule)
+                MainThreadExecutor::GetInstance().EnqueueTask(this, [this]() { PumpInboundOnMainThread(); });
+        }
+
+        void PumpInboundOnMainThread()
+        {
+            for (;;)
+            {
+                InboundMessage message;
+
+                {
+                    std::lock_guard guard(inboundMessageMutex);
+
+                    if (inboundMessageQueue.empty())
+                    {
+                        inboundMessagePumpScheduled = false;
+                        break;
+                    }
+
+                    message = std::move(inboundMessageQueue.front());
+
+                    inboundMessageQueue.pop_front();
+                }
+
+                if (message.type == PacketType::S2C_RequestStringId)
+                {
+                    if (haveNetworkId.load(std::memory_order_relaxed))
+                        SendStringIdOnce();
+                    else
+                        pendingStringId.store(true, std::memory_order_relaxed);
+
+                    continue;
+                }
+
+                if (message.type == PacketType::S2C_AssignNetworkId)
+                {
+                    auto tmp = message.payload;
+                    std::span<std::uint8_t> sp(tmp.data(), tmp.size());
+
+                    auto parts = CommonNetwork::DisassembleData(sp);
+
+                    if (!parts.empty())
+                    {
+                        const NetworkId id = std::any_cast<NetworkId>(parts[0]);
+
+                        networkId = id;
+                        haveNetworkId.store(true, std::memory_order_relaxed);
+
+                        SendStringIdOnce();
+                        pendingStringId.store(false, std::memory_order_relaxed);
+                    }
+                    else
+                        std::cerr << "ClientNetwork: S2C_AssignNetworkId had empty payload\n";
+
+                    continue;
+                }
+
+                std::vector<std::function<void(std::vector<std::uint8_t>)>> handlers;
+                {
+                    std::lock_guard guard(packetMapMutex);
+
+                    if (auto iterator = packetHandlerMap.find(message.type); iterator != packetHandlerMap.end())
+                        handlers = iterator->second;
+                }
+
+                for (auto& function : handlers)
+                {
+                    try
+                    {
+                        auto copy = message.payload;
+                        function(std::move(copy));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
+                    }
+                    catch (...)
+                    {
+                        std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
+                    }
+                }
+            }
+        }
+
+
         boost::asio::io_context ioContext;
         TcpProtocol::socket socket{ioContext};
         std::thread ioThread;
@@ -427,6 +464,12 @@ namespace Blaster::Client::Network
 
         std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
         std::optional<WorkGuard> workGuard;
+
+        std::deque<InboundMessage> inboundMessageQueue;
+        std::mutex inboundMessageMutex;
+        bool inboundMessagePumpScheduled = false;
+
+        std::mutex packetMapMutex;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientNetwork> instance;

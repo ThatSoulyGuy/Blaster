@@ -265,14 +265,9 @@ namespace Blaster::Server::Network
         {
             client->socket.async_read_some(boost::asio::buffer(client->readBuffer), boost::asio::bind_executor(client->strand, [this, client](const ErrorCode& errorCode, const std::size_t number)
             {
-                if (errorCode)
-                {
-                    StartDisconnectTimer(client);
-                    return;
-                }
+                if (errorCode) { StartDisconnectTimer(client); return; }
 
                 CancelDisconnectTimer(client);
-
                 client->inbox.insert(client->inbox.end(), client->readBuffer.data(), client->readBuffer.data() + number);
 
                 constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;
@@ -282,18 +277,22 @@ namespace Blaster::Server::Network
                     auto hdr = CommonNetwork::ReadHeader(std::span<const std::uint8_t>(client->inbox.data(), CommonNetwork::kHeaderBytes));
                     const std::size_t needed = CommonNetwork::kHeaderBytes + hdr.size;
 
-                    if (hdr.size > kMaxPayload)
+                    if (hdr.size > kMaxPayload) 
                     {
                         std::cerr << "ServerNetwork: invalid packet size " << hdr.size << " from client " << client->id << '\n';
+
                         StartDisconnectTimer(client);
 
                         return;
                     }
+
                     if (client->inbox.size() < needed)
                         break;
 
                     std::vector<std::uint8_t> payload(hdr.size);
                     std::memcpy(payload.data(), client->inbox.data() + CommonNetwork::kHeaderBytes, hdr.size);
+
+                    client->inbox.erase(client->inbox.begin(), client->inbox.begin() + needed);
 
                     PacketHeader header{};
 
@@ -309,15 +308,11 @@ namespace Blaster::Server::Network
                     catch (const std::exception& e)
                     {
                         std::cerr << "ServerNetwork: packet handler threw: " << e.what() << '\n';
-                        return;
                     }
                     catch (...)
                     {
                         std::cerr << "ServerNetwork: packet handler threw unknown exception\n";
-                        return;
                     }
-
-                    client->inbox.erase(client->inbox.begin(), client->inbox.begin() + needed);
                 }
 
                 BeginRead(client);

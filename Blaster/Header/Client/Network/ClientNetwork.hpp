@@ -77,9 +77,11 @@ namespace Blaster::Client::Network
         void RegisterReceiver(const PacketType type, std::function<void(std::vector<std::uint8_t>)> function)
         {
             boost::asio::post(strand, [this, type, receiver = std::move(function)]() mutable
-                {
-                    packetHandlerMap[type].push_back(std::move(receiver));
-                });
+            {
+                std::lock_guard guard(packetMapMutex);
+
+                packetHandlerMap[type].push_back(std::move(receiver));
+            });
         }
 
         template <typename... Args> requires DataConvertible<Args...>
@@ -189,6 +191,12 @@ namespace Blaster::Client::Network
 
     private:
 
+        struct InboundMessage
+        {
+            PacketType type;
+            std::vector<std::uint8_t> payload;
+        };
+
         using WorkGuard = boost::asio::executor_work_guard<boost::asio::io_context::executor_type>;
 
         ClientNetwork() = default;
@@ -279,6 +287,8 @@ namespace Blaster::Client::Network
 
                     inbox.erase(inbox.begin(), inbox.begin() + need);
 
+                    EnqueueInbound(static_cast<PacketType>(hdr.type), std::move(payload));
+
                     PacketHeader header{};
 
                     header.type = static_cast<PacketType>(hdr.type);
@@ -357,7 +367,6 @@ namespace Blaster::Client::Network
             }
         }
 
-
         void StartDisconnectCountdown()
         {
             if (disconnecting.load(std::memory_order_relaxed))
@@ -399,6 +408,73 @@ namespace Blaster::Client::Network
                 Send(PacketType::C2S_StringId, stringId);
         }
 
+        void EnqueueInbound(PacketType type, std::vector<std::uint8_t>&& payload)
+        {
+            bool schedule = false;
+
+            {
+                std::lock_guard guard(rxMutex);
+
+                rxQueue.push_back(InboundMessage{ type, std::move(payload) });
+
+                if (!rxPumpScheduled)
+                {
+                    rxPumpScheduled = true;
+                    schedule = true;
+                }
+            }
+
+            if (schedule)
+                MainThreadExecutor::GetInstance().EnqueueTask(this, [this]() { PumpInboundOnMainThread(); });
+        }
+
+        void PumpInboundOnMainThread()
+        {
+            for (;;)
+            {
+                InboundMessage msg;
+
+                {
+                    std::lock_guard lk(rxMutex);
+
+                    if (rxQueue.empty())
+                    {
+                        rxPumpScheduled = false;
+                        break;
+                    }
+
+                    msg = std::move(rxQueue.front());
+
+                    rxQueue.pop_front();
+                }
+
+                std::vector<std::function<void(std::vector<std::uint8_t>)>> handlers;
+                {
+                    std::lock_guard lk(packetMapMutex);
+                    if (auto it = packetHandlerMap.find(msg.type); it != packetHandlerMap.end())
+                        handlers = it->second;
+                }
+
+                for (auto& fn : handlers)
+                {
+                    try
+                    {
+                        auto copy = msg.payload;
+                        fn(std::move(copy));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
+                    }
+                    catch (...)
+                    {
+                        std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
+                    }
+                }
+            }
+        }
+
+
         boost::asio::io_context ioContext;
         TcpProtocol::socket socket{ioContext};
         std::thread ioThread;
@@ -427,6 +503,12 @@ namespace Blaster::Client::Network
 
         std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
         std::optional<WorkGuard> workGuard;
+
+        std::deque<InboundMessage> rxQueue;
+        std::mutex rxMutex;
+        bool rxPumpScheduled = false;
+
+        std::mutex packetMapMutex;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientNetwork> instance;

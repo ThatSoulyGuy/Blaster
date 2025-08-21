@@ -416,23 +416,66 @@ namespace Blaster::Client::Network
                         handlers = iterator->second;
                 }
 
-                for (auto& function : handlers)
-                {
-                    try
-                    {
-                        auto copy = message.payload;
-                        function(std::move(copy));
-                    }
-                    catch (const std::exception& e)
-                    {
-                        std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
-                    }
-                    catch (...)
-                    {
-                        std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
-                    }
+                    MainThreadExecutor::GetInstance().EnqueueTask(this, [function = functionIn, payload = std::move(copy)]() mutable
+                        {
+                            try
+                            {
+                                function(std::move(payload));
+                            }
+                            catch (const std::exception& e)
+                            {
+                                std::cerr << "ClientNetwork: receiver for packet threw: " << e.what() << '\n';
+                            }
+                            catch (...)
+                            {
+                                std::cerr << "ClientNetwork: receiver for packet threw unknown exception\n";
+                            }
+                        }
+                    );
                 }
             }
+        }
+
+
+        void StartDisconnectCountdown()
+        {
+            if (disconnecting.load(std::memory_order_relaxed))
+                return;
+
+            if (disconnectTimerActive.exchange(true))
+                return;
+
+            disconnectTimer.expires_after(std::chrono::seconds(2));
+            disconnectTimer.async_wait(boost::asio::bind_executor(strand, [this](const ErrorCode& errorCode)
+                {
+                    if (!errorCode && !disconnecting.load(std::memory_order_relaxed))
+                    {
+                        MainThreadExecutor::GetInstance().EnqueueTask(this, [&]()
+                            {
+                                NotifyConnectionLost();
+                            });
+                    }
+
+                    disconnectTimerActive = false;
+                }));
+        }
+
+        void CancelDisconnectCountdown()
+        {
+            if (!disconnectTimerActive)
+                return;
+
+            disconnectTimerActive = false;
+
+            disconnectTimer.cancel();
+        }
+
+        void SendStringIdOnce()
+        {
+            bool expected = false;
+
+            if (sentStringId.compare_exchange_strong(expected, true))
+                Send(PacketType::C2S_StringId, stringId);
         }
 
 
@@ -464,12 +507,6 @@ namespace Blaster::Client::Network
 
         std::deque<std::shared_ptr<std::vector<std::uint8_t>>> writeQueue;
         std::optional<WorkGuard> workGuard;
-
-        std::deque<InboundMessage> inboundMessageQueue;
-        std::mutex inboundMessageMutex;
-        bool inboundMessagePumpScheduled = false;
-
-        std::mutex packetMapMutex;
 
         static std::once_flag initializationFlag;
         static std::unique_ptr<ClientNetwork> instance;

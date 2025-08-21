@@ -232,41 +232,65 @@ namespace Blaster::Client::Network
 
         void BeginRead()
         {
-            socket.async_read_some(boost::asio::buffer(readBuffer), boost::asio::bind_executor(strand, [this] (const ErrorCode& errorCode, const std::size_t number)
+            socket.async_read_some(boost::asio::buffer(readBuffer), boost::asio::bind_executor(strand, [this](const ErrorCode& errorCode, const std::size_t number)
+            {
+                if (errorCode)
                 {
-                    if (errorCode)
+                    std::cerr << "ClientNetwork: read failed: " << errorCode.message() << '\n';
+
+                    StartDisconnectCountdown();
+
+                    return;
+                }
+
+                CancelDisconnectCountdown();
+
+                inbox.insert(inbox.end(), readBuffer.data(), readBuffer.data() + number);
+
+                constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;
+
+                while (inbox.size() >= sizeof(PacketHeader))
+                {
+                    PacketHeader header{};
+                    std::memcpy(&header, inbox.data(), sizeof(PacketHeader));
+
+                    const std::size_t need = sizeof(PacketHeader) + header.size;
+
+                    if (header.size > kMaxPayload)
                     {
-                        std::cerr << "ClientNetwork: read failed: " << errorCode.message() << '\n';
-
+                        std::cerr << "ClientNetwork: invalid packet size " << header.size << " – dropping connection.\n";
                         StartDisconnectCountdown();
-
                         return;
                     }
 
-                    CancelDisconnectCountdown();
+                    if (inbox.size() < need)
+                        break;
 
-                    inbox.insert(inbox.end(), readBuffer.data(), readBuffer.data() + number);
+                    std::vector<std::uint8_t> payload(header.size);
+                    std::memcpy(payload.data(), inbox.data() + sizeof(PacketHeader), header.size);
 
-                    while (inbox.size() >= sizeof(PacketHeader))
+                    try
                     {
-                        auto* header = reinterpret_cast<const PacketHeader*>(inbox.data());
-
-                        const std::size_t need = sizeof(PacketHeader) + header->size;
-
-                        if (inbox.size() < need)
-                            break;
-
-                        std::vector<std::uint8_t> payload(header->size);
-
-                        std::memcpy(payload.data(), inbox.data() + sizeof(PacketHeader), header->size);
-
-                        HandlePacket(*header, std::move(payload));
-
-                        inbox.erase(inbox.begin(), inbox.begin() + need);
+                        HandlePacket(header, std::move(payload));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ClientNetwork: packet handler threw: " << e.what() << '\n';
+                        StartDisconnectCountdown();
+                        return;
+                    }
+                    catch (...)
+                    {
+                        std::cerr << "ClientNetwork: packet handler threw unknown exception\n";
+                        StartDisconnectCountdown();
+                        return;
                     }
 
-                    BeginRead();
-                }));
+                    inbox.erase(inbox.begin(), inbox.begin() + need);
+                }
+
+                BeginRead();
+            }));
         }
 
         void HandlePacket(const PacketHeader& header, std::vector<std::uint8_t>&& data)
@@ -277,28 +301,36 @@ namespace Blaster::Client::Network
                     SendStringIdOnce();
                 else
                     pendingStringId.store(true, std::memory_order_relaxed);
-                
                 return;
             }
 
             if (header.type == PacketType::S2C_AssignNetworkId)
             {
                 const NetworkId id = std::any_cast<NetworkId>(CommonNetwork::DisassembleData(data)[0]);
-                std::cout << "Received NetworkId ('" << id << "') from the server." << std::endl;
+                std::cout << "Received NetworkId ('" << id << "') from the server.\n";
 
                 this->networkId = id;
                 haveNetworkId.store(true, std::memory_order_relaxed);
 
                 SendStringIdOnce();
-
                 pendingStringId.store(false, std::memory_order_relaxed);
+
                 return;
             }
 
             if (const auto packet = packetHandlerMap.find(header.type); packet != packetHandlerMap.end())
             {
                 for (auto& function : packet->second)
-                    function(std::move(data));
+                {
+                    try
+                    {
+                        function(std::move(data));
+                    }
+                    catch (const std::exception& e)
+                    {
+                        std::cerr << "ClientNetwork: receiver for packet " << (int)header.type << " threw: " << e.what() << '\n';
+                    }
+                }
             }
         }
 

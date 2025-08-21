@@ -42,6 +42,7 @@ namespace Blaster::Server::Command
 namespace Blaster::Server::Entity::Entities
 {
     struct DamageCommand;
+    struct RespawnCommand;
 }
 
 REGISTER_TYPE(std::int32_t, 37387)
@@ -65,6 +66,7 @@ REGISTER_TYPE(Blaster::Independent::Math::QueryTransformCommand, 21576)
 REGISTER_TYPE(Blaster::Independent::Math::CorrectTransformCommand, 11399)
 REGISTER_TYPE(Blaster::Server::Command::CommandPacket, 12321)
 REGISTER_TYPE(Blaster::Server::Entity::Entities::DamageCommand, 62289)
+REGISTER_TYPE(Blaster::Server::Entity::Entities::RespawnCommand, 82181)
 
 namespace Blaster::Independent::Utility
 {

@@ -321,6 +321,8 @@ namespace Blaster::Server::Entity::Entities
 
             if (GameObjectManager::GetInstance().Has(modelPath))
                 modelGameObject = GameObjectManager::GetInstance().Get(modelPath).value();
+                return;
+            }
             else
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 

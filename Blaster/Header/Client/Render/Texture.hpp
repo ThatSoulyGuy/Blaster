@@ -16,15 +16,12 @@ namespace Blaster::Client::Render
 {
     class TextureManager;
 
-    class Texture final : public Component
+    class Texture : public Component
     {
 
     public:
 
-        Texture(const Texture&) = delete;
-        Texture(Texture&&) = delete;
-        Texture& operator=(const Texture&) = delete;
-        Texture& operator=(Texture&&) = delete;
+        virtual ~Texture() = default;
 
         [[nodiscard]]
         std::string GetRegistryName() const
@@ -39,18 +36,18 @@ namespace Blaster::Client::Render
         }
 
         [[nodiscard]]
-        Vector<int, 2> GetDimensions() const
+        virtual Vector<int, 2> GetDimensions() const
         {
             return dimensions;
         }
 
-        void Bind(const unsigned int slot) const
+        virtual void Bind(const std::uint32_t slot) const
         {
             glActiveTexture(GL_TEXTURE0 + slot);
             glBindTexture(GL_TEXTURE_2D, id);
         }
 
-        void Unbind()
+        virtual void Unbind()
         {
             glBindTexture(GL_TEXTURE_2D, 0);
         }
@@ -87,8 +84,6 @@ namespace Blaster::Client::Render
         }
 
     private:
-
-        Texture() = default;
 
         friend class boost::serialization::access;
         friend class Blaster::Independent::ECS::ComponentFactory;

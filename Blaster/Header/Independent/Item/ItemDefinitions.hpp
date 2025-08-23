@@ -121,7 +121,7 @@ namespace Blaster::Independent::Item
 
 		std::optional<Vector<float, 3>> GetModelViewPosition() const override
 		{
-			return std::make_optional<Vector<float, 3>>({ -90.0f, -1.0f, 6.0f });
+			return std::make_optional<Vector<float, 3>>({ -3.0f, -1.0f, 6.0f });
 		}
 
 		std::optional<Vector<float, 3>> GetModelViewRotation() const override

@@ -6,6 +6,7 @@
 #include "Client/Render/BillboardedText.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Model.hpp"
+#include "Client/Render/RenderTexture.hpp"
 #include "Client/Render/ShaderManager.hpp"
 #include "Client/Render/TextureManager.hpp"
 #include "Client/Sound/SoundClip.hpp"
@@ -83,6 +84,14 @@ namespace Blaster::Server::Entity::Entities
             BOOST_DESCRIBE_CLASS(Blaster::Server::Entity::Entities::EntityPlayer::Hotbar, (), (), (), (index, slots))
         };
 
+#ifndef IS_SERVER
+        ~EntityPlayer()
+        {
+            auto& playerList = AllPlayers();
+            playerList.erase(std::remove(playerList.begin(), playerList.end(), this), playerList.end());
+        }
+#endif
+
         EntityPlayer(const EntityPlayer&) = delete;
         EntityPlayer(EntityPlayer&&) = delete;
         EntityPlayer& operator=(const EntityPlayer&) = delete;
@@ -101,6 +110,15 @@ namespace Blaster::Server::Entity::Entities
                 InitializeCamera();
                 InitializeUI();
             }
+
+#ifndef IS_SERVER
+            {
+                auto& playerList = AllPlayers();
+
+                if (std::find(playerList.begin(), playerList.end(), this) == playerList.end())
+                    playerList.push_back(this);
+            }
+#endif
         }
 
         void Update() override
@@ -321,8 +339,6 @@ namespace Blaster::Server::Entity::Entities
 
             if (GameObjectManager::GetInstance().Has(modelPath))
                 modelGameObject = GameObjectManager::GetInstance().Get(modelPath).value();
-                return;
-            }
             else
                 modelGameObject = GameObjectManager::GetInstance().Register(GameObject::Create("model"), GetGameObject()->GetAbsolutePath());
 
@@ -700,8 +716,47 @@ namespace Blaster::Server::Entity::Entities
                 .Finish();
 
 
+            minimapRoot = UIBuilder::NewMenu("ui_minimap_" + ClientNetwork::GetInstance().GetStringId())
+                .AddElement<UIElementImage>("ui_minimap_frame")
+                    .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> go)
+                        {
+                            go->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::RIGHT);
+                            go->GetTransform2d()->SetPosition({ -kMinimapPadding, kMinimapPadding });
+                            go->GetTransform2d()->SetDimensions({ kMinimapSizePx + 2 * kMinimapPadding, kMinimapSizePx + 2 * kMinimapPadding });
+                        })
+                    .Call<&UIElementImage::SetAutoSize>(false)
+                    .Call<&UIElementImage::SetTexture>(TextureManager::GetInstance().Get("blaster.ui.menu_background").value())
+                    .Call<&UIElementImage::Generate>()
+                    .AddElement<UIElementImage>("ui_minimap")
+                        .CallAndThen<&Component::GetGameObject>([&](std::shared_ptr<GameObject> go)
+                            {
+                                go->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::RIGHT);
+                                go->GetTransform2d()->SetPosition({ -(kMinimapPadding), kMinimapPadding });
+                                go->GetTransform2d()->SetDimensions({ kMinimapSizePx, kMinimapSizePx });
+                            })
+                        .Call<&UIElementImage::SetAutoSize>(false)
+                        .MoveDown()
+                    .MoveDown()
+                .Finish();
+            
+            const auto mapPath = minimapRoot->GetAbsolutePath() + ".ui_minimap_frame.ui_minimap";
+            minimapImage = GameObjectManager::GetInstance().Get(mapPath).value()->GetComponent<UIElementImage>().value();
+
+
             chatLogText = GameObjectManager::GetInstance().Get(chatRoot->GetAbsolutePath() + ".ui_chat_background.ui_chat_log").value()->GetComponent<UIElementText>().value();
             chatInputField = GameObjectManager::GetInstance().Get(chatRoot->GetAbsolutePath() + ".ui_chat_background.ui_chat_input").value()->GetComponent<UIElementTextField>().value();
+
+            minimapCaptureGO = GameObjectManager::GetInstance().Register(GameObject::Create("minimap_capture", true), GetGameObject()->GetAbsolutePath());
+
+            minimapCamera = minimapCaptureGO->AddComponent(Camera::Create(45.0f, 1.0f, 5000.0f));
+            minimapCamera->SetAspectOverride(1.0f);
+            minimapCamera->SetNearFar(1.0f, 5000.0f);
+            minimapCamera->SetUpHint(std::nullopt);
+
+            minimapRenderTexture = minimapCaptureGO->AddComponent(RenderTexture::Create({ kMinimapRTSize, kMinimapRTSize }, true, true));
+
+            minimapImage->SetTexture(minimapRenderTexture->GetTextureComponent());
+            minimapImage->Generate();
 #endif
         }
 
@@ -852,8 +907,14 @@ namespace Blaster::Server::Entity::Entities
             if (InputManager::GetInstance().GetKeyState(KeyCode::C, KeyState::PRESSED))
                 std::cout << "Current Position: " << GetGameObject()->GetTransform3d()->GetWorldPosition() << std::endl;
 
+            if (InputManager::GetInstance().GetKeyState(KeyCode::G, KeyState::PRESSED))
+                camera->GetGameObject()->GetTransform3d()->SetLocalPosition({ 0.0f, 10.0f, 0.0f });
+
             if (InputManager::GetInstance().GetKeyState(KeyCode::Q, KeyState::PRESSED))
-                hotbar.GetCurrentSlot() = 0;
+            {
+                ConsumeCurrentItemAndAdvance();
+                return;
+            }
 
             if (InputManager::GetInstance().GetScrollDelta() > 0)
                 hotbar.index += 1;
@@ -876,6 +937,9 @@ namespace Blaster::Server::Entity::Entities
 
             if (InputManager::GetInstance().GetMouseState(MouseCode::LEFT, MouseState::PRESSED))
             {
+                if (hotbar.GetCurrentSlot() == 0)
+                    return;
+
                 auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
 
 #ifndef IS_SERVER
@@ -932,16 +996,15 @@ namespace Blaster::Server::Entity::Entities
                     item->OnUsed(this, other->GetGameObject()->GetComponent<EntityBase>()->get(), MouseCode::LEFT);
 
                     if (item->IsSingleUse())
-                    {
-                        hotbar.GetCurrentSlot() = 0;
-
-                        Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
-                    }
+                        ConsumeCurrentItemAndAdvance();
                 }
             }
 
             if (InputManager::GetInstance().GetMouseState(MouseCode::RIGHT, MouseState::PRESSED))
             {
+                if (hotbar.GetCurrentSlot() == 0)
+                    return;
+
                 auto item = ItemRegistry::GetInstance().Get(hotbar.GetCurrentSlot()).value();
 
 #ifndef IS_SERVER
@@ -951,11 +1014,7 @@ namespace Blaster::Server::Entity::Entities
                 item->OnUsed(this, nullptr, MouseCode::RIGHT);
 
                 if (item->IsSingleUse())
-                {
-                    hotbar.GetCurrentSlot() = 0;
-
-                    Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
-                }
+                    ConsumeCurrentItemAndAdvance();
             }
         }
 
@@ -1100,6 +1159,25 @@ namespace Blaster::Server::Entity::Entities
 
             if (InputManager::GetInstance().GetKeyState(KeyCode::SPACE, KeyState::PRESSED) && controller->OnGround())
                 controller->Jump();
+
+            if (true)
+            {
+                Vector<float, 3> cameraDirection{ 0.0f, 0.0f, 0.0f };
+
+                if (InputManager::GetInstance().GetKeyState(KeyCode::UP, KeyState::HELD))
+                    cameraDirection += forward;
+
+                if (InputManager::GetInstance().GetKeyState(KeyCode::DOWN, KeyState::HELD))
+                    cameraDirection -= forward;
+
+                if (InputManager::GetInstance().GetKeyState(KeyCode::RIGHT, KeyState::HELD))
+                    cameraDirection += right;
+
+                if (InputManager::GetInstance().GetKeyState(KeyCode::LEFT, KeyState::HELD))
+                    cameraDirection -= right;
+
+                camera->GetGameObject()->GetTransform3d()->Translate(cameraDirection);
+            }
         }
 
         void UpdateViewModel()
@@ -1109,6 +1187,7 @@ namespace Blaster::Server::Entity::Entities
             PresentStaminaIfChanged();
             PresentHotbarIfChanged();
             PresentViewModelIfChanged();
+            PresentMinimap();
 #endif
         }
 
@@ -1330,7 +1409,255 @@ namespace Blaster::Server::Entity::Entities
         {
             return pauseMenuRoot->IsLocallyActive() || deathMenuRoot->IsLocallyActive() || chatFocused;
         }
+
+        static std::vector<EntityPlayer*>& AllPlayers()
+        {
+            static std::vector<EntityPlayer*> instances;
+
+            return instances;
+        }
+
+        static Vector<float, 3> TeamColor(const Team team)
+        {
+            return (team == Team::RED) ? Vector<float, 3>{ 1.0f, 0.0f, 0.00f } : Vector<float, 3>{ 0.0f, 0.0f, 1.0f };
+        }
+
+        static Vector<float, 2> WorldXZToUV(const Vector<float, 3>& worldPos)
+        {
+            const float u = (worldPos.x() - kMinimapWorldMin.x()) / (kMinimapWorldMax.x() - kMinimapWorldMin.x());
+            const float v = (worldPos.z() - kMinimapWorldMin.y()) / (kMinimapWorldMax.y() - kMinimapWorldMin.y());
+
+            return { std::clamp(u, 0.0f, 1.0f), std::clamp(v, 0.0f, 1.0f) };
+        }
+
+        void EnsureBlipFor(EntityPlayer* player)
+        {
+            if (minimapBlips.contains(player))
+                return;
+
+            auto blipName = "ui_minimap_blip_" + std::to_string(reinterpret_cast<std::uintptr_t>(player));
+            const auto parentPath = minimapRoot->GetAbsolutePath() + ".ui_minimap_frame.ui_minimap";
+            auto gameObject = GameObjectManager::GetInstance().Register(GameObject::Create(blipName, true, std::nullopt, true), parentPath);
+
+            gameObject->AddComponent(ShaderManager::GetInstance().Get("blaster.textured_ui").value());
+            gameObject->AddComponent(Mesh<UIVertex>::Create({}, {}));
+
+            auto image = gameObject->AddComponent(UIElementImage::Create());
+            image->SetAutoSize(false);
+            image->SetTexture(TextureManager::GetInstance().Get("blaster.ui.white").value());
+            image->Generate();
+            
+            gameObject->GetTransform2d()->SetAnchors(Transform2d::Anchor::TOP | Transform2d::Anchor::LEFT);
+            gameObject->GetTransform2d()->SetPosition({ 0.0f, 0.0f });
+            gameObject->GetTransform2d()->SetDimensions({ 8.0f, 8.0f });
+
+            minimapBlips[player] = gameObject;
+        }
+
+        void UpdateBlip(EntityPlayer* player, const Vector<float, 2>& uvMin, const Vector<float, 2>& uvMax)
+        {
+            EnsureBlipFor(player);
+
+            auto gameObjectOptional = minimapBlips.find(player);
+
+            if (gameObjectOptional == minimapBlips.end())
+                return;
+
+            auto gameObject = gameObjectOptional->second;
+
+            auto imageOptional = gameObject->GetComponent<UIElementImage>();
+
+            if (!imageOptional)
+                return;
+
+            auto image = imageOptional.value();
+
+            const Vector<float, 3> color = (player == this) ? Vector<float, 3>{ 0.0f, 1.0f, 0.0f } : TeamColor(player->GetTeam());
+
+            image->SetTint(color);
+
+            const Vector<float, 2> teamUV = GetMinimapTeamUVOffset();
+            const auto uvWorld = WorldXZToUV(player->GetGameObject()->GetTransform3d()->GetWorldPosition());
+            const Vector<float, 2> uv{ std::clamp(uvWorld.x() + teamUV.x(), 0.0f, 1.0f), std::clamp(uvWorld.y() + teamUV.y(), 0.0f, 1.0f) };
+
+            const float uSpan = std::max(uvMax.x() - uvMin.x(), 1e-6f);
+            const float vSpan = std::max(uvMax.y() - uvMin.y(), 1e-6f);
+            const float t = (uv.x() - uvMin.x()) / uSpan;
+            const float s = (uv.y() - uvMin.y()) / vSpan;
+
+            const bool isOnMap = (t >= 0.0f && t <= 1.0f && s >= 0.0f && s <= 1.0f);
+
+            gameObject->SetLocallyActive(isOnMap);
+
+            if (!isOnMap)
+                return;
+
+            const float dot = (player == this) ? 10.0f : 8.0f;
+            gameObject->GetTransform2d()->SetDimensions({ dot, dot });
+
+            const float x = t * kMinimapSizePx - dot * 0.5f;
+            const float y = s * kMinimapSizePx - dot * 0.5f; 
+
+            gameObject->GetTransform2d()->SetPosition({ x, y });
+        }
+
+        void PresentMinimap()
+        {
+            if (!minimapImage || !minimapRenderTexture || !minimapCamera)
+                return;
+
+            const auto position = GetGameObject()->GetTransform3d()->GetWorldPosition();
+            auto cameraTransform = minimapCamera->GetGameObject()->GetTransform3d();
+
+            cameraTransform->SetLocalPosition({ 0, kMiniCamHeight, 0 });
+            cameraTransform->SetLocalRotation({ 89.0f, 0.0f, 0.0f });
+
+            const float fieldOfViewRadians = 2.0f * std::atan((kMiniViewWorldW * 0.5f) / kMiniCamHeight);
+            minimapCamera->SetFieldOfView(fieldOfViewRadians * 180.0f / std::numbers::pi_v<float>);
+
+            minimapRenderTexture->Begin(0, 0, 0, 1, true);
+
+            GameObjectManager::GetInstance().Render(minimapCamera);
+
+            minimapRenderTexture->End();
+
+            auto& playerList = AllPlayers();
+
+            for (auto* player : playerList)
+            {
+                if (!player || !player->GetGameObject())
+                    continue;
+
+                if (player->GetCurrentHealth() == 0)
+                {
+                    if (minimapBlips.contains(player))
+                        minimapBlips[player]->SetLocallyActive(false);
+
+                    continue;
+                }
+
+                EnsureBlipFor(player);
+
+                auto iterator = minimapBlips.find(player);
+
+                if (iterator == minimapBlips.end())
+                    continue;
+
+                auto gameObject = iterator->second;
+                auto imageOptional = gameObject->GetComponent<UIElementImage>();
+
+                if (imageOptional)
+                {
+                    const Vector<float, 3> color = (player == this) ? Vector<float, 3>{ 0.0f, 1.0f, 0.0f } : TeamColor(player->GetTeam());
+
+                    imageOptional.value()->SetTint(color);
+                }
+
+                const auto uv = ProjectToMinimapUV(player->GetGameObject()->GetTransform3d()->GetWorldPosition());
+                const bool onMap = (uv.x() >= 0.0f && uv.x() <= 1.0f && uv.y() >= 0.0f && uv.y() <= 1.0f);
+
+                gameObject->SetLocallyActive(onMap);
+
+                if (!onMap)
+                    continue;
+
+                const float dot = (player == this) ? 10.0f : 8.0f;
+
+                gameObject->GetTransform2d()->SetDimensions({ dot, dot });
+
+                const float x = uv.x() * kMinimapSizePx - dot * 0.5f;
+                const float y = uv.y() * kMinimapSizePx - dot * 0.5f;
+
+                gameObject->GetTransform2d()->SetPosition({ x, y });
+            }
+
+            for (auto iterator = minimapBlips.begin(); iterator != minimapBlips.end(); )
+            {
+                if (std::find(playerList.begin(), playerList.end(), iterator->first) == playerList.end())
+                    iterator = minimapBlips.erase(iterator);
+                else
+                    ++iterator;
+            }
+        }
+
+        Vector<float, 2> GetMinimapTeamUVOffset() const
+        {
+            Vector<float, 2> texturePixel{ 1.0f, 1.0f };
+
+            if (minimapImage && minimapImage->GetTexture())
+            {
+                texturePixel.x() = float(minimapImage->GetTexture().value()->GetDimensions().x());
+                texturePixel.y() = float(minimapImage->GetTexture().value()->GetDimensions().y());
+            }
+
+            const Vector<float, 2> teamPixelDimensions = (team == Team::RED) ? kMinimapTeamPixelOffsetRed : kMinimapTeamPixelOffsetBlue;
+
+            return { teamPixelDimensions.x() / std::max(1.0f, texturePixel.x()), teamPixelDimensions.y() / std::max(1.0f, texturePixel.y()) };
+        }
+
+        Vector<float, 2> ProjectToMinimapUV(const Vector<float, 3>& world) const
+        {
+            const auto VP = minimapCamera->GetProjectionMatrix() * minimapCamera->GetViewMatrix();
+            const Vector<float, 4> clip = VP * Vector<float, 4>{ world.x(), world.y(), world.z(), 1.0f };
+
+            if (std::abs(clip.w()) <= 1e-6f)
+                return { -1.0f, -1.0f };
+
+            const float ndcX = clip.x() / clip.w();
+            const float ndcY = clip.y() / clip.w();
+
+            const float u = (ndcX * 0.5f) + 0.5f;
+            const float v = 1.0f - ((ndcY * 0.5f) + 0.5f);
+
+            return { u, v };
+        }
 #endif
+
+        void SelectNextNonEmptySlot()
+        {
+            for (int i = 0; i < static_cast<int>(hotbar.slots.size()); ++i)
+            {
+                const int idx = ((static_cast<int>(hotbar.index) - 1 + 1 + i) % hotbar.slots.size());
+
+                if (hotbar.slots[idx] != 0)
+                {
+                    hotbar.index = static_cast<std::uint8_t>(idx + 1);
+                    break;
+                }
+            }
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
+
+        void ConsumeCurrentItemAndAdvance()
+        {
+            const int slotIdx = ((hotbar.index ? hotbar.index : 1) - 1);
+
+            hotbar.slots[slotIdx] = 0;
+
+#ifndef IS_SERVER
+            lastSlotIds[slotIdx] = std::numeric_limits<std::uint32_t>::max();
+
+            if (camera)
+            {
+                const std::string viewModelPath = camera->GetGameObject()->GetAbsolutePath() + ".view_model";
+
+                if (GameObjectManager::GetInstance().Has(viewModelPath))
+                    GameObjectManager::GetInstance().Unregister(viewModelPath);
+            }
+
+            const std::string worldModelPath = GetGameObject()->GetAbsolutePath() + ".world_model";
+            if (GameObjectManager::GetInstance().Has(worldModelPath))
+                GameObjectManager::GetInstance().Unregister(worldModelPath);
+
+            currentViewModelItem = 0;
+            PresentHotbarIfChanged();
+#endif
+
+            SelectNextNonEmptySlot();
+
+            Blaster::Independent::ECS::Synchronization::SenderSynchronization::GetInstance().MarkDirty(GetGameObject(), typeid(EntityPlayer));
+        }
 
         std::shared_ptr<Camera> camera;
         std::shared_ptr<GameObject> modelGameObject;
@@ -1373,7 +1700,30 @@ namespace Blaster::Server::Entity::Entities
         std::shared_ptr<UIElementText> chatLogText = nullptr;
         std::shared_ptr<UIElementTextField> chatInputField = nullptr;
 
+        std::shared_ptr<GameObject> minimapCaptureGO = nullptr;
+        std::shared_ptr<Camera> minimapCamera = nullptr;
+        std::shared_ptr<RenderTexture> minimapRenderTexture = nullptr;
+
         std::deque<std::string> chatLines;
+
+        inline static constexpr float kMinimapSizePx = 200.0f;
+        inline static constexpr float kMinimapPadding = 16.0f;
+
+        inline static const Vector<float, 2> kMinimapWorldMin{ -1024.f, -1024.f };
+        inline static const Vector<float, 2> kMinimapWorldMax{ +1024.f,  +1024.f };
+        inline static constexpr float kMinimapViewWorldSize = 400.0f;
+
+        inline static const Vector<float, 2> kMinimapTeamPixelOffsetRed{ 319.0f, 18.0f };
+        inline static const Vector<float, 2> kMinimapTeamPixelOffsetBlue{ -319.0f, 18.0f };
+
+        inline static constexpr int kMinimapRTSize = 256;
+        inline static constexpr float kMiniCamHeight = 150.0f;
+        inline static constexpr float kMiniViewWorldW = 400.0f;
+
+        std::shared_ptr<GameObject> minimapRoot = nullptr;
+        std::shared_ptr<UIElementImage> minimapImage = nullptr;
+
+        std::unordered_map<EntityPlayer*, std::shared_ptr<GameObject>> minimapBlips;
 
         int lastPresentedStamina = -1;
         bool chatFocused = false;

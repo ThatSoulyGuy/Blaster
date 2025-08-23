@@ -17,16 +17,69 @@ namespace Blaster::Client::Render
 
     public:
 
+        void SetFieldOfView(float fieldOfView)
+        {
+            this->fieldOfView = fieldOfView;
+        }
+
+        void SetNearFar(float nearPlane, float farPlane)
+        {
+            this->nearPlane = nearPlane;
+            this->farPlane = farPlane;
+        }
+
+        void SetAspectOverride(std::optional<float> aspectOverride)
+        {
+            this->aspectOverride = aspectOverride;
+        }
+
+        void SetUpHint(std::optional<Vector<float, 3>> upHint)
+        {
+            this->upHint = std::move(upHint);
+        }
+
+        void SetOrthographic(bool isOrthographic)
+        {
+            this->isOrthographic = isOrthographic;
+        }
+
         [[nodiscard]]
         Matrix<float, 4, 4> GetProjectionMatrix() const
         {
-            return Matrix<float, 4, 4>::Perspective(fieldOfView * (static_cast<float>(std::numbers::pi) / 180), static_cast<float>(Window::GetInstance().GetDimensions().x()) / static_cast<float>(Window::GetInstance().GetDimensions().y()), nearPlane, farPlane);
+            if (!isOrthographic)
+            {
+                const float degToRad = static_cast<float>(std::numbers::pi) / 180.0f;
+
+                float aspect = aspectOverride.has_value() ? aspectOverride.value() : static_cast<float>(Window::GetInstance().GetDimensions().x()) / static_cast<float>(Window::GetInstance().GetDimensions().y());
+
+                return Matrix<float, 4, 4>::Perspective(fieldOfView * degToRad, aspect, nearPlane, farPlane);
+            }
+            else
+                return Matrix<float, 4, 4>::Orthographic(0.0f, Window::GetInstance().GetDimensions().x(), Window::GetInstance().GetDimensions().y(), 0.0f, nearPlane, farPlane);
         }
 
         [[nodiscard]]
         Matrix<float, 4, 4> GetViewMatrix() const
         {
-            return Matrix<float, 4, 4>::LookAt(GetGameObject()->GetTransform3d()->GetWorldPosition(), GetGameObject()->GetTransform3d()->GetWorldPosition() + GetGameObject()->GetTransform3d()->GetForward(), { 0.0f, 1.0f, 0.0f });
+            const auto transform = GetGameObject()->GetTransform3d();
+            const auto eye = transform->GetWorldPosition();
+
+            auto forward = transform->GetForward();
+
+            if (Vector<float, 3>::LengthSquared(forward) <= 1e-8f)
+                forward = { 0.0f, 0.0f, -1.0f };
+            else
+                forward = Vector<float, 3>::Normalize(forward);
+
+            Vector<float, 3> up = upHint.value_or(Vector<float, 3>{ 0.0f, 1.0f, 0.0f });
+
+            auto normalizedUp = Vector<float, 3>::Normalize(up);
+            float color = std::abs(Vector<float, 3>::Dot(forward, normalizedUp));
+
+            if (color > 0.999f)
+                up = (std::abs(forward.z()) < 0.99f) ? Vector<float, 3>{ 0.0f, 0.0f, 1.0f } : Vector<float, 3>{ 1.0f, 0.0f, 0.0f };
+
+            return Matrix<float, 4, 4>::LookAt(eye, eye + forward, up);
         }
 
         static std::shared_ptr<Camera> Create(const float fieldOfView, const float nearPlane, const float farPlane)
@@ -60,6 +113,11 @@ namespace Blaster::Client::Render
         float fieldOfView = 0;
         float nearPlane = 0;
         float farPlane = 0;
+
+        bool isOrthographic = false;
+
+        std::optional<float> aspectOverride{};
+        std::optional<Vector<float, 3>> upHint{};
 
         BOOST_DESCRIBE_CLASS(Blaster::Client::Render::Camera, (Blaster::Independent::ECS::Component), (), (), (fieldOfView, nearPlane, farPlane))
 

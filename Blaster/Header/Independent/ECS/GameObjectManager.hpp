@@ -320,7 +320,4 @@ namespace Blaster::Independent::ECS
         static std::once_flag initializationFlag;
         static std::unique_ptr<GameObjectManager> instance;
     };
-
-    std::once_flag GameObjectManager::initializationFlag;
-    std::unique_ptr<GameObjectManager> GameObjectManager::instance;
 }

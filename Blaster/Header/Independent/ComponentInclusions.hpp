@@ -1,10 +1,14 @@
-#include "Client/Render/Animator.hpp"
+#pragma once
+
 #include "Client/Render/Vertices/FatVertex.hpp"
 #include "Client/Render/Vertices/ModelVertex.hpp"
 #include "Client/Render/Vertices/UIVertex.hpp"
+#include "Client/Render/Animator.hpp"
+#include "Client/Render/BillboardedText.hpp"
 #include "Client/Render/Camera.hpp"
 #include "Client/Render/Mesh.hpp"
 #include "Client/Render/Model.hpp"
+#include "Client/Render/RenderTexture.hpp"
 #include "Client/Render/Vertex.hpp"
 #include "Client/Render/Shader.hpp"
 #include "Client/Render/Texture.hpp"

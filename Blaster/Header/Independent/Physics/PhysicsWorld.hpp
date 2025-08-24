@@ -129,7 +129,4 @@ namespace Blaster::Independent::Physics
         static std::unique_ptr<PhysicsWorld> instance;
 
     };
-
-    std::once_flag PhysicsWorld::initializationFlag;
-    std::unique_ptr<PhysicsWorld> PhysicsWorld::instance;
 }

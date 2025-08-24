@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_set>
-#include <queue>
+#include <ranges>
 #include <string_view>
 #include <boost/archive/text_oarchive.hpp>
 #include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
@@ -67,23 +67,23 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
             {
-                gDeferredDirty.push_back({ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), std::nullopt });
+                gDeferredDirty.push_back({ CastGameObject(gameObject), std::nullopt });
                 return;
             }
 
 #ifndef IS_SERVER
-            auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);
+            auto sync = CastGameObject(gameObject);
 
             if (sync->GetOwningClient().has_value() && sync->GetOwningClient().value() != Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId())
                 return;
 #endif
 
-            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal())
+            if (CastGameObject(gameObject)->IsLocal())
                 return;
 
             {
                 std::unique_lock guard(dirtyMutex);
-                dirtyGameObjectSet.insert(std::static_pointer_cast<IGameObjectSynchronization>(gameObject));
+                dirtyGameObjectSet.insert(CastGameObject(gameObject));
             }
 
             WakeFlusher();
@@ -93,24 +93,24 @@ namespace Blaster::Independent::ECS::Synchronization
         {
             if (gSnapshotApplyDepth.load(std::memory_order_relaxed) != 0)
             {
-                gDeferredDirty.push_back({ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), component });
+                gDeferredDirty.push_back({ CastGameObject(gameObject), component });
 
                 return;
             }
 
 #ifndef IS_SERVER
-            auto sync = std::static_pointer_cast<IGameObjectSynchronization>(gameObject);
+            auto sync = CastGameObject(gameObject);
 
             if (sync->GetOwningClient().has_value() && sync->GetOwningClient().value() != Blaster::Client::Network::ClientNetwork::GetInstance().GetNetworkId())
                 return;
 #endif
 
-            if (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->IsLocal() || (std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->GetComponentMap().contains(component) && !std::static_pointer_cast<IGameObjectSynchronization>(gameObject)->GetComponentMap().at(component)->ShouldSynchronize()))
+            if (CastGameObject(gameObject)->IsLocal() || (CastGameObject(gameObject)->GetComponentMap().contains(component) && !CastGameObject(gameObject)->GetComponentMap().at(component)->ShouldSynchronize()))
                 return;
 
             {
                 std::unique_lock guard(dirtyMutex);
-                dirtyComponentSet.emplace(DirtyCompKey{ std::static_pointer_cast<IGameObjectSynchronization>(gameObject), component });
+                dirtyComponentSet.emplace(DirtyCompKey{ CastGameObject(gameObject), component });
             }
 
             WakeFlusher();
@@ -299,7 +299,7 @@ namespace Blaster::Independent::ECS::Synchronization
 #endif
 
             for (const auto& root : gameObjectList)
-                SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(root), snapshot);
+                SerializeSubTree(CastGameObject(root), snapshot);
 
 #ifdef IS_SERVER
             Blaster::Server::Network::ServerNetwork::GetInstance().SendTo(targetClient, PacketType::S2C_Snapshot, snapshot);
@@ -393,7 +393,7 @@ namespace Blaster::Independent::ECS::Synchronization
             }
 
             for (const auto& child : node->GetChildMap() | std::views::values)
-                SerializeSubTree(std::static_pointer_cast<IGameObjectSynchronization>(child), snap);
+                SerializeSubTree(CastGameObject(child), snap);
         }
 
         template <typename Op>
@@ -519,6 +519,8 @@ namespace Blaster::Independent::ECS::Synchronization
             opCount = kept;
         }
 
+        static std::shared_ptr<IGameObjectSynchronization> CastGameObject(const std::shared_ptr<GameObject>&);
+
         static std::string_view GetRoot(std::string_view absolutePath)
         {
             const size_t dot = absolutePath.find('.');
@@ -542,7 +544,4 @@ namespace Blaster::Independent::ECS::Synchronization
         static std::unique_ptr<SenderSynchronization> instance;
 
     };
-
-    std::once_flag SenderSynchronization::initializationFlag;
-    std::unique_ptr<SenderSynchronization> SenderSynchronization::instance;
 }

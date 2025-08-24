@@ -54,5 +54,5 @@ namespace Blaster::Client::Render::Vertices
     };
 }
 
-BOOST_CLASS_EXPORT(Blaster::Client::Render::Vertices::FatVertex)
+CLASS_TYPE_EXPORT(Blaster::Client::Render::Vertices::FatVertex)
 REGISTER_COMPONENT(Blaster::Client::Render::Mesh<Blaster::Client::Render::Vertices::FatVertex>, 23984)

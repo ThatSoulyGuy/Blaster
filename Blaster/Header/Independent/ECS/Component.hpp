@@ -25,6 +25,28 @@
 #define OPERATOR_CHECK(...) \
     BOOST_PP_SEQ_FOR_EACH_I(OPERATOR_CHECK_DETAIL, other, BOOST_PP_VARIADIC_TO_SEQ(__VA_ARGS__))
 
+
+#define CLASS_TYPE_EXPORT(TYPE) \
+namespace boost::serialization \
+{ \
+    template<> \
+    struct guid_defined<TYPE> : boost::mpl::true_ {}; \
+    \
+    template<> \
+    inline const char* guid<TYPE>() \
+    { \
+        return BOOST_PP_STRINGIZE(TYPE); \
+    } \
+} \
+namespace boost::archive::detail::extra_detail \
+{ \
+    template<> \
+    struct init_guid<TYPE> \
+    { \
+        inline static guid_initializer<TYPE> const& g = ::boost::serialization::singleton<guid_initializer<TYPE>>::get_mutable_instance().export_guid(); \
+    }; \
+}
+
 namespace Blaster::Client::Render
 {
     class Camera;
@@ -160,4 +182,4 @@ namespace Blaster::Independent::ECS
     };
 }
 
-BOOST_CLASS_EXPORT(Blaster::Independent::ECS::Component)
+CLASS_TYPE_EXPORT(Blaster::Independent::ECS::Component)

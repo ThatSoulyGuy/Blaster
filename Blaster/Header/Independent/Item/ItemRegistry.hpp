@@ -77,7 +77,4 @@ namespace Blaster::Independent::Item
 		static std::unique_ptr<ItemRegistry> instance;
 
 	};
-
-	std::once_flag ItemRegistry::initializationFlag;
-	std::unique_ptr<ItemRegistry> ItemRegistry::instance;
 }

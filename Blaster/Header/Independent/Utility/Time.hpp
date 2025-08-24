@@ -74,7 +74,4 @@ namespace Blaster::Independent::Utility
         static std::unique_ptr<Time> instance;
 
     };
-
-    std::once_flag Time::initializationFlag;
-    std::unique_ptr<Time> Time::instance;
 }

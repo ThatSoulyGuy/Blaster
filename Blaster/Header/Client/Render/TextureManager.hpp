@@ -89,7 +89,4 @@ namespace Blaster::Client::Render
 		static std::unique_ptr<TextureManager> instance;
 
 	};
-
-	std::once_flag TextureManager::initializationFlag;
-	std::unique_ptr<TextureManager> TextureManager::instance;
 }

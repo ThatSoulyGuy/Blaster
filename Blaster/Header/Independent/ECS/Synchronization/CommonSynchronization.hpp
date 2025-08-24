@@ -18,7 +18,7 @@ namespace Blaster::Independent::ECS::Synchronization
         std::optional<std::type_index> component;
     };
 
-    thread_local std::vector<DirtyRequest> gDeferredDirty;
+    inline thread_local std::vector<DirtyRequest> gDeferredDirty;
 
     inline std::atomic_uint32_t gSnapshotApplyDepth{ 0 };
 

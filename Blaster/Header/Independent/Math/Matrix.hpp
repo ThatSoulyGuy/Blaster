@@ -455,7 +455,7 @@ namespace Blaster::Independent::Math
 				}
 
 				if (maxAbs == T(0))
-					throw std::runtime_error("Matrix::Inverse – singular matrix");
+					throw std::runtime_error("Matrix::Inverse singular matrix");
 
 				if (pivot != col)
 				{

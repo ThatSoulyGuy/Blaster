@@ -1,7 +1,5 @@
 #version 410 core
 
-#extension GL_ARB_shading_language_420pack : enable
-
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec4 aColor;
 layout(location = 2) in vec2 aUV;
@@ -13,7 +11,7 @@ uniform mat4 viewUniform;
 uniform mat4 projectionUniform;
 uniform bool uUseSkinning;
 
-layout(std140, binding = 0) uniform Bones
+layout(std140) uniform Bones
 {
     mat4 uBoneMatrices[128];
 };

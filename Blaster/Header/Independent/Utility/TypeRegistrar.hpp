@@ -152,21 +152,23 @@ namespace Blaster::Independent::Utility
         {
             auto& m = GetMaps().idToName;
 
-            const auto it = m.find(id);
+            const auto iterator = m.find(id);
 
-            return it != m.end() ? it->second : std::string{};
+            return iterator != m.end() ? iterator->second : std::string{};
         }
 
         static std::optional<std::size_t> GetIdFromRuntimeName(const std::string& name)
         {
             auto& m = GetMaps().nameToId;
 
-            auto it = m.find(name);
+            const auto iterator = m.find(name);
 
-            if (it == m.end())
+            if (iterator == m.end())
                 return std::nullopt;
 
-            return it->second;
+            return iterator->second;
         }
     };
 }
+
+#include "Independent/Utility/TypeRegistrarDeclarations.hpp"

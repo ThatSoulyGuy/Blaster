@@ -391,7 +391,4 @@ namespace Blaster::Client::Core
         static std::once_flag initializationFlag;
 
     };
-
-    std::unique_ptr<InputManager> InputManager::instance = nullptr;
-    std::once_flag InputManager::initializationFlag;
 }

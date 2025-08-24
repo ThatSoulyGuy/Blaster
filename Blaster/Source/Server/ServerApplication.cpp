@@ -1,4 +1,3 @@
-#include "Independent/TypeRegistrations.hpp"
 #include "Independent/ComponentInclusions.hpp"
 #include "Server/ServerApplication.hpp"
 

@@ -147,7 +147,4 @@ namespace Blaster::Client::Core
 		static std::unique_ptr<Window> instance;
 
 	};
-
-	std::once_flag Window::initializationFlag;
-	std::unique_ptr<Window> Window::instance;
 }

@@ -57,6 +57,22 @@ namespace Blaster::Client::Network
             try 
             {
                 boost::asio::connect(socket, resolution);
+
+                {
+                    boost::system::error_code localErrorCode;
+
+                    (void)socket.set_option(TcpProtocol::no_delay(true), localErrorCode);
+
+                    if (localErrorCode)
+                        std::cerr << "TCP_NODELAY failed (client): " << localErrorCode.message() << '\n';
+                }
+
+#if defined(__APPLE__)
+                {
+                    constexpr int one = 1;
+                    ::setsockopt(socket.native_handle(), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+                }
+#endif
             }
             catch (const boost::system::system_error& error)
             {
@@ -67,10 +83,10 @@ namespace Blaster::Client::Network
             }
 
             socket.set_option(TcpProtocol::no_delay(true));
+            ioThread = std::thread([this] { ioContext.run(); });
 
             BeginRead();
 
-            ioThread = std::thread([this] { ioContext.run(); });
             running = true;
         }
 
@@ -273,7 +289,7 @@ namespace Blaster::Client::Network
 
                     if (hdr.size > kMaxPayload)
                     {
-                        std::cerr << "ClientNetwork: invalid packet size " << hdr.size << " – dropping connection.\n";
+                        std::cerr << "ClientNetwork: invalid packet size " << hdr.size << " ï¿½ dropping connection.\n";
                         StartDisconnectCountdown();
 
                         return;
@@ -287,14 +303,50 @@ namespace Blaster::Client::Network
 
                     inbox.erase(inbox.begin(), inbox.begin() + need);
 
-                    EnqueueInbound(static_cast<PacketType>(hdr.type), std::move(payload));
+                    const auto messageType = static_cast<PacketType>(hdr.type);
+
+                    if (messageType == PacketType::S2C_AssignNetworkId)
+                    {
+                        auto temporary = payload;
+                        const std::span payloadData(temporary.data(), temporary.size());
+
+                        if (const auto parts = CommonNetwork::DisassembleData(payloadData); !parts.empty())
+                        {
+                            const auto id = std::any_cast<NetworkId>(parts[0]);
+
+                            networkId = id;
+                            haveNetworkId.store(true, std::memory_order_relaxed);
+
+                            SendStringIdOnce();
+                            pendingStringId.store(false, std::memory_order_relaxed);
+                        }
+                        else
+                            std::cerr << "ClientNetwork: S2C_AssignNetworkId had empty payload\n";
+
+                        BeginRead();
+
+                        return;
+                    }
+
+                    if (messageType == PacketType::S2C_RequestStringId)
+                    {
+                        if (haveNetworkId.load(std::memory_order_relaxed))
+                            SendStringIdOnce();
+                        else
+                            pendingStringId.store(true, std::memory_order_relaxed);
+
+                        BeginRead();
+                        return;
+                    }
+
+                    EnqueueInbound(messageType, std::move(payload));
                 }
 
                 BeginRead();
             }));
         }
 
-        void EnqueueInbound(PacketType type, std::vector<std::uint8_t>&& payload)
+        void EnqueueInbound(const PacketType type, std::vector<std::uint8_t>&& payload)
         {
             bool schedule = false;
 
@@ -475,7 +527,4 @@ namespace Blaster::Client::Network
         static std::unique_ptr<ClientNetwork> instance;
 
     };
-
-    std::once_flag ClientNetwork::initializationFlag;
-    std::unique_ptr<ClientNetwork> ClientNetwork::instance;
 }

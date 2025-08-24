@@ -20,7 +20,7 @@ struct _AutoComponentRegister
 #   define REGISTER_COMPONENT(TYPE, ID)                                            \
 static inline const bool AUTO_REG_NAME =                      \
 _AutoComponentRegister < TYPE >::value; \
-BOOST_CLASS_EXPORT(TYPE)  \
+CLASS_TYPE_EXPORT(TYPE)  \
 REGISTER_TYPE(TYPE, ID)
 #else
 #   define REGISTER_COMPONENT(TYPE)                                            \

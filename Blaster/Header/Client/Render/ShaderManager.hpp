@@ -86,7 +86,4 @@ namespace Blaster::Client::Render
 		static std::unique_ptr<ShaderManager> instance;
 
 	};
-
-	std::once_flag ShaderManager::initializationFlag;
-	std::unique_ptr<ShaderManager> ShaderManager::instance;
 }

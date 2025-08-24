@@ -238,6 +238,8 @@ namespace Blaster::Server
 
         void Initialize()
         {
+            std::cout << "TypeId(u32)=" << Blaster::Independent::Utility::TypeRegistrar::GetTypeId<std::uint32_t>() << '\n';
+
             std::uint16_t port;
 
             std::cout << "Enter PORT: \n";

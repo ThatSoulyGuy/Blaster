@@ -1,7 +1,9 @@
 #pragma once
 
+#include <iostream>
 #include <boost/asio.hpp>
 #include <boost/archive/text_oarchive.hpp>
+#include <boost/serialization/shared_ptr.hpp>
 #include <span>
 #include <vector>
 #include "Independent/Utility/TypeRegistrar.hpp"
@@ -59,33 +61,42 @@ namespace Blaster::Independent::Network
 
     public:
 
-
-        static void Register(std::uint64_t typeHash, DecodeFunction function)
+        static void Register(const std::uint64_t typeHash, const DecodeFunction function)
         {
-            GetMap()[typeHash] = function;
+            if (map.contains(typeHash))
+            {
+                std::cerr << "Conversion registry map already contains conversion under '" << typeHash << "'!" << std::endl;
+                throw std::runtime_error("Conversion registry map already contains conversion under '" + std::to_string(typeHash) + "'!");
+            }
+
+            map.insert({ typeHash, function });
         }
 
-        static std::any Decode(std::uint64_t typeHash, std::span<const std::uint8_t> bytes)
+        static std::any Decode(const std::uint64_t typeHash, const std::span<const std::uint8_t> bytes)
         {
-            const auto iterator = GetMap().find(typeHash);
-                
-            return iterator != GetMap().end() ? iterator->second(bytes) : std::any();
+            if (!map.contains(typeHash))
+            {
+                std::cerr << "Conversion registry map does not contain conversion under '" << typeHash << "'!" << std::endl;
+                throw std::runtime_error("Conversion registry map does not contain conversion under '" + std::to_string(typeHash) + "'!");
+            }
+
+            return map.at(typeHash)(bytes);
         }
         
     private:
 
-        static std::unordered_map<std::uint64_t, DecodeFunction>& GetMap()
-        {
-            static std::unordered_map<std::uint64_t, DecodeFunction> map;
-                
-            return map;
-        }
+        inline static std::unordered_map<std::uint64_t, DecodeFunction> map;
     };
 
     template <typename Derived, typename Type>
     struct DataConversionBase
     {
         inline static constexpr std::uint64_t TypeHash = Blaster::Independent::Utility::TypeRegistrar::GetTypeId<Type>();
+
+        static void EnsureRegistered()
+        {
+            [[maybe_unused]] const volatile bool keep = registered;
+        }
 
     private:
 
@@ -95,13 +106,13 @@ namespace Blaster::Independent::Network
         }
 
 #ifndef _MSC_VER
-        inline static const bool registered [[gnu::used]] = []()
+        inline static const volatile bool registered [[gnu::used]] __attribute__((used)) = []
         {
             ConversionRegistry::Register(TypeHash, &Bridge);
             return true;
         }();
 #else
-        inline static const bool registered = []()
+        inline static const volatile bool registered = []()
         {
             ConversionRegistry::Register(TypeHash, &Bridge);
             return true;
@@ -284,6 +295,17 @@ namespace Blaster::Independent::Network
             const std::string& txt = stream.str();
 
             return { txt.begin(), txt.end() };
+        }
+
+        static void SetPlatformSocketOptions(TcpProtocol::socket& socket)
+        {
+            socket.set_option(TcpProtocol::no_delay(true));
+
+#if defined(__APPLE__)
+            constexpr int one = 1;
+
+            ::setsockopt(socket.native_handle(), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
         }
 
         inline static constexpr std::size_t kHeaderBytes = sizeof(std::uint16_t) + sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);

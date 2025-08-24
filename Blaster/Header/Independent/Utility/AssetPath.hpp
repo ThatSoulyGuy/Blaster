@@ -8,6 +8,7 @@
 #include <boost/serialization/nvp.hpp>
 #include <boost/serialization/export.hpp>
 #include <boost/serialization/string.hpp>
+#include "Independent/ECS/Component.hpp"
 
 #ifdef __APPLE__
   #include <mach-o/dyld.h>
@@ -117,4 +118,4 @@ namespace std
     };
 }
 
-BOOST_CLASS_EXPORT(Blaster::Independent::Utility::AssetPath)
+CLASS_TYPE_EXPORT(Blaster::Independent::Utility::AssetPath)

@@ -56,7 +56,7 @@ namespace Blaster::Client
 
         void PreInitialize()
         {
-            Window::GetInstance().Initialize("Blaster* 1.98.29", { 750, 450 });
+            Window::GetInstance().Initialize("Blaster* 2.8.29", { 750, 450 });
 
             ShaderManager::GetInstance().Register(Shader::Create("blaster.fat", { "Blaster", "Shader/Fat" }));
             ShaderManager::GetInstance().Register(Shader::Create("blaster.model", { "Blaster", "Shader/Model" }));
@@ -108,6 +108,8 @@ namespace Blaster::Client
 
         void Initialize()
         {
+            std::cout << "TypeId(u32)=" << Blaster::Independent::Utility::TypeRegistrar::GetTypeId<std::uint32_t>() << '\n';
+
             RegisterNetworkHandlersOnce();
 
             if (!reconnectCallbackRegisteredOnce)

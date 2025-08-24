@@ -230,35 +230,64 @@ namespace Blaster::Server::Network
 
         void DoAccept()
         {
-            acceptor->async_accept([this](const ErrorCode& errorCode, TcpProtocol::socket socket)
+            auto peerSocket = std::make_shared<TcpProtocol::socket>(ioContext);
+
+            acceptor->async_accept(*peerSocket, [this, peerSocket](const ErrorCode& errorCode)
+            {
+                if (errorCode)
                 {
-                    if (!errorCode)
-                    {
-                        socket.set_option(TcpProtocol::no_delay(true));
-                        auto client = std::make_shared<ClientReference>(ClientReference{ std::move(socket) });
-
-                        client->id = AcquireId();
-                        clientMap[client->id] = client;
-
-                        auto assign = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_AssignNetworkId, 0, client->id));
-                        auto ask = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_RequestStringId, 0, 0));
-
-                        boost::asio::post(client->strand, [this, client, assign, ask]()
-                        {
-                            const bool idle = client->writeQueue.empty();
-
-                            client->writeQueue.push_back(assign);
-                            client->writeQueue.push_back(ask);
-
-                            if (idle)
-                                StartWrite(client);
-                        });
-
-                        BeginRead(client);
-                    }
-
+                    std::cerr << "accept failed: " << errorCode.message() << '\n';
                     DoAccept();
+
+                    return;
+                }
+
+                if (!peerSocket->is_open())
+                {
+                    std::cerr << "accept produced a closed socket\n";
+                    DoAccept();
+
+                    return;
+                }
+
+                {
+                    boost::system::error_code localErrorCode;
+
+                    (void)peerSocket->set_option(TcpProtocol::no_delay(true), localErrorCode);
+
+                    if (localErrorCode)
+                        std::cerr << "TCP_NODELAY failed: " << localErrorCode.message() << '\n';
+                }
+
+                #if defined(__APPLE__)
+                {
+                    int one = 1;
+                    ::setsockopt(peerSocket->native_handle(), SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+                }
+                #endif
+
+                auto client = std::make_shared<ClientReference>(TcpProtocol::socket(std::move(*peerSocket)));
+
+                client->id = AcquireId();
+                clientMap[client->id] = client;
+
+                auto assign = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_AssignNetworkId, 0, client->id));
+                auto ask = std::make_shared<std::vector<std::uint8_t>>(CommonNetwork::BuildPacket(PacketType::S2C_RequestStringId, 0, 0));
+
+                boost::asio::post(client->strand, [this, client, assign, ask]()
+                {
+                    const bool idle = client->writeQueue.empty();
+
+                    client->writeQueue.push_back(assign);
+                    client->writeQueue.push_back(ask);
+
+                    if (idle)
+                        StartWrite(client);
                 });
+
+                BeginRead(client);
+                DoAccept();
+            });
         }
 
         void BeginRead(const std::shared_ptr<ClientReference>& client)
@@ -396,7 +425,4 @@ namespace Blaster::Server::Network
         static std::unique_ptr<ServerNetwork> instance;
 
     };
-
-    std::once_flag ServerNetwork::initializationFlag;
-    std::unique_ptr<ServerNetwork> ServerNetwork::instance;
 }

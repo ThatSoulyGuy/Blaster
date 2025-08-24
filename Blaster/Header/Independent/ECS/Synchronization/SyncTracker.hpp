@@ -118,7 +118,4 @@ namespace Blaster::Independent::ECS::Synchronization
         static std::unique_ptr<SyncTracker> instance;
 
     };
-
-    std::once_flag SyncTracker::initializationFlag;
-    std::unique_ptr<SyncTracker> SyncTracker::instance;
 }

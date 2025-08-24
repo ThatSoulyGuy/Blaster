@@ -820,8 +820,15 @@ elseif (UNIX)
     add_compile_definitions(_GLFW_X11)
 endif()
 
-function(blaster_add_executable target source_glob)
-    file(GLOB_RECURSE SRC CONFIGURE_DEPENDS ${source_glob})
+function(blaster_add_executable target)
+    set(src_globs ${ARGN})
+
+    if(NOT src_globs)
+        message(FATAL_ERROR "blaster_add_executable(${target}) called without source globs")
+    endif()
+
+    file(GLOB_RECURSE SRC CONFIGURE_DEPENDS ${src_globs})
+    list(REMOVE_DUPLICATES SRC)
 
     add_executable(${target}
             ${BLASTER_HEADERS}
@@ -855,9 +862,9 @@ function(blaster_add_executable target source_glob)
             ${EXTRA_PLATFORM_LIBS}
     )
 
-    #target_compile_definitions(${target} PRIVATE SYNCHRONIZATION_DEBUG)
+    # target_compile_definitions(${target} PRIVATE SYNCHRONIZATION_DEBUG)
 
-    if (APPLE)
+    if(APPLE)
         target_link_libraries(${target} PRIVATE ${APPLE_FRAMEWORKS})
         target_compile_options(${target} PRIVATE -Wno-deprecated-declarations -mmacosx-version-min=13.7)
     endif()
@@ -882,6 +889,44 @@ elseif (WIN32 AND MSVC)
 endif()
 
 add_link_options(-static-libstdc++ -static-libgcc)
+
+if(APPLE)
+    foreach(tgt Client Server)
+        target_link_options(${tgt} PRIVATE "-Wl,-force_load,$<TARGET_FILE:blaster_registrars>")
+        target_link_options(${tgt} PRIVATE "-Wl,-no_dead_strip_inits_and_terms")
+    endforeach()
+endif()
+
+add_library(blaster_registrars STATIC "${CMAKE_SOURCE_DIR}/Blaster/Source/ForceLoad/DataConversions.cpp")
+
+target_include_directories(blaster_registrars
+        PRIVATE
+        "${boost_serialization_SOURCE_DIR}/include"
+        "${FreeImage_SOURCE_DIR}/Source"
+        "${Assimp_SOURCE_DIR}/include"
+        "${bullet_SOURCE_DIR}/src"
+        ${BLASTER_HEADERS_DIR}
+        ${LIBRARY_HEADERS_DIR}
+)
+
+target_link_libraries(blaster_registrars
+        PRIVATE
+        glfw
+        FreeImage::FreeImage
+        Bullet::BulletDynamics
+        Bullet::BulletCollision
+        Bullet::LinearMath
+        Boost::serialization
+        Boost::asio
+        assimp::assimp
+        ZSTD::ZSTD
+        freetype::freetype
+        OpenAL::OpenAL
+        ${EXTRA_PLATFORM_LIBS}
+)
+
+target_link_libraries(Client PRIVATE blaster_registrars)
+target_link_libraries(Server PRIVATE blaster_registrars)
 
 set(SOURCE_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Assets")
 set(BUILD_ASSETS_DIR  "${CMAKE_CURRENT_BINARY_DIR}/Assets")

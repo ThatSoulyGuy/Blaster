@@ -1,4 +1,7 @@
+#include "Independent/ECS/Synchronization/CommonSynchronization.hpp"
 #include "Client/Core/InputManager.hpp"
+
+thread_local std::vector<Blaster::Independent::ECS::Synchronization::DirtyRequest> Blaster::Independent::ECS::Synchronization::gDeferredDirty;
 #include "Client/Core/Window.hpp"
 #include "Client/Network/ClientNetwork.hpp"
 #include "Client/Render/ShaderManager.hpp"

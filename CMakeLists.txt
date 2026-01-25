@@ -9,19 +9,16 @@ option(BLASTER_SMALL_DEBUGINFO
 if (BLASTER_SMALL_DEBUGINFO AND MINGW)
     include(CheckCXXCompilerFlag)
 
-    check_cxx_compiler_flag("-gsplit-dwarf" HAS_SPLIT_DWARF)
-    if (HAS_SPLIT_DWARF)
-        message(STATUS "Enabling split‑DWARF (-gsplit-dwarf) for Debug config")
-        add_compile_options($<$<CONFIG:Debug>:-gsplit-dwarf>)
-    else()
-        check_cxx_compiler_flag("-gline-tables-only" HAS_GLINE_TABLES)
-        if (HAS_GLINE_TABLES)
-            message(STATUS "Using -gline-tables-only for Debug config")
-            add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
-        else()
-            message(STATUS "Using -g1 for Debug config")
-            add_compile_options($<$<CONFIG:Debug>:-g1>)
+    # GCC 15+ has issues with -gsplit-dwarf on Windows causing "section below image base" errors
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "15")
+        check_cxx_compiler_flag("-gsplit-dwarf" HAS_SPLIT_DWARF)
+        if (HAS_SPLIT_DWARF)
+            message(STATUS "Enabling split‑DWARF (-gsplit-dwarf) for Debug config")
+            add_compile_options($<$<CONFIG:Debug>:-gsplit-dwarf>)
         endif()
+    else()
+        message(STATUS "Using -g1 for Debug config (GCC 15+ split-dwarf workaround)")
+        add_compile_options($<$<CONFIG:Debug>:-g1>)
     endif()
 endif()
 
@@ -772,11 +769,16 @@ else()
     set(ALSOFT_UTILS   OFF CACHE BOOL "" FORCE)
     set(ALSOFT_INSTALL OFF CACHE BOOL "" FORCE)
 
+    # GCC 14+ has stricter template checking that breaks older OpenAL-Soft
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "14")
+        add_compile_options(-Wno-template-body)
+    endif()
+
     include(FetchContent)
     FetchContent_Declare(
         openal_soft
         GIT_REPOSITORY https://github.com/kcat/openal-soft.git
-        GIT_TAG        1.23.1
+        GIT_TAG        master
     )
     FetchContent_MakeAvailable(openal_soft)
 
@@ -936,3 +938,22 @@ add_custom_command(
         COMMAND  ${CMAKE_COMMAND} -E copy_directory ${SOURCE_ASSETS_DIR} ${BUILD_ASSETS_DIR}
         COMMENT  "Copying assets to build folder..."
 )
+
+if (WIN32)
+    add_custom_command(TARGET Client POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:assimp>
+            $<TARGET_FILE:OpenAL>
+            $<TARGET_FILE:freetype>
+            $<TARGET_FILE_DIR:Client>
+        COMMENT "Copying DLLs to output directory..."
+    )
+    add_custom_command(TARGET Server POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:assimp>
+            $<TARGET_FILE:OpenAL>
+            $<TARGET_FILE:freetype>
+            $<TARGET_FILE_DIR:Server>
+        COMMENT "Copying DLLs to output directory..."
+    )
+endif()

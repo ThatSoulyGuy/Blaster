@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(C:mingw64binc++.exe --version)",
+      "Bash(ls:*)",
+      "Bash(xxd:*)"
+    ]
+  }
+}

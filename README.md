@@ -2,8 +2,6 @@
 
 A team-based multiplayer 3D shooter built with C++23, featuring client-server architecture, real-time physics, and networked gameplay.
 
-![Gameplay with Blue Team Player](screenshots/Screenshot%202026-01-24%20223919.png)
-
 ## Overview
 
 Blaster is a competitive multiplayer game where two teams (Red and Blue) battle to destroy the opposing team's beacon while defending their own. Players connect to a dedicated server, join a team, and engage in real-time combat with physics-based interactions.
@@ -206,9 +204,7 @@ State synchronization uses operation-based updates:
 - `OpRemoveComponent` - Component removed
 - `OpSetField` - Component field changed
 
-## License
-
-[Add your license here]
+## [License](LICENSE.md)
 
 ## Contributing
 

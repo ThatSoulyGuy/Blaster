@@ -204,7 +204,7 @@ State synchronization uses operation-based updates:
 - `OpRemoveComponent` - Component removed
 - `OpSetField` - Component field changed
 
-## [License](LICENSE.md)
+## [License](LICENSE)
 
 ## Contributing
 
